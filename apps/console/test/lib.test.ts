@@ -116,9 +116,11 @@ describe('kyc', () => {
 });
 
 describe('règles de la console', () => {
-  it('bloque les candidats occupés ou au plafond', () => {
-    const base = { id: 'x', name: 'X', phone: '+22670000000', vehicleType: 'MOTO' as const, isOnline: false, distanceKm: null };
+  it('bloque les candidats hors ligne, occupés ou au plafond', () => {
+    const base = { id: 'x', name: 'X', phone: '+22670000000', vehicleType: 'MOTO' as const, isOnline: true, distanceKm: 1.2 };
     expect(candidateBlocker({ ...base, isBusy: false, cashBlocked: false })).toBeNull();
+    // 409 DRIVER_OFFLINE côté API : un livreur hors ligne ne peut pas être affecté.
+    expect(candidateBlocker({ ...base, isOnline: false, distanceKm: null, isBusy: false, cashBlocked: false })).toMatch(/Hors ligne/);
     expect(candidateBlocker({ ...base, isBusy: true, cashBlocked: false })).toBe('Déjà en course');
     expect(candidateBlocker({ ...base, isBusy: false, cashBlocked: true })).toBe('Plafond de cash atteint');
   });

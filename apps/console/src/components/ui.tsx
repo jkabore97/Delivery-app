@@ -184,10 +184,13 @@ export function ReasonDialog({
   danger = true,
   required = true,
   placeholder,
+  description,
   onConfirm,
   onClose,
 }: {
   title: string;
+  /** Texte d'avertissement affiché au-dessus du motif (conséquences de l'action). */
+  description?: ReactNode;
   label?: string;
   confirmLabel: string;
   danger?: boolean;
@@ -222,7 +225,11 @@ export function ReasonDialog({
   return (
     <Modal title={title} onClose={onClose}>
       <form onSubmit={submit} className="form">
-        <label htmlFor={inputId}>{label}</label>
+        {description && <div className="muted">{description}</div>}
+        <label htmlFor={inputId}>
+          {label}
+          {required ? '' : ' (facultatif)'}
+        </label>
         <textarea
           id={inputId}
           value={reason}

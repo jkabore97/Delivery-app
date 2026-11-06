@@ -3,6 +3,7 @@ import { Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import type { OrderDto, SellerStatsDto } from '@yaar/shared';
 import { DisputeBox } from '../../../components/DisputeBox';
+import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import {
   Badge,
   Banner,
@@ -96,7 +97,8 @@ export default function SellerOrdersScreen() {
         </Text>
       </Row>
       <Title>Commandes du jour</Title>
-      {!store.isOpen ? (
+      <StoreApprovalBanner store={store} />
+      {!store.isOpen && (store.approvalStatus ?? 'APPROVED') === 'APPROVED' ? (
         <Banner message="Votre boutique est fermée : les clients ne peuvent pas commander (onglet Boutique)." tone="orange" />
       ) : null}
       {stats ? (

@@ -2,6 +2,7 @@ import { act, render, waitFor } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import * as Location from 'expo-location';
 import type { ServerToClientEvents } from '@yaar/shared';
+import { ApiError } from '../lib/api';
 import { DriverProvider, useDriver } from '../state/driver';
 import { driverProfile, offer, order } from './fixtures';
 
@@ -25,6 +26,8 @@ const mockApi = {
   currentOrder: jest.fn(),
   driverOffers: jest.fn(),
   setAvailability: jest.fn(),
+  giveTrackingConsent: jest.fn(),
+  withdrawTrackingConsent: jest.fn(),
   sendLocation: jest.fn(async () => undefined),
 };
 jest.mock('../state/auth', () => ({ useApi: () => mockApi }));
@@ -132,5 +135,106 @@ describe('DriverProvider', () => {
     mockApi.currentOrder.mockResolvedValue({ order: null });
     await act(async () => ctx?.refreshCurrentOrder());
     expect(ctx?.orderNotice).toBeNull();
+  });
+
+  describe('consentement au suivi GPS', () => {
+    it('sans consentement : passer en ligne ouvre le consentement, sans appel à l’API', async () => {
+      mockApi.driverProfile.mockResolvedValue(driverProfile({ isOnline: false, trackingConsentAt: null }));
+      await mount();
+      let err: string | null = 'x';
+      await act(async () => {
+        err = (await ctx?.setOnline(true)) ?? null;
+      });
+      expect(err).toBeNull();
+      expect(ctx?.consentPromptOpen).toBe(true);
+      expect(mockApi.setAvailability).not.toHaveBeenCalled();
+      expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    });
+
+    it('accepter : POST /driver/consent puis passage en ligne avec la position', async () => {
+      mockApi.driverProfile.mockResolvedValue(driverProfile({ isOnline: false, trackingConsentAt: null }));
+      mockApi.giveTrackingConsent.mockResolvedValue(driverProfile({ isOnline: false }));
+      mockApi.setAvailability.mockResolvedValue(driverProfile({ isOnline: true }));
+      await mount();
+      await act(async () => {
+        await ctx?.setOnline(true);
+      });
+      let err: string | null = 'x';
+      await act(async () => {
+        err = (await ctx?.acceptTrackingConsent()) ?? null;
+      });
+      expect(err).toBeNull();
+      expect(mockApi.giveTrackingConsent).toHaveBeenCalledTimes(1);
+      expect(mockApi.setAvailability).toHaveBeenCalledWith({ online: true, lat: 12.37, lng: -1.52 });
+      expect(mockApi.giveTrackingConsent.mock.invocationCallOrder[0]).toBeLessThan(
+        mockApi.setAvailability.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(ctx?.consentPromptOpen).toBe(false);
+      expect(ctx?.profile?.isOnline).toBe(true);
+    });
+
+    it('accepter depuis le profil : consentement enregistré sans passer en ligne', async () => {
+      mockApi.driverProfile.mockResolvedValue(driverProfile({ isOnline: false, trackingConsentAt: null }));
+      mockApi.giveTrackingConsent.mockResolvedValue(driverProfile({ isOnline: false }));
+      await mount();
+      await act(async () => ctx?.openConsentPrompt(false));
+      await act(async () => {
+        await ctx?.acceptTrackingConsent();
+      });
+      expect(mockApi.giveTrackingConsent).toHaveBeenCalled();
+      expect(mockApi.setAvailability).not.toHaveBeenCalled();
+      expect(ctx?.profile?.trackingConsentAt).toBeTruthy();
+    });
+
+    it('refuser : la fenêtre se ferme et le livreur reste hors ligne', async () => {
+      mockApi.driverProfile.mockResolvedValue(driverProfile({ isOnline: false, trackingConsentAt: null }));
+      await mount();
+      await act(async () => {
+        await ctx?.setOnline(true);
+      });
+      await act(async () => ctx?.dismissConsentPrompt());
+      expect(ctx?.consentPromptOpen).toBe(false);
+      expect(mockApi.giveTrackingConsent).not.toHaveBeenCalled();
+      expect(ctx?.profile?.isOnline).toBe(false);
+    });
+
+    it('403 CONSENT_REQUIRED du serveur : ouvre le consentement au lieu d’afficher une erreur', async () => {
+      mockApi.setAvailability.mockRejectedValue(new ApiError(403, 'CONSENT_REQUIRED', 'Acceptez le suivi'));
+      await mount();
+      let err: string | null = 'x';
+      await act(async () => {
+        err = (await ctx?.setOnline(true)) ?? null;
+      });
+      expect(err).toBeNull();
+      expect(ctx?.consentPromptOpen).toBe(true);
+      expect(ctx?.profile?.trackingConsentAt).toBeNull();
+    });
+
+    it('retrait : DELETE /driver/consent, hors ligne et offres vidées', async () => {
+      mockApi.driverProfile.mockResolvedValue(driverProfile({ isOnline: true }));
+      mockApi.driverOffers.mockResolvedValue([offer()]);
+      mockApi.withdrawTrackingConsent.mockResolvedValue(driverProfile({ isOnline: false, trackingConsentAt: null }));
+      await mount();
+      await waitFor(() => expect(ctx?.offers).toHaveLength(1));
+      let err: string | null = 'x';
+      await act(async () => {
+        err = (await ctx?.withdrawTrackingConsent()) ?? null;
+      });
+      expect(err).toBeNull();
+      expect(mockApi.withdrawTrackingConsent).toHaveBeenCalled();
+      expect(ctx?.profile?.isOnline).toBe(false);
+      expect(ctx?.profile?.trackingConsentAt).toBeNull();
+      expect(ctx?.offers).toEqual([]);
+    });
+
+    it('retrait pendant une course : message DRIVER_BUSY', async () => {
+      mockApi.withdrawTrackingConsent.mockRejectedValue(new ApiError(409, 'DRIVER_BUSY', 'Terminez votre course'));
+      await mount();
+      let err: string | null = null;
+      await act(async () => {
+        err = (await ctx?.withdrawTrackingConsent()) ?? null;
+      });
+      expect(err).toBe('Vous avez une course en cours : terminez-la d’abord.');
+    });
   });
 });

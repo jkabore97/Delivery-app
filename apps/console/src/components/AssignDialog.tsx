@@ -8,6 +8,8 @@ import { Badge, Empty, ErrorBanner, Loading, Modal } from './ui';
 
 /** Raison pour laquelle un livreur ne peut pas être affecté (null = affectable). */
 export function candidateBlocker(c: DriverCandidateDto): string | null {
+  // L'API refuse l'affectation d'un livreur hors ligne (409 DRIVER_OFFLINE) : il ne voit pas la course.
+  if (!c.isOnline) return 'Hors ligne : appelez-le pour qu’il se connecte';
   if (c.isBusy) return 'Déjà en course';
   if (c.cashBlocked) return 'Plafond de cash atteint';
   return null;

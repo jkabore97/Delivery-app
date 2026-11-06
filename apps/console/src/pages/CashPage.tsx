@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { cashDepositSchema, type CashOverviewDto } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
+import { CsvExport } from '../components/CsvExport';
 import { Badge, Card, Empty, ErrorBanner, Loading, Modal, Pagination, Vehicle } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
@@ -276,6 +277,9 @@ export function CashPage() {
           }}
         />
       )}
+      <Card title="Export du journal de caisse">
+        <CsvExport kind="cash-ledger" label="Exporter le journal de caisse (CSV)" />
+      </Card>
     </div>
   );
 }

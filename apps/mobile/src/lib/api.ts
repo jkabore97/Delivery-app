@@ -54,9 +54,30 @@ export function isApiError(e: unknown, code?: string): e is ApiError {
   return e instanceof ApiError && (code === undefined || e.code === code);
 }
 
+/**
+ * Messages français adaptés à l'application pour les codes d'erreur dont le message serveur est trop
+ * générique (ou trop technique). Les autres codes gardent le message de l'API, déjà en français
+ * (ex. DELIVERY_CODE_INVALID indique le nombre d'essais restants).
+ */
+export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  CONSENT_REQUIRED:
+    'Acceptez le suivi de votre position pendant le service pour passer en ligne (Profil › Suivi GPS).',
+  DRIVER_OFFLINE: 'Vous êtes hors ligne : votre position n’est plus transmise. Repassez en ligne pour reprendre.',
+  DRIVER_BUSY: 'Vous avez une course en cours : terminez-la d’abord.',
+  DRIVER_NOT_APPROVED: 'Votre dossier doit être validé par Yaar avant de passer en ligne.',
+  UNSUPPORTED_FILE: 'Fichier non reconnu : envoyez une photo JPEG, PNG ou WebP (ou un PDF pour les documents).',
+  PAYLOAD_TOO_LARGE: 'Fichier trop lourd (5 Mo maximum) : reprenez la photo en plus petit.',
+  STORE_NOT_APPROVED: 'Cette boutique n’est pas encore validée par Yaar.',
+  ORDER_NOT_ACTIVE: 'La course est terminée : la discussion est fermée.',
+  DELIVERY_CODE_LOCKED: 'Trop de codes incorrects : appelez le support Yaar pour débloquer la livraison.',
+  OFFER_EXPIRED: 'Cette course n’est plus disponible.',
+  RATE_LIMITED: 'Trop de tentatives : patientez quelques minutes avant de réessayer.',
+  OTP_RATE_LIMITED: 'Trop de codes demandés pour ce numéro : réessayez dans une heure.',
+};
+
 /** Message utilisateur (français) pour n'importe quelle erreur. */
 export function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.message;
+  if (e instanceof ApiError) return ERROR_MESSAGES[e.code] ?? e.message;
   if (e instanceof Error && e.message) return e.message;
   return 'Une erreur inattendue est survenue.';
 }
@@ -211,6 +232,10 @@ export function createApiClient(opts: ApiClientOptions) {
     saveDriverProfile: (input: DriverProfileInput) => request<DriverProfileDto>('PUT', '/driver/profile', input),
     uploadDocument: (type: DocumentType, input: DocumentUploadInput) =>
       request<DriverProfileDto>('PUT', `/driver/documents/${type}`, input),
+    /** Consentement éclairé au suivi GPS (obligatoire avant le premier passage en ligne, §7.2). */
+    giveTrackingConsent: () => request<DriverProfileDto>('POST', '/driver/consent', {}),
+    /** Retrait du consentement : le livreur passe hors ligne et sa dernière position est effacée. */
+    withdrawTrackingConsent: () => request<DriverProfileDto>('DELETE', '/driver/consent'),
     setAvailability: (input: AvailabilityInput) =>
       request<DriverProfileDto>('PATCH', '/driver/availability', input),
     sendLocation: (input: LocationPingInput) => request<void>('POST', '/driver/location', input),

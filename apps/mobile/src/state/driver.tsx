@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import type { DriverProfileDto, OfferDto, OrderDto } from '@yaar/shared';
 import { errorMessage, isApiError } from '../lib/api';
+import { hasTrackingConsent } from '../lib/consent';
 import { formatOrderNumber } from '../lib/format';
 import { useDriverLocationTracking, type TrackedPosition } from '../hooks/useDriverLocationTracking';
 import { useApi } from './auth';
@@ -23,7 +24,21 @@ interface DriverContextValue {
   gpsError: string | null;
   position: TrackedPosition | null;
   togglingOnline: boolean;
+  /**
+   * Passe en ligne / hors ligne. Sans consentement au suivi GPS, ouvre d'abord la fenêtre de
+   * consentement (et renvoie null) : le passage en ligne reprend une fois le consentement donné.
+   */
   setOnline: (online: boolean) => Promise<string | null>;
+  /** Fenêtre de consentement éclairé au suivi GPS visible. */
+  consentPromptOpen: boolean;
+  /** Ouvre la fenêtre de consentement (goOnlineAfter : passer en ligne après acceptation). */
+  openConsentPrompt: (goOnlineAfter?: boolean) => void;
+  dismissConsentPrompt: () => void;
+  consentBusy: boolean;
+  /** POST /driver/consent puis, si demandé, passage en ligne. Renvoie un message d'erreur ou null. */
+  acceptTrackingConsent: () => Promise<string | null>;
+  /** DELETE /driver/consent : hors ligne forcé, offres retirées. Renvoie un message d'erreur ou null. */
+  withdrawTrackingConsent: () => Promise<string | null>;
   refreshProfile: () => Promise<void>;
   refreshCurrentOrder: () => Promise<void>;
   refreshOffers: () => Promise<void>;
@@ -50,6 +65,12 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   }, []);
   const [offers, setOffers] = useState<OfferDto[]>([]);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [consentPromptOpen, setConsentPromptOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  /** Passage en ligne demandé avant le consentement : on le reprend après acceptation. */
+  const goOnlineAfterConsentRef = useRef(false);
+  const profileRef = useRef<DriverProfileDto | null | undefined>(undefined);
+  profileRef.current = profile;
 
   const refreshProfile = useCallback(async () => {
     try {
@@ -138,7 +159,17 @@ export function DriverProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const setOnline = useCallback(
+  const openConsentPrompt = useCallback((goOnlineAfter = false) => {
+    goOnlineAfterConsentRef.current = goOnlineAfter;
+    setConsentPromptOpen(true);
+  }, []);
+
+  const dismissConsentPrompt = useCallback(() => {
+    goOnlineAfterConsentRef.current = false;
+    setConsentPromptOpen(false);
+  }, []);
+
+  const changeAvailability = useCallback(
     async (wantOnline: boolean): Promise<string | null> => {
       setTogglingOnline(true);
       try {
@@ -159,13 +190,62 @@ export function DriverProvider({ children }: { children: ReactNode }) {
         else void refreshOffers();
         return null;
       } catch (e) {
+        if (wantOnline && isApiError(e, 'CONSENT_REQUIRED')) {
+          // Consentement retiré ailleurs (ou profil local périmé) : on redemande le consentement.
+          setProfile((p) => (p ? { ...p, trackingConsentAt: null } : p));
+          openConsentPrompt(true);
+          return null;
+        }
         return errorMessage(e);
       } finally {
         setTogglingOnline(false);
       }
     },
-    [api, refreshOffers],
+    [api, refreshOffers, openConsentPrompt],
   );
+
+  const setOnline = useCallback(
+    async (wantOnline: boolean): Promise<string | null> => {
+      if (wantOnline && !hasTrackingConsent(profileRef.current)) {
+        openConsentPrompt(true);
+        return null;
+      }
+      return changeAvailability(wantOnline);
+    },
+    [changeAvailability, openConsentPrompt],
+  );
+
+  const acceptTrackingConsent = useCallback(async (): Promise<string | null> => {
+    setConsentBusy(true);
+    try {
+      const updated = await api.giveTrackingConsent();
+      profileRef.current = updated;
+      setProfile(updated);
+      setConsentPromptOpen(false);
+      const goOnline = goOnlineAfterConsentRef.current;
+      goOnlineAfterConsentRef.current = false;
+      return goOnline ? await changeAvailability(true) : null;
+    } catch (e) {
+      return errorMessage(e);
+    } finally {
+      setConsentBusy(false);
+    }
+  }, [api, changeAvailability]);
+
+  const withdrawTrackingConsent = useCallback(async (): Promise<string | null> => {
+    setConsentBusy(true);
+    try {
+      const updated = await api.withdrawTrackingConsent();
+      profileRef.current = updated;
+      setProfile(updated);
+      setOffers([]);
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    } finally {
+      setConsentBusy(false);
+    }
+  }, [api]);
 
   const clearOrderNotice = useCallback(() => setOrderNotice(null), []);
 
@@ -187,6 +267,12 @@ export function DriverProvider({ children }: { children: ReactNode }) {
       position: tracking.position,
       togglingOnline,
       setOnline,
+      consentPromptOpen,
+      openConsentPrompt,
+      dismissConsentPrompt,
+      consentBusy,
+      acceptTrackingConsent,
+      withdrawTrackingConsent,
       refreshProfile,
       refreshCurrentOrder,
       refreshOffers,
@@ -207,6 +293,12 @@ export function DriverProvider({ children }: { children: ReactNode }) {
       tracking.position,
       togglingOnline,
       setOnline,
+      consentPromptOpen,
+      openConsentPrompt,
+      dismissConsentPrompt,
+      consentBusy,
+      acceptTrackingConsent,
+      withdrawTrackingConsent,
       refreshProfile,
       refreshCurrentOrder,
       refreshOffers,

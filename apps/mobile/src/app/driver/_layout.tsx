@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { OfferModal } from '../../components/OfferModal';
 import { RoleGuard } from '../../components/RoleGuard';
+import { TrackingConsentModal } from '../../components/TrackingConsentModal';
 import { DriverProvider } from '../../state/driver';
 import { colors } from '../../theme';
 
@@ -22,6 +23,7 @@ export default function DriverLayout() {
           <Stack.Screen name="history" options={{ title: 'Mes courses' }} />
         </Stack>
         <OfferModal />
+        <TrackingConsentModal />
       </DriverProvider>
     </RoleGuard>
   );

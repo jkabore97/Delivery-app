@@ -5,6 +5,7 @@ import type { OfferDto } from '@yaar/shared';
 import { useCountdown } from '../hooks/useCountdown';
 import { errorMessage, isApiError } from '../lib/api';
 import { formatCountdown } from '../lib/countdown';
+import { offerPlaces } from '../lib/offer';
 import { formatFcfa, formatFcfaShort, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
@@ -29,6 +30,7 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
   const total = Math.max(1, (Date.parse(offer.expiresAt) - Date.parse(offer.offeredAt)) / 1000);
   const [busy, setBusy] = useState<'accept' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const places = offerPlaces(offer);
 
   useEffect(() => {
     if (secs <= 0 && busy === null) {
@@ -81,22 +83,28 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
       <Row style={{ alignItems: 'flex-start' }}>
         <Dot color={colors.orange} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.addr}>Récupérer : {offer.pickup.name ?? offer.pickup.address}</Text>
+          <Text style={styles.addr}>Récupérer : {places.pickupTitle}</Text>
           <Muted>
-            {offer.pickup.distanceFromDriverKm !== null ? `${formatKm(offer.pickup.distanceFromDriverKm)} · ` : ''}
-            {offer.pickup.address}
+            {[
+              offer.pickup.distanceFromDriverKm !== null ? `à ${formatKm(offer.pickup.distanceFromDriverKm)} de vous` : null,
+              places.pickupAddress,
+              places.pickupZone,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </Muted>
         </View>
       </Row>
       <Row style={{ alignItems: 'flex-start' }}>
         <Dot color={colors.green} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.addr}>Livrer : {offer.dropoff.address}</Text>
+          <Text style={styles.addr}>Livrer : {places.dropoffZone}</Text>
           <Muted>
             {formatKm(offer.distanceKm)} · Espèces à encaisser : {formatFcfaShort(offer.cashToCollect)}
           </Muted>
         </View>
       </Row>
+      <Muted>Zone approximative : l’adresse exacte du client s’affiche une fois la course acceptée.</Muted>
       <View style={styles.gain}>
         <KeyValue label="Votre gain" value={formatFcfa(offer.driverEarning)} valueColor={colors.green} strong />
       </View>

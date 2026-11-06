@@ -88,6 +88,9 @@ h2 {
 .tone-muted {
   color: var(--muted);
 }
+.tone-orange {
+  color: var(--orange);
+}
 
 /* ---------- Shell ---------- */
 .shell {

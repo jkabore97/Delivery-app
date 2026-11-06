@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   CONTROLLER_CANCELLABLE_STATUSES,
+  CONTROLLER_FORCE_DELIVER_STATUSES,
   LABELS,
   type AddressDto,
   type OrderDto,
@@ -74,7 +75,8 @@ export function OrderDetailPage() {
   const api = useApi();
   const { refresh: refreshDashboard } = useDashboard();
   const order = useAsync<OrderDto>(() => api.getOrder(id), [api, id]);
-  const [dialog, setDialog] = useState<'assign' | 'cancel' | 'proof' | null>(null);
+  const [dialog, setDialog] = useState<'assign' | 'cancel' | 'proof' | 'force-deliver' | 'reset-code' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const refresh = useDebouncedCallback(() => order.reload(true), 500);
   useSocketEvent('order.updated', (e) => {
     if (e.orderId === id) refresh();
@@ -85,6 +87,9 @@ export function OrderDetailPage() {
   const o = order.data;
   const canAssign = o.status === 'SEARCHING_DRIVER' || o.status === 'ASSIGNED';
   const canCancel = CONTROLLER_CANCELLABLE_STATUSES.includes(o.status);
+  // Course récupérée mais bloquée (code perdu / 5 essais) : reprise par la console (§8.2).
+  const canForceDeliver = CONTROLLER_FORCE_DELIVER_STATUSES.includes(o.status);
+  const pickedUp = o.status === 'PICKED_UP';
   const afterChange = () => {
     order.reload(true);
     refreshDashboard();
@@ -107,6 +112,16 @@ export function OrderDetailPage() {
               Photo de livraison
             </button>
           )}
+          {canForceDeliver && (
+            <button type="button" className="btn btn-ghost" onClick={() => setDialog('reset-code')}>
+              Réinitialiser le code
+            </button>
+          )}
+          {canForceDeliver && (
+            <button type="button" className="btn btn-primary" onClick={() => setDialog('force-deliver')}>
+              Valider la livraison
+            </button>
+          )}
           {canCancel && (
             <button type="button" className="btn btn-danger-soft" onClick={() => setDialog('cancel')}>
               Annuler la course
@@ -115,6 +130,11 @@ export function OrderDetailPage() {
         </div>
       </div>
       <ErrorBanner message={order.error} />
+      {notice && (
+        <div className="alert alert-success" role="status">
+          {notice}
+        </div>
+      )}
       <div className="grid-2">
         <Card title="Trajet">
           <KeyValue
@@ -244,9 +264,47 @@ export function OrderDetailPage() {
           confirmLabel="Annuler la course"
           required={false}
           placeholder="Ex. : client injoignable"
+          description={
+            pickedUp
+              ? 'La marchandise est déjà chez le livreur : un incident « récupérer la marchandise auprès du livreur » sera ouvert et le livreur libéré. Action enregistrée dans le journal d’audit.'
+              : undefined
+          }
           onClose={() => setDialog(null)}
           onConfirm={async (reason) => {
             await api.cancelOrder(o.id, reason || undefined);
+            afterChange();
+          }}
+        />
+      )}
+      {dialog === 'force-deliver' && (
+        <ReasonDialog
+          title={`Valider la livraison #${o.number}`}
+          confirmLabel="Valider la livraison"
+          danger={false}
+          placeholder="Ex. : client joint par téléphone, colis bien reçu"
+          description={`La course passe à « Livrée » sans code. ${
+            o.paymentMethod === 'CASH' ? `Les espèces (${formatFcfa(o.total)}) sont comptées comme encaissées par le livreur. ` : ''
+          }Action enregistrée dans le journal d’audit.`}
+          onClose={() => setDialog(null)}
+          onConfirm={async (reason) => {
+            await api.forceDeliver(o.id, reason);
+            setNotice(`Course #${o.number} validée comme livrée.`);
+            afterChange();
+          }}
+        />
+      )}
+      {dialog === 'reset-code' && (
+        <ReasonDialog
+          title={`Réinitialiser le code de livraison #${o.number}`}
+          confirmLabel="Réinitialiser"
+          danger={false}
+          required={false}
+          placeholder="Ex. : client a donné un mauvais code"
+          description="À utiliser après « code bloqué » (5 codes incorrects) : le livreur dispose de nouveau de 5 essais. Le code ne change pas. Action enregistrée dans le journal d’audit."
+          onClose={() => setDialog(null)}
+          onConfirm={async (reason) => {
+            await api.resetDeliveryCode(o.id, reason || undefined);
+            setNotice('Code de livraison réinitialisé : le livreur peut de nouveau saisir le code.');
             afterChange();
           }}
         />

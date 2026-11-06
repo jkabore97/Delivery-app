@@ -22,6 +22,7 @@ import type {
   PricingRuleDto,
   PricingRuleUpdateInput,
   Role,
+  StoreApprovalStatus,
   StoreDto,
   UserDto,
   VehicleType,
@@ -100,6 +101,18 @@ export interface AuditLogParams extends PageQuery {
   entityType?: string;
   entityId?: string;
 }
+
+export interface StoreListParams extends PageQuery {
+  approvalStatus?: StoreApprovalStatus;
+}
+
+/** Période d'un export CSV (dates ISO AAAA-MM-JJ ; `from` inclus, `to` exclu). */
+export interface ExportRange {
+  from?: string;
+  to?: string;
+}
+
+export type CsvExportKind = 'orders' | 'cash-ledger';
 
 export interface ApiClientOptions {
   baseUrl: string;
@@ -217,6 +230,20 @@ export class ApiClient {
     return this.blob(`/orders/${encodeURIComponent(id)}/proof-photo`);
   }
 
+  /** PICKED_UP → DELIVERED par le support (code bloqué ou perdu) ; motif obligatoire, audité (§8.2). */
+  forceDeliver(id: string, reason: string): Promise<OrderDto> {
+    return this.request('POST', `/controller/orders/${encodeURIComponent(id)}/force-deliver`, { reason });
+  }
+
+  /** Remet à zéro le compteur d'essais du code de livraison après 423 DELIVERY_CODE_LOCKED (audité). */
+  resetDeliveryCode(id: string, reason?: string): Promise<OrderDto> {
+    return this.request(
+      'POST',
+      `/controller/orders/${encodeURIComponent(id)}/reset-delivery-code`,
+      reason ? { reason } : {},
+    );
+  }
+
   pendingOrders(): Promise<PendingOrderDto[]> {
     return this.request('GET', '/controller/orders/pending');
   }
@@ -279,8 +306,18 @@ export class ApiClient {
 
   /* ------------------------------ Boutiques ------------------------------ */
 
-  listStores(params: PageQuery = {}): Promise<Paginated<StoreDto>> {
+  listStores(params: StoreListParams = {}): Promise<Paginated<StoreDto>> {
     return this.request('GET', `/controller/stores${buildQuery({ ...params })}`);
+  }
+
+  /** Validation d'une boutique (dossier vendeur) : elle devient visible des clients (§8.5). */
+  approveStore(id: string): Promise<StoreDto> {
+    return this.request('POST', `/controller/stores/${encodeURIComponent(id)}/approve`, {});
+  }
+
+  /** Suspension (motif obligatoire) : boutique fermée et masquée, les commandes en cours continuent. */
+  suspendStore(id: string, reason: string): Promise<StoreDto> {
+    return this.request('POST', `/controller/stores/${encodeURIComponent(id)}/suspend`, { reason });
   }
 
   updateStore(id: string, input: { commissionPercent?: number; isOpen?: boolean }): Promise<StoreDto> {
@@ -321,6 +358,13 @@ export class ApiClient {
     return this.request('PATCH', `/controller/incidents/${encodeURIComponent(id)}`, input);
   }
 
+  /* ------------------------------ Exports CSV ------------------------------ */
+
+  /** Export CSV authentifié (téléchargé en blob, audité DATA_EXPORTED côté API, §8.9). */
+  exportCsv(kind: CsvExportKind, range: ExportRange = {}): Promise<Blob> {
+    return this.blob(`/controller/exports/${kind}.csv${buildQuery({ from: range.from, to: range.to })}`);
+  }
+
   /* ------------------------------ Audit ------------------------------ */
 
   auditLogs(params: AuditLogParams = {}): Promise<Paginated<AuditLogDto>> {
@@ -328,9 +372,29 @@ export class ApiClient {
   }
 }
 
+/**
+ * Messages français adaptés à la console pour les codes dont le message de l'API ne dit pas quoi faire.
+ * Les autres codes gardent le message de l'API (déjà en français et souvent plus précis).
+ */
+export const ERROR_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
+  DRIVER_OFFLINE:
+    'Ce livreur est hors ligne : il ne voit pas la course et n’envoie pas sa position. Choisissez un livreur en ligne (ou appelez-le pour qu’il se connecte).',
+  DRIVER_BUSY:
+    'Ce livreur est en course : réaffectez, validez (livraison forcée) ou annulez sa course en cours avant de continuer.',
+  CONSENT_REQUIRED:
+    'Le livreur n’a pas accepté le suivi GPS : il doit l’accepter dans l’application avant de passer en ligne.',
+  UNSUPPORTED_FILE: 'Fichier refusé : son contenu ne correspond pas à une image JPEG, PNG, WebP ou à un PDF.',
+  PAYLOAD_TOO_LARGE: 'Fichier trop volumineux (5 Mo maximum).',
+  DELIVERY_CODE_LOCKED:
+    'Code de livraison bloqué après 5 essais : réinitialisez le code ou validez la livraison depuis la fiche de la course.',
+  STORE_NOT_APPROVED: 'Cette boutique n’est pas encore validée.',
+  RATE_LIMITED: 'Trop de tentatives : patientez quelques minutes avant de réessayer.',
+  OTP_RATE_LIMITED: 'Trop de codes demandés pour ce numéro : réessayez dans une heure.',
+};
+
 /** Message lisible pour n'importe quelle erreur (les messages de l'API sont déjà en français). */
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
+  if (err instanceof ApiError) return (err.code !== 'NETWORK_ERROR' && ERROR_MESSAGES[err.code]) || err.message;
   if (err instanceof Error && err.message) return err.message;
   return 'Une erreur inattendue est survenue.';
 }

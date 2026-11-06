@@ -141,6 +141,14 @@ export function DriverDetailPage() {
               ...(d.rejectionReason ? ([['Motif du refus', d.rejectionReason]] as Array<[string, string]>) : []),
               ...(d.suspensionReason ? ([['Motif de suspension', d.suspensionReason]] as Array<[string, string]>) : []),
               ['Disponibilité', d.isOnline ? (d.isBusy ? 'En ligne · en course' : 'En ligne') : 'Hors ligne'],
+              [
+                'Suivi GPS',
+                d.trackingConsentAt ? (
+                  `Consentement donné le ${formatDateTime(d.trackingConsentAt)}`
+                ) : (
+                  <span key="g" className="tone-orange">Consentement non donné (ne peut pas passer en ligne)</span>
+                ),
+              ],
               ['Note', d.ratingAvg === null ? '-' : `${d.ratingAvg.toFixed(1)} ★ (${d.ratingCount} avis)`],
               [
                 'Cash détenu',
@@ -259,6 +267,11 @@ export function DriverDetailPage() {
           title={`Suspendre ${d.name ?? 'ce livreur'}`}
           label="Motif de la suspension"
           confirmLabel="Suspendre"
+          description={
+            d.isBusy
+              ? 'Ce livreur est en course : réaffectez, validez ou annulez sa course avant de le suspendre (sinon l’API refuse).'
+              : undefined
+          }
           onClose={() => setDialog(null)}
           onConfirm={async (reason) => applied(await api.suspendDriver(d.userId, reason), 'Livreur suspendu et mis hors ligne.')}
         />

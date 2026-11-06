@@ -19,6 +19,7 @@ import {
   Title,
 } from '../../../components/ui';
 import { formatFcfa, formatOrderNumber } from '../../../lib/format';
+import { hasTrackingConsent } from '../../../lib/consent';
 import { documentChecklist, kycProgress } from '../../../lib/kyc';
 import { useDriver } from '../../../state/driver';
 import { colors, spacing } from '../../../theme';
@@ -111,6 +112,12 @@ export default function DriverHome() {
             <Muted>
               Passez en ligne pour recevoir des courses. Votre position n’est suivie et partagée que lorsque vous êtes en ligne.
             </Muted>
+            {!hasTrackingConsent(profile) ? (
+              <Muted>
+                Avant votre premier passage en ligne, Yaar vous demandera d’accepter le suivi de votre position pendant le
+                service.
+              </Muted>
+            ) : null}
           </Card>
         )}
 

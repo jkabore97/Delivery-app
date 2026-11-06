@@ -3,9 +3,9 @@ import { Switch } from 'react-native';
 import { router } from 'expo-router';
 import type { AddressDto, StoreDto } from '@yaar/shared';
 import { AddressPicker } from '../../../components/AddressPicker';
+import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import {
   Banner,
-
   Button,
   Card,
   Chip,
@@ -21,6 +21,7 @@ import {
 import { isAddressComplete, toAddressInput } from '../../../lib/address';
 import { errorMessage } from '../../../lib/api';
 import { formatPhone, normalizePhone } from '../../../lib/phone';
+import { canOpenStore, formatCommission } from '../../../lib/storeApproval';
 import { useApi } from '../../../state/auth';
 import { useSeller } from '../../../state/seller';
 import { colors } from '../../../theme';
@@ -91,7 +92,10 @@ export default function SellerStoreScreen() {
         const created = await api.createStore({ ...base, ...(form.phone.trim() ? { phone: form.phone.trim() } : {}) });
         upsertStore(created);
         setCreating(false);
-        setMessage({ text: 'Boutique créée (fermée). Ajoutez votre menu puis ouvrez-la.', ok: true });
+        setMessage({
+          text: 'Boutique créée. Elle sera visible des clients après validation par Yaar : ajoutez votre menu en attendant.',
+          ok: true,
+        });
       }
     } catch (e) {
       setMessage({ text: errorMessage(e), ok: false });
@@ -126,6 +130,7 @@ export default function SellerStoreScreen() {
         </Row>
       ) : null}
 
+      {editing ? <StoreApprovalBanner store={editing} /> : null}
       {editing ? (
         <Card highlight={editing.isOpen ? colors.green : undefined}>
           <Row style={{ justifyContent: 'space-between' }}>
@@ -134,18 +139,20 @@ export default function SellerStoreScreen() {
             </Subtitle>
             <Switch
               value={editing.isOpen}
-              disabled={toggling}
+              disabled={toggling || (!editing.isOpen && !canOpenStore(editing))}
               onValueChange={(v) => void toggleOpen(v)}
               trackColor={{ true: colors.green, false: colors.border }}
               accessibilityLabel="Ouvrir ou fermer la boutique"
             />
           </Row>
           <Muted>
-            {editing.isOpen
-              ? 'Les clients peuvent commander. Fermez la boutique en cas de rupture ou en fin de service.'
-              : 'Fermée : la boutique est visible mais les clients ne peuvent pas commander.'}
+            {!canOpenStore(editing)
+              ? 'Vous pourrez ouvrir la boutique aux commandes une fois qu’elle sera validée par Yaar.'
+              : editing.isOpen
+                ? 'Les clients peuvent commander. Fermez la boutique en cas de rupture ou en fin de service.'
+                : 'Fermée : la boutique est visible mais les clients ne peuvent pas commander.'}
           </Muted>
-          <Muted>Commission Yaar : {editing.commissionPercent} % (fixée par Yaar)</Muted>
+          <Muted>Commission Yaar : {formatCommission(editing.commissionPercent)} (fixée par Yaar)</Muted>
         </Card>
       ) : null}
 

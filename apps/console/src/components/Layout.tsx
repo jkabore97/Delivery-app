@@ -29,7 +29,7 @@ export function searchTarget(q: string): string {
 
 export function Layout() {
   const { user, logout } = useAuth();
-  const { dashboard } = useDashboard();
+  const { dashboard, pendingStores } = useDashboard();
   const { connected } = useRealtime();
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,7 +49,7 @@ export function Layout() {
     { to: '/courses', icon: '📦', label: 'Courses', badge: dashboard?.waitingForDriver },
     { to: '/livreurs', icon: '🛵', label: 'Livreurs' },
     { to: '/kyc', icon: '🪪', label: 'Validation KYC', badge: dashboard?.pendingKyc },
-    { to: '/vendeurs', icon: '🏪', label: 'Vendeurs' },
+    { to: '/vendeurs', icon: '🏪', label: 'Vendeurs', badge: pendingStores ?? undefined },
     { to: '/clients', icon: '👥', label: 'Clients' },
     { to: '/incidents', icon: '⚠️', label: 'Litiges & SOS', badge: dashboard?.openIncidents },
     { to: '/caisse', icon: '💵', label: 'Caisse livreurs', badge: dashboard?.driversAtCashLimit },

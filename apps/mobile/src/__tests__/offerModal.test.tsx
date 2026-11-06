@@ -38,6 +38,28 @@ describe('OfferModal', () => {
     expect(r.getByText(/Maquis Le Verdoyant/)).toBeTruthy();
   });
 
+  it('repas : boutique et son adresse, zone de livraison seulement (pas d’adresse client)', async () => {
+    const r = await render(<OfferModal />);
+    expect(r.getByText('Récupérer : Maquis Le Verdoyant')).toBeTruthy();
+    expect(r.getByText(/Avenue Kwame Nkrumah, centre-ville · Secteur Centre-ville/)).toBeTruthy();
+    expect(r.getByText('Livrer : Secteur Patte d’Oie')).toBeTruthy();
+    expect(r.getByText(/adresse exacte du client s’affiche une fois la course acceptée/)).toBeTruthy();
+  });
+
+  it('colis : zones approximatives au retrait et à la livraison', async () => {
+    mockDriver.offers = [
+      offer({
+        orderType: 'PARCEL',
+        pickup: { address: 'Secteur Zogona', name: null, distanceFromDriverKm: 0.8, zone: 'Secteur Zogona' },
+        dropoff: { address: 'Secteur Tampouy', zone: 'Secteur Tampouy' },
+      }),
+    ];
+    const r = await render(<OfferModal />);
+    expect(r.getByText('Récupérer : Secteur Zogona')).toBeTruthy();
+    expect(r.getByText('à 0,8 km de vous')).toBeTruthy();
+    expect(r.getByText('Livrer : Secteur Tampouy')).toBeTruthy();
+  });
+
   it('hors ligne ou déjà en course : aucune offre affichée', async () => {
     mockDriver.profile = driverProfile({ isOnline: false });
     const r = await render(<OfferModal />);
@@ -70,7 +92,7 @@ describe('OfferModal', () => {
     mockApi.acceptOffer.mockRejectedValue(new ApiError(409, 'DRIVER_BUSY', 'Vous avez déjà une course.'));
     const r = await render(<OfferModal />);
     await act(async () => fireEvent.press(r.getByTestId('accept-offer')));
-    await waitFor(() => expect(r.getByText('Vous avez déjà une course.')).toBeTruthy());
+    await waitFor(() => expect(r.getByText('Vous avez une course en cours : terminez-la d’abord.')).toBeTruthy());
     expect(mockDriver.removeOffer).not.toHaveBeenCalled();
   });
 

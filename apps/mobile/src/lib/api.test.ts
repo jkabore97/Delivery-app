@@ -108,3 +108,25 @@ describe('createApiClient', () => {
     expect(calls[0]?.url).toBe('http://api.test/orders?status=ASSIGNED%2CPICKED_UP&pageSize=20');
   });
 });
+
+describe('consentement GPS et messages d’erreur', () => {
+  it('POST puis DELETE /driver/consent', async () => {
+    const { api, calls } = setup([jsonResponse(200, { userId: 'd' }), jsonResponse(200, { userId: 'd' })]);
+    await api.giveTrackingConsent();
+    await api.withdrawTrackingConsent();
+    expect(calls[0]?.url).toBe('http://api.test/driver/consent');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[1]?.url).toBe('http://api.test/driver/consent');
+    expect(calls[1]?.init.method).toBe('DELETE');
+  });
+
+  it('codes récents traduits, autres messages de l’API conservés', () => {
+    expect(errorMessage(new ApiError(403, 'CONSENT_REQUIRED', 'x'))).toMatch(/Acceptez le suivi de votre position/);
+    expect(errorMessage(new ApiError(415, 'UNSUPPORTED_FILE', 'x'))).toMatch(/Fichier non reconnu/);
+    expect(errorMessage(new ApiError(409, 'DRIVER_BUSY', 'x'))).toMatch(/course en cours/);
+    expect(errorMessage(new ApiError(403, 'DRIVER_OFFLINE', 'x'))).toMatch(/hors ligne/);
+    expect(errorMessage(new ApiError(400, 'DELIVERY_CODE_INVALID', 'Code incorrect (3 essai(s) restant(s))'))).toBe(
+      'Code incorrect (3 essai(s) restant(s))',
+    );
+  });
+});

@@ -25,6 +25,7 @@ export function driverProfile(over: Partial<DriverProfileDto> = {}): DriverProfi
     kycComplete: true,
     lastLocation: null,
     approvedAt: '2026-11-01T08:00:00.000Z',
+    trackingConsentAt: '2026-11-01T08:05:00.000Z',
     createdAt: '2026-10-01T08:00:00.000Z',
     ...over,
   };
@@ -40,8 +41,13 @@ export function offer(over: Partial<OfferDto> = {}): OfferDto {
     vehicleType: 'MOTO',
     offeredAt: '2026-11-06T09:43:00.000Z',
     expiresAt: '2026-11-06T09:43:30.000Z',
-    pickup: { address: 'Zogona', name: 'Maquis Le Verdoyant', distanceFromDriverKm: 1.2 },
-    dropoff: { address: 'Secteur Patte d’Oie' },
+    pickup: {
+      address: 'Avenue Kwame Nkrumah, centre-ville',
+      name: 'Maquis Le Verdoyant',
+      distanceFromDriverKm: 1.2,
+      zone: 'Secteur Centre-ville',
+    },
+    dropoff: { address: 'Secteur Patte d’Oie', zone: 'Secteur Patte d’Oie' },
     distanceKm: 4.1,
     cashToCollect: 4500,
     driverEarning: 1200,

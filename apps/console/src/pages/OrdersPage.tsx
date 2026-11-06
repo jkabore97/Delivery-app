@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ACTIVE_ORDER_STATUSES, LABELS, ORDER_STATUSES, ORDER_TYPES, type OrderStatus } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
+import { CsvExport } from '../components/CsvExport';
 import { Card, Empty, ErrorBanner, Loading, OrderStatusBadge, Pagination, Vehicle } from '../components/ui';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { formatDateTime, formatFcfa } from '../lib/format';
@@ -158,6 +159,9 @@ export function OrdersPage() {
             onPage={(p) => update({ page: String(p) })}
           />
         )}
+      </Card>
+      <Card title="Export comptable des courses">
+        <CsvExport kind="orders" label="Exporter les courses (CSV)" />
       </Card>
     </div>
   );
