@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Maquettes Yaar Livraison</title>
+<style>
+  :root{
+    --g:#0B7A4B; --g2:#0E9A5E; --gl:#E3F4EA; --o:#F28C1B; --r:#D7263D;
+    --ink:#17212B; --mut:#6B7785; --line:#E6E9ED; --bg:#F5F6F8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:#E9ECEF}
+  .board{padding:40px 40px 50px;width:1900px}
+  .board h1{font-size:30px;margin-bottom:4px}
+  .board .sub{color:var(--mut);font-size:16px;margin-bottom:28px}
+  .row{display:flex;gap:34px;align-items:flex-start}
+  .col{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .cap{font-weight:700;font-size:15px}
+  .cap small{display:block;font-weight:400;color:var(--mut);font-size:13px;text-align:center;margin-top:2px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;color:#fff}
+  .t-client{background:var(--g)} .t-seller{background:var(--o)} .t-driver{background:#2D6CDF}
+
+  /* phone */
+  .phone{width:300px;height:620px;border-radius:38px;background:#111;padding:10px;box-shadow:0 18px 40px rgba(0,0,0,.25)}
+  .scr{width:100%;height:100%;border-radius:30px;background:#fff;overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .sb{height:26px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;font-weight:700;flex:none}
+  .top{padding:6px 16px 10px;flex:none}
+  .hello{font-size:12px;color:var(--mut)} .h{font-size:18px;font-weight:800}
+  .map{position:relative;flex:1;overflow:hidden;background:#EFE9DC}
+  .map svg{position:absolute;inset:0;width:100%;height:100%}
+  .sheet{background:#fff;border-radius:20px 20px 0 0;margin-top:-18px;position:relative;padding:12px 14px 14px;box-shadow:0 -6px 18px rgba(0,0,0,.08);flex:none}
+  .grab{width:38px;height:4px;border-radius:4px;background:#D5D9DE;margin:0 auto 10px}
+  .addr{display:flex;gap:10px;align-items:flex-start;font-size:12px;margin-bottom:8px}
+  .dot{width:10px;height:10px;border-radius:50%;margin-top:3px;flex:none}
+  .addr b{display:block;font-size:13px}
+  .addr span{color:var(--mut)}
+  .veh{display:flex;gap:6px;margin:10px 0}
+  .v{flex:1;border:1.5px solid var(--line);border-radius:12px;padding:7px 4px;text-align:center;font-size:11px}
+  .v .e{font-size:22px} .v b{display:block;font-size:12px} .v span{color:var(--mut);font-size:10px}
+  .v.on{border-color:var(--g);background:var(--gl)}
+  .btn{background:var(--g);color:#fff;font-weight:700;text-align:center;border-radius:12px;padding:12px;font-size:14px}
+  .btn.o{background:var(--o)} .btn.b{background:#2D6CDF} .btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+  .pay{display:flex;justify-content:space-between;font-size:12px;margin-bottom:9px;color:var(--mut)}
+  .pay b{color:var(--ink)}
+  .nav{height:52px;border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--mut);flex:none}
+  .nav div{text-align:center} .nav .on{color:var(--g);font-weight:700}
+  .nav i{display:block;font-style:normal;font-size:17px}
+  .card{border:1px solid var(--line);border-radius:14px;padding:11px;margin-bottom:9px;font-size:12px}
+  .pill{display:inline-block;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700}
+  .p-new{background:#FFF1E0;color:#B85F00} .p-prep{background:#E7EEFF;color:#2D55B5} .p-go{background:var(--gl);color:var(--g)}
+  .between{display:flex;justify-content:space-between;align-items:center}
+  .muted{color:var(--mut)}
+  .kpis{display:flex;gap:8px;margin-bottom:12px}
+  .kpi{flex:1;background:var(--bg);border-radius:12px;padding:9px}
+  .kpi b{display:block;font-size:16px} .kpi span{font-size:10px;color:var(--mut)}
+  .toggle{display:flex;align-items:center;justify-content:space-between;background:var(--gl);border-radius:14px;padding:10px 12px;font-size:13px;font-weight:700;color:var(--g)}
+  .sw{width:42px;height:24px;border-radius:20px;background:var(--g);position:relative}
+  .sw:after{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+  .ring{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+  .code{display:flex;gap:8px;justify-content:center;margin:12px 0}
+  .code div{width:44px;height:52px;border:2px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800}
+  .code div.f{border-color:#2D6CDF}
+  .track{position:absolute;left:12px;right:12px;top:10px;background:#fff;border-radius:14px;padding:9px 12px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+  .steps{display:flex;gap:4px;margin-top:7px}
+  .steps div{flex:1;height:4px;border-radius:4px;background:var(--line)} .steps .d{background:var(--g)}
+  .drv{display:flex;align-items:center;gap:10px}
+  .av{width:40px;height:40px;border-radius:50%;background:#D9E3F0;display:flex;align-items:center;justify-content:center;font-weight:800;color:#3B4C63}
+  .ic{width:36px;height:36px;border-radius:50%;background:var(--gl);display:flex;align-items:center;justify-content:center;font-size:16px}
+  .sos{position:absolute;right:12px;bottom:12px;width:46px;height:46px;border-radius:50%;background:var(--r);color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(215,38,61,.4)}
+  .photo{height:70px;border:2px dashed #B8C2CC;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px;margin-bottom:10px}
+
+  /* console */
+  .desk{width:1820px;height:960px;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.2);display:flex;flex-direction:column}
+  .chrome{height:34px;background:#DDE1E6;display:flex;align-items:center;gap:7px;padding:0 14px;flex:none}
+  .chrome i{width:11px;height:11px;border-radius:50%;background:#FF5F57}
+  .chrome i:nth-child(2){background:#FEBC2E} .chrome i:nth-child(3){background:#28C840}
+  .chrome .url{margin-left:16px;background:#fff;border-radius:6px;padding:4px 14px;font-size:12px;color:var(--mut);width:420px}
+  .app{flex:1;display:flex;min-height:0}
+  .side{position:relative;width:220px;background:#0F2A1E;color:#C9D8CF;padding:18px 12px;font-size:14px;flex:none}
+  .logo{color:#fff;font-weight:800;font-size:19px;margin:0 8px 22px}
+  .logo span{color:var(--o)}
+  .side div.it{padding:10px 12px;border-radius:9px;margin-bottom:2px;display:flex;justify-content:space-between}
+  .side .it.on{background:#1C4A35;color:#fff;font-weight:700}
+  .side .badge{background:var(--o);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;font-weight:700}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+  .bar{height:62px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;flex:none}
+  .bar h2{font-size:19px}
+  .search{background:var(--bg);border-radius:9px;padding:8px 14px;color:var(--mut);font-size:13px;width:420px;white-space:nowrap}
+  .krow{display:flex;gap:14px;padding:16px 22px 0;flex:none}
+  .k{flex:1;background:#fff;border-radius:12px;padding:13px 16px;border:1px solid var(--line)}
+  .k span{font-size:12px;color:var(--mut)} .k b{display:block;font-size:24px;margin-top:2px}
+  .k em{font-style:normal;font-size:12px;color:var(--g);font-weight:700}
+  .k em.bad{color:var(--r)}
+  .grid{flex:1;display:flex;gap:14px;padding:14px 22px 18px;min-height:0}
+  .bigmap{flex:1;border-radius:12px;overflow:hidden;position:relative;border:1px solid var(--line);background:#EFE9DC}
+  .bigmap svg{position:absolute;inset:0;width:100%;height:100%}
+  .legend{position:absolute;left:14px;bottom:14px;background:#fff;border-radius:10px;padding:10px 14px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.12);display:flex;gap:16px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .filters{position:absolute;left:14px;top:14px;display:flex;gap:6px}
+  .filters div{background:#fff;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+  .filters .on{background:var(--g);color:#fff}
+  .panel{width:470px;display:flex;flex-direction:column;gap:14px;flex:none;min-height:0}
+  .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .box h3{font-size:14px;margin-bottom:10px;display:flex;justify-content:space-between}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td,th{padding:7px 4px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:11px}
+  .mini{font-size:11px;padding:5px 10px;border-radius:8px;font-weight:700;display:inline-block}
+  .m-g{background:var(--g);color:#fff} .m-r{background:#FDE7EA;color:var(--r)} .m-w{background:var(--bg)}
+  .kyc{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}
+  .kyc:last-child{border:0}
+  .docs{display:flex;gap:4px;margin-top:3px}
+  .docs span{white-space:nowrap;font-size:10px;padding:2px 6px;border-radius:5px;background:var(--gl);color:var(--g);font-weight:700}
+  .docs span.x{background:#FFF1E0;color:#B85F00}
+</style>
+</head>
+<body>
+
+<!-- ===================== PHONES ===================== -->
+<div class="board" id="phones">
+  <h1>Yaar Livraison: maquettes des applications mobiles</h1>
+  <div class="sub">Nom, couleurs et contenus provisoires. Exemples de quartiers et de prix à Ouagadougou, à titre indicatif.</div>
+  <div class="row">
+
+    <!-- 1 Client: order -->
+    <div class="col">
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09:41</span><span>Orange BF ▂▄▆</span></div>
+        <div class="top"><div class="hello">Bonjour Aminata 👋</div><div class="h">Où livrer ?</div></div>
+        <div class="map" data-map="order"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="addr"><div class="dot" style="background:var(--o)"></div><div><b>Restaurant Le Verdoyant</b><span>Avenue Kwame Nkrumah</span></div></div>
+          <div class="addr"><div class="dot" style="background:var(--g)"></div><div><b>Patte d'Oie, secteur 15</b><span>Repère : derrière la station Total, portail bleu</span></div></div>
+          <div class="veh">
+            <div class="v"><div class="e">🚲</div><b>Vélo</b><span>1 000 F</span></div>
+            <div class="v on"><div class="e">🏍️</div><b>Moto</b><span>1 500 F</span></div>
+            <div class="v"><div class="e">🚗</div><b>Voiture</b><span>3 000 F</span></div>
+          </div>
+          <div class="pay"><span>Paiement</span><b>💵 Espèces · 6,2 km · ~22 min</b></div>
+          <div class="btn">Commander · 1 500 FCFA</div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag t-client">CLIENT</span> Commander une course<small>Épingle + point de repère, choix du véhicule, prix affiché avant de valider</small></div>
+    </div>
+
+    <!-- 2 Client: tracking -->
+    <div class="col">
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09:58</span><span>Orange BF ▂▄▆</span></div>
+        <div class="map" data-map="track">
+          <div class="track"><div class="between"><b>Votre livreur arrive</b><span class="pill p-go">8 min</span></div>
+            <div class="steps"><div class="d"></div><div class="d"></div><div class="d"></div><div></div></div>
+            <div class="muted" style="margin-top:5px;font-size:11px">Commande acceptée · Préparée · <b style="color:var(--g)">En route</b> · Livrée</div>
+          </div>
+        </div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="drv" style="margin-bottom:10px">
+            <div class="av">IS</div>
+            <div style="flex:1;font-size:12px"><b style="font-size:14px">Issouf S.</b> ⭐ 4,9<br><span class="muted">Moto · 11 JJ 4521 · vérifié ✔</span></div>
+            <div class="ic">📞</div><div class="ic">💬</div>
+          </div>
+          <div style="background:var(--bg);border-radius:12px;padding:10px;text-align:center;margin-bottom:10px">
+            <div class="muted" style="font-size:11px">Code à donner au livreur à la réception</div>
+            <div style="font-size:28px;font-weight:800;letter-spacing:8px;color:var(--g)">4 7 2 9</div>
+          </div>
+          <div class="pay"><span>À payer à la livraison</span><b>💵 6 500 FCFA</b></div>
+        </div>
+        <div class="nav"><div class="on"><i>🏠</i>Accueil</div><div><i>📦</i>Commandes</div><div><i>🏪</i>Boutiques</div><div><i>👤</i>Profil</div></div>
+      </div></div>
+      <div class="cap"><span class="tag t-client">CLIENT</span> Suivi en temps réel<small>Position du livreur, identité vérifiée, appel, code de livraison</small></div>
+    </div>
+
+    <!-- 3 Seller -->
+    <div class="col">
+      <div class="phone"><div class="scr" style="background:#fff">
+        <div class="sb"><span>09:42</span><span>Moov ▂▄▆</span></div>
+        <div class="top"><div class="hello">Le Verdoyant · <span style="color:var(--g);font-weight:700">● Ouvert</span></div><div class="h">Commandes du jour</div></div>
+        <div style="padding:0 14px;flex:1;overflow:hidden">
+          <div class="kpis">
+            <div class="kpi"><b>23</b><span>Commandes</span></div>
+            <div class="kpi"><b>184 500 F</b><span>Ventes</span></div>
+            <div class="kpi"><b>12 min</b><span>Préparation</span></div>
+          </div>
+          <div class="card" style="border-color:var(--o);background:#FFFAF3">
+            <div class="between"><b>#1048 · Aminata K.</b><span class="pill p-new">NOUVELLE</span></div>
+            <div class="muted" style="margin:5px 0 8px">2× Riz gras poulet · 1× Bissap 50 cl · Patte d'Oie</div>
+            <div class="between"><b>6 500 F</b><span class="muted">il y a 1 min</span></div>
+            <div style="display:flex;gap:6px;margin-top:9px"><div class="btn ghost" style="flex:1;padding:8px;font-size:12px">Refuser</div><div class="btn o" style="flex:2;padding:8px;font-size:12px">Accepter · 15 min</div></div>
+          </div>
+          <div class="card">
+            <div class="between"><b>#1047 · Paul T.</b><span class="pill p-prep">EN PRÉPARATION</span></div>
+            <div class="muted" style="margin:5px 0 6px">1× Poulet bicyclette braisé · Zogona</div>
+            <div class="between"><b>7 000 F</b><span style="color:#2D55B5;font-weight:700">Prête → appeler un livreur</span></div>
+          </div>
+          <div class="card">
+            <div class="between"><b>#1046 · Mariam O.</b><span class="pill p-go">EN LIVRAISON</span></div>
+            <div class="muted" style="margin:5px 0 6px">3× Tô sauce gombo · Ouaga 2000</div>
+            <div class="between"><b>4 500 F</b><span class="muted">🏍️ Issouf S. · 6 min</span></div>
+          </div>
+        </div>
+        <div class="nav"><div class="on" style="color:var(--o)"><i>🧾</i>Commandes</div><div><i>🍲</i>Menu</div><div><i>📊</i>Ventes</div><div><i>⚙️</i>Boutique</div></div>
+      </div></div>
+      <div class="cap"><span class="tag t-seller">VENDEUR</span> Gestion des commandes<small>Accepter, préparer, appeler un livreur, suivre les ventes</small></div>
+    </div>
+
+    <!-- 4 Driver: new job -->
+    <div class="col">
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>09:43</span><span>Orange BF ▂▄▆</span></div>
+        <div class="top">
+          <div class="toggle"><span>● En ligne : suivi GPS actif</span><div class="sw"></div></div>
+        </div>
+        <div class="map" data-map="driver"><div class="sos">SOS</div></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="between" style="margin-bottom:8px"><b style="font-size:15px">Nouvelle course 🔔</b><span class="pill" style="background:#E7EEFF;color:#2D55B5">0:14</span></div>
+          <div class="addr"><div class="dot" style="background:var(--o)"></div><div><b>Récupérer : Le Verdoyant</b><span>1,1 km · Av. Kwame Nkrumah</span></div></div>
+          <div class="addr"><div class="dot" style="background:var(--g)"></div><div><b>Livrer : Patte d'Oie, sect. 15</b><span>6,2 km · Espèces à encaisser : 6 500 F</span></div></div>
+          <div class="between" style="background:var(--bg);border-radius:12px;padding:9px 12px;margin:8px 0 10px;font-size:12px"><span class="muted">Votre gain</span><b style="font-size:17px;color:var(--g)">1 200 FCFA</b></div>
+          <div style="display:flex;gap:8px"><div class="btn ghost" style="flex:1">Refuser</div><div class="btn b" style="flex:2">Accepter</div></div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag t-driver">LIVREUR</span> Recevoir une course<small>Suivi uniquement quand le livreur est en ligne, bouton SOS</small></div>
+    </div>
+
+    <!-- 5 Driver: proof of delivery -->
+    <div class="col">
+      <div class="phone"><div class="scr">
+        <div class="sb"><span>10:05</span><span>Orange BF ▂▄▆</span></div>
+        <div class="top"><div class="hello">Course #1048 · Aminata K.</div><div class="h">Confirmer la livraison</div></div>
+        <div style="padding:4px 16px;flex:1">
+          <div style="font-size:13px;text-align:center" class="muted">Demandez le code au client</div>
+          <div class="code"><div>4</div><div>7</div><div>2</div><div class="f">|</div></div>
+          <div class="photo">📷 Photo du colis remis (facultatif)</div>
+          <div class="card" style="background:#FFFAF3;border-color:#F6D3A8">
+            <div class="between"><span>💵 Espèces à encaisser</span><b style="font-size:16px">6 500 F</b></div>
+          </div>
+          <div class="card">
+            <div class="between"><span class="muted">Cash détenu aujourd'hui</span><b>38 500 F</b></div>
+            <div style="height:6px;background:var(--line);border-radius:6px;margin:8px 0 5px"><div style="width:77%;height:100%;background:var(--o);border-radius:6px"></div></div>
+            <div class="muted" style="font-size:10px">Plafond 50 000 F : à déposer avant 18 h</div>
+          </div>
+          <div class="card between"><span class="muted">Gains du jour · 9 courses</span><b style="color:var(--g)">10 800 F</b></div>
+        </div>
+        <div style="padding:0 16px 14px"><div class="btn b">Valider la livraison</div></div>
+        <div class="nav"><div class="on" style="color:#2D6CDF"><i>🛵</i>Courses</div><div><i>💰</i>Gains</div><div><i>📄</i>Documents</div><div><i>👤</i>Profil</div></div>
+      </div></div>
+      <div class="cap"><span class="tag t-driver">LIVREUR</span> Preuve de livraison<small>Code client + photo, suivi du cash encaissé et des gains</small></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===================== CONSOLE ===================== -->
+<div class="board" id="console" style="width:1900px">
+  <h1>Console de contrôle (web) : vue Contrôleur</h1>
+  <div class="sub">Supervision en temps réel des livreurs et des courses, affectation, validation des pièces, litiges</div>
+  <div class="desk">
+    <div class="chrome"><i></i><i></i><i></i><div class="url">🔒 console.yaar-livraison.bf/live</div></div>
+    <div class="app">
+      <div class="side">
+        <div class="logo">Yaar<span>·</span>Console</div>
+        <div class="it on"><span>🗺️ Carte en direct</span></div>
+        <div class="it"><span>📦 Courses</span><span class="badge">4</span></div>
+        <div class="it"><span>🛵 Livreurs</span></div>
+        <div class="it"><span>🪪 Validation KYC</span><span class="badge">7</span></div>
+        <div class="it"><span>🏪 Vendeurs</span></div>
+        <div class="it"><span>👥 Clients</span></div>
+        <div class="it"><span>⚠️ Litiges</span><span class="badge">2</span></div>
+        <div class="it"><span>💵 Caisse livreurs</span></div>
+        <div class="it"><span>🏷️ Tarifs &amp; zones</span></div>
+        <div class="it"><span>📊 Rapports</span></div>
+        <div class="it"><span>🔐 Journal d'audit</span></div>
+        <div style="position:absolute;bottom:30px;font-size:12px;opacity:.8">Salif K. · Dispatcher</div>
+      </div>
+      <div class="main">
+        <div class="bar"><h2>Carte en direct · Ouagadougou</h2><div class="search">🔍 Rechercher une course, un livreur, un téléphone…</div></div>
+        <div class="krow">
+          <div class="k"><span>Livreurs en ligne</span><b>86</b><em>🚲 14 · 🏍️ 61 · 🚗 11</em></div>
+          <div class="k"><span>Courses en cours</span><b>42</b><em>+12 % vs hier</em></div>
+          <div class="k"><span>En attente d'un livreur</span><b>4</b><em class="bad">1 depuis plus de 5 min</em></div>
+          <div class="k"><span>Livrées aujourd'hui</span><b>318</b><em>98,1 % sans incident</em></div>
+          <div class="k"><span>Délai moyen</span><b>27 min</b><em>objectif &lt; 30 min</em></div>
+          <div class="k"><span>Cash détenu par les livreurs</span><b>1,84 M F</b><em class="bad">3 livreurs au plafond</em></div>
+        </div>
+        <div class="grid">
+          <div class="bigmap" data-map="console">
+            <div class="filters"><div class="on">Tous</div><div>🚲 Vélo</div><div>🏍️ Moto</div><div>🚗 Voiture</div><div>Zones</div></div>
+            <div class="legend"><span><i style="background:var(--g)"></i>Livreur libre</span><span><i style="background:#2D6CDF"></i>En course</span><span><i style="background:var(--o)"></i>Vendeur</span><span><i style="background:var(--r)"></i>Commande en attente</span></div>
+          </div>
+          <div class="panel">
+            <div class="box">
+              <h3>Commandes en attente <span class="muted" style="font-weight:400">Affectation auto activée</span></h3>
+              <table>
+                <tr><th>#</th><th>Trajet</th><th>Véh.</th><th>Attente</th><th></th></tr>
+                <tr><td><b>1052</b></td><td>Zogona → Tampouy</td><td>🏍️</td><td style="color:var(--r);font-weight:700">6:12</td><td><span class="mini m-g">Affecter</span></td></tr>
+                <tr><td><b>1053</b></td><td>Marché Rood Woko → Gounghin</td><td>🚗</td><td>2:40</td><td><span class="mini m-g">Affecter</span></td></tr>
+                <tr><td><b>1054</b></td><td>Ouaga 2000 → Dassasgho</td><td>🏍️</td><td>0:55</td><td><span class="mini m-w">Auto…</span></td></tr>
+                <tr><td><b>1055</b></td><td>Cissin → Pissy</td><td>🚲</td><td>0:20</td><td><span class="mini m-w">Auto…</span></td></tr>
+              </table>
+            </div>
+            <div class="box">
+              <h3>Dossiers livreurs à valider <span class="muted" style="font-weight:400">7</span></h3>
+              <div class="kyc"><div class="av">OB</div><div style="flex:1"><b>Ousmane B.</b> · Moto 11 KM 2280<div class="docs"><span>CNIB ✔</span><span>Permis ✔</span><span>Carte grise ✔</span><span>Assurance ✔</span><span>Selfie ✔</span></div></div><span class="mini m-g">Valider</span></div>
+              <div class="kyc"><div class="av">FZ</div><div style="flex:1"><b>Fatimata Z.</b> · Vélo<div class="docs"><span>CNIB ✔</span><span>Selfie ✔</span></div></div><span class="mini m-g">Valider</span></div>
+              <div class="kyc"><div class="av">AT</div><div style="flex:1"><b>Abdoul T.</b> · Voiture 11 HH 0917<div class="docs"><span>CNIB ✔</span><span>Permis ✔</span><span class="x">Assurance expirée</span></div></div><span class="mini m-r">Refuser</span></div>
+            </div>
+            <div class="box">
+              <h3>Alertes</h3>
+              <div style="font-size:12px;line-height:1.9">
+                <div>🔴 <b>SOS</b> · Livreur Karim D. · Tanghin · il y a 2 min <span class="mini m-r" style="float:right">Appeler</span></div>
+                <div>🟠 GPS suspect (vitesse 140 km/h) · livreur #A-218</div>
+                <div>🟠 Litige #1031 : colis endommagé · Wemtenga</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Stylised map (not a real map of the city) */
+function mapSVG(kind,w,h){
+  const S=(a)=>a.join('');
+  let o=[`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">`];
+  o.push(`<rect width="${w}" height="${h}" fill="#EFE9DC"/>`);
+  // blocks
+  for(let x=0;x<w;x+=70)for(let y=0;y<h;y+=60){
+    const c=((x*7+y*3)%5===0)?'#E5DECD':'#ECE5D5';
+    o.push(`<rect x="${x+8}" y="${y+8}" width="54" height="44" rx="4" fill="${c}"/>`);
+  }
+  // park & water
+  o.push(`<path d="M${w*.05},${h*.08} q${w*.15},-${h*.05} ${w*.25},${h*.06} t${w*.05},${h*.18} q-${w*.18},${h*.06} -${w*.27},-${h*.02}z" fill="#CFE6C4"/>`);
+  o.push(`<path d="M${w*.62},${h*.02} q${w*.1},${h*.08} ${w*.32},${h*.05} l0,${h*.07} q-${w*.2},${h*.04} -${w*.34},-${h*.04}z" fill="#BFDDF2"/>`);
+  // roads
+  const roads=[[0,h*.32,w,h*.36,10],[0,h*.7,w,h*.62,10],[w*.3,0,w*.36,h,10],[w*.72,0,w*.66,h,9],
+               [0,h*.95,w,h*.05,7],[0,h*.5,w,h*.52,5],[w*.5,0,w*.52,h,5],[w*.12,0,w*.15,h,5],[w*.88,0,w*.9,h,5]];
+  roads.forEach(r=>{o.push(`<line x1="${r[0]}" y1="${r[1]}" x2="${r[2]}" y2="${r[3]}" stroke="#fff" stroke-width="${r[4]}" stroke-linecap="round"/>`)});
+  o.push(`<circle cx="${w*.33}" cy="${h*.34}" r="16" fill="#fff"/><circle cx="${w*.33}" cy="${h*.34}" r="7" fill="#CFE6C4"/>`);
+  const pin=(x,y,c,label)=>`<g><circle cx="${x}" cy="${y}" r="13" fill="${c}" opacity=".18"/><circle cx="${x}" cy="${y}" r="7" fill="${c}" stroke="#fff" stroke-width="2.5"/>${label?`<rect x="${x+11}" y="${y-11}" rx="5" width="${label.length*6.3+12}" height="20" fill="#fff" stroke="#ddd"/><text x="${x+17}" y="${y+3}" font-size="11" font-family="Arial" font-weight="700" fill="#17212B">${label}</text>`:''}</g>`;
+  const moto=(x,y,c)=>`<g><circle cx="${x}" cy="${y}" r="12" fill="${c}" stroke="#fff" stroke-width="2.5"/><text x="${x}" y="${y+4}" font-size="12" text-anchor="middle">🏍</text></g>`;
+  const route=(pts,c)=>`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if(kind==='order'){
+    o.push(route([[w*.33,h*.2],[w*.33,h*.34],[w*.7,h*.34],[w*.68,h*.66],[w*.78,h*.65]],'#0B7A4B'));
+    o.push(pin(w*.33,h*.2,'#F28C1B','Le Verdoyant'));
+    o.push(`<g transform="translate(${w*.78},${h*.65})"><path d="M0,0 c-14,-18 -14,-30 0,-34 c14,4 14,16 0,34z" fill="#0B7A4B" stroke="#fff" stroke-width="2"/><circle cx="0" cy="-22" r="5" fill="#fff"/></g>`);
+  }
+  if(kind==='track'){
+    o.push(route([[w*.25,h*.33],[w*.68,h*.37],[w*.66,h*.65],[w*.8,h*.64]],'#0B7A4B'));
+    o.push(`<polyline points="${w*.25},${h*.33} ${w*.52},${h*.35}" stroke="#9FB0A6" stroke-width="5" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/>`);
+    o.push(moto(w*.55,h*.355,'#2D6CDF'));
+    o.push(pin(w*.8,h*.64,'#0B7A4B','Vous'));
+  }
+  if(kind==='driver'){
+    o.push(route([[w*.5,h*.6],[w*.5,h*.36],[w*.35,h*.34],[w*.33,h*.2]],'#2D6CDF'));
+    o.push(moto(w*.5,h*.6,'#2D6CDF'));
+    o.push(pin(w*.33,h*.2,'#F28C1B','Récupérer'));
+  }
+  if(kind==='console'){
+    const names=['Tampouy','Pissy','Gounghin','Zogona','Ouaga 2000','Patte d\'Oie','Dassasgho','Tanghin','Cissin','Wemtenga'];
+    const pos=[[.2,.15],[.08,.6],[.22,.45],[.6,.42],[.6,.88],[.42,.8],[.86,.45],[.5,.12],[.2,.85],[.8,.7]];
+    names.forEach((n,i)=>o.push(`<text x="${w*pos[i][0]}" y="${h*pos[i][1]}" font-size="15" font-family="Arial" font-weight="700" fill="#8C8371" opacity=".75">${n}</text>`));
+    let seed=7;const rnd=()=>{seed=(seed*9301+49297)%233280;return seed/233280};
+    for(let i=0;i<34;i++){o.push(`<circle cx="${rnd()*w}" cy="${rnd()*h}" r="7" fill="#0B7A4B" stroke="#fff" stroke-width="2"/>`)}
+    for(let i=0;i<22;i++){const x=rnd()*w,y=rnd()*h;o.push(`<line x1="${x}" y1="${y}" x2="${x+(rnd()-.5)*160}" y2="${y+(rnd()-.5)*120}" stroke="#2D6CDF" stroke-width="2.5" stroke-dasharray="5 5" opacity=".6"/><circle cx="${x}" cy="${y}" r="8" fill="#2D6CDF" stroke="#fff" stroke-width="2"/>`)}
+    for(let i=0;i<14;i++){o.push(`<rect x="${rnd()*w}" y="${rnd()*h}" width="12" height="12" rx="3" fill="#F28C1B" stroke="#fff" stroke-width="2"/>`)}
+    [[.27,.27],[.47,.6],[.75,.3],[.15,.78]].forEach(p=>o.push(`<g><circle cx="${w*p[0]}" cy="${h*p[1]}" r="18" fill="#D7263D" opacity=".18"/><circle cx="${w*p[0]}" cy="${h*p[1]}" r="9" fill="#D7263D" stroke="#fff" stroke-width="2.5"/></g>`));
+    o.push(`<g><circle cx="${w*.55}" cy="${h*.22}" r="26" fill="#D7263D" opacity=".15"/><circle cx="${w*.55}" cy="${h*.22}" r="10" fill="#D7263D" stroke="#fff" stroke-width="3"/><rect x="${w*.55+14}" y="${h*.22-12}" width="96" height="22" rx="6" fill="#D7263D"/><text x="${w*.55+22}" y="${h*.22+4}" fill="#fff" font-size="12" font-weight="700" font-family="Arial">SOS · Karim D.</text></g>`);
+  }
+  o.push('</svg>');return S(o);
+}
+document.querySelectorAll('[data-map]').forEach(el=>{
+  const r=el.getBoundingClientRect();
+  el.insertAdjacentHTML('afterbegin',mapSVG(el.dataset.map,Math.round(r.width),Math.round(r.height)));
+});
+</script>
+</body>
+</html>
