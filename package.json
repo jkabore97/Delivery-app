@@ -1,0 +1,23 @@
+{
+  "name": "yaar-livraison",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yaar Livraison: plateforme de livraison à la demande pour Ouagadougou (MVP Lot 1)",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/console"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run typecheck",
+    "dev:api": "npm run dev -w apps/api",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "dev:console": "npm run dev -w apps/console"
+  }
+}

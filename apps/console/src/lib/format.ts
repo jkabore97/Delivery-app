@@ -1,0 +1,90 @@
+import { formatFcfa } from '@yaar/shared';
+
+export { formatFcfa };
+
+const TZ = 'Africa/Ouagadougou';
+
+const dateTimeFmt = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: TZ,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const timeFmt = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+
+const dateFmt = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '-' : dateTimeFmt.format(d);
+}
+
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '-' : timeFmt.format(d);
+}
+
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '-' : dateFmt.format(d);
+}
+
+/** Durée d'attente « m:ss » (ou « h:mm:ss » au-delà d'une heure). */
+export function formatWaiting(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const ss = sec.toString().padStart(2, '0');
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${ss}`;
+  return `${m}:${ss}`;
+}
+
+/** « il y a 2 min » à partir d'une date ISO. */
+export function formatRelative(iso: string, now: Date = new Date()): string {
+  const diffSec = Math.round((now.getTime() - new Date(iso).getTime()) / 1000);
+  if (diffSec < 45) return "à l'instant";
+  const min = Math.round(diffSec / 60);
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const days = Math.round(h / 24);
+  return `il y a ${days} j`;
+}
+
+/** Montant compact pour les cartes KPI : 1 840 000 -> « 1,84 M F », 90 500 -> « 90 500 F ». */
+export function formatFcfaCompact(amount: number): string {
+  if (Math.abs(amount) >= 1_000_000) {
+    const v = (amount / 1_000_000).toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
+    return `${v} M F`;
+  }
+  return formatFcfa(amount).replace(' FCFA', ' F');
+}
+
+/** Initiales pour les avatars (« Ousmane B. » -> « OB »). */
+export function initials(name: string | null | undefined): string {
+  if (!name) return '?';
+  const parts = name
+    .replace(/[^\p{L}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const letters = parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '');
+  return letters.join('') || '?';
+}
+
+export function formatPhone(phone: string | null | undefined): string {
+  if (!phone) return '-';
+  const m = /^\+226(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(phone);
+  return m ? `+226 ${m[1]} ${m[2]} ${m[3]} ${m[4]}` : phone;
+}
+
+export function formatKm(km: number | null | undefined): string {
+  if (km === null || km === undefined) return '-';
+  return `${km.toFixed(1).replace('.', ',')} km`;
+}

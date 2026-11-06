@@ -1,8 +1,8 @@
 # Delivery platform: Ouagadougou project brief
 
-Status: **planning only. Nothing has been built yet.**
-Signable contract: [`docs/contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf`](contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf)
-(to regenerate it, run `python3 docs/contrat/generate_contract.py`)
+Status: **Lot 1 MVP under construction.** Code: `packages/shared`, `apps/api`, `apps/console`, `apps/mobile` (see the root README and [`docs/API.md`](API.md)).
+Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagadougou.pdf`](contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf) and short version [`Contrat_Court_Plateforme_Livraison_Ouagadougou.pdf`](contrat/Contrat_Court_Plateforme_Livraison_Ouagadougou.pdf)
+(to regenerate them, run `python3 docs/contrat/generate_contract.py` and `python3 docs/contrat/generate_contract_short.py`)
 
 ## 1. What the owner must provide before development starts
 
@@ -63,8 +63,8 @@ Signable contract: [`docs/contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf`]
 8. Driver SOS button, ratings in both directions, and suspension rules.
 
 **Technology**
-1. **Flutter** for the three mobile apps: one codebase for Android and iOS, good performance on low-end Android. Launch on Android first (most users), iOS second.
-2. Backend: **Node.js (NestJS) or Laravel** + **PostgreSQL/PostGIS** for geo queries, with **WebSockets** (Socket.IO) for live tracking and **Redis** for live driver positions.
+1. **React Native (Expo)** in TypeScript for the mobile app: one app with Client, Vendeur and Livreur modes, one codebase for Android and iOS. Launch on Android first (most users), iOS second. *(Changed from the original Flutter proposal so that the server, console and app share one TypeScript package for prices and order rules.)*
+2. Backend: **Node.js (Fastify) + Prisma + PostgreSQL**, with **WebSockets** (Socket.IO) for live tracking. PostGIS, Redis and road routing (OSRM) are planned for scale-up.
 3. Controller console: **React** web app.
 4. Maps: OpenStreetMap-based maps (Mapbox or MapLibre) to control cost. Google Maps has better POI data but costs more, so compare. Use OSRM or Valhalla for routing.
 5. Notifications: Firebase Cloud Messaging. OTP: a local SMS provider (Orange or an aggregator).

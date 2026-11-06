@@ -1,0 +1,484 @@
+// Schéma de données Yaar Livraison (Lot 1).
+// Montants : entiers en FCFA. Coordonnées : degrés décimaux (WGS84).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  SELLER
+  DRIVER
+  CONTROLLER
+  ADMIN
+}
+
+enum VehicleType {
+  BIKE
+  MOTO
+  CAR
+}
+
+enum DriverStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum DocumentType {
+  CNIB
+  PERMIS
+  CARTE_GRISE
+  ASSURANCE
+  SELFIE
+}
+
+enum OrderType {
+  FOOD
+  PARCEL
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  READY
+  SEARCHING_DRIVER
+  ASSIGNED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum OfferStatus {
+  OFFERED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum StoreApprovalStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
+enum CashEntryType {
+  COLLECTION
+  DEPOSIT
+}
+
+enum IncidentType {
+  SOS
+  DISPUTE
+  OTHER
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model User {
+  id               String   @id @default(cuid())
+  phone            String   @unique
+  name             String?
+  role             Role
+  isSuspended      Boolean  @default(false)
+  suspensionReason String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  driverProfile     DriverProfile?
+  stores            Store[]
+  savedAddresses    SavedAddress[]
+  clientOrders      Order[]           @relation("ClientOrders")
+  driverOrders      Order[]           @relation("DriverOrders")
+  offers            DispatchOffer[]
+  ratingsGiven      Rating[]          @relation("RatingFrom")
+  ratingsReceived   Rating[]          @relation("RatingTo")
+  incidentsReported Incident[]        @relation("IncidentReporter")
+  incidentsResolved Incident[]        @relation("IncidentResolver")
+  auditLogs         AuditLog[]
+  cashEntries       CashLedgerEntry[] @relation("CashDriver")
+  cashRecorded      CashLedgerEntry[] @relation("CashRecorder")
+  locationPings     LocationPing[]
+  pushTokens        PushToken[]
+  orderMessages     OrderMessage[]
+
+  @@index([role])
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model DriverProfile {
+  userId            String       @id
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType       VehicleType
+  plate             String?
+  status            DriverStatus @default(PENDING)
+  rejectionReason   String?
+  suspensionReason  String?
+  approvedAt        DateTime?
+  approvedById      String?
+  isOnline          Boolean      @default(false)
+  isBusy            Boolean      @default(false)
+  lastLat           Float?
+  lastLng           Float?
+  lastLocationAt    DateTime?
+  /// Passage en ligne le plus récent (délai de grâce avant la mise hors ligne automatique).
+  onlineSince       DateTime?
+  cashHeld          Int          @default(0)
+  /// Consentement explicite du livreur au suivi GPS pendant le service (null = pas de consentement).
+  trackingConsentAt DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  documents DriverDocument[]
+
+  @@index([status])
+  @@index([isOnline, isBusy, vehicleType])
+}
+
+model DriverDocument {
+  id         String        @id @default(cuid())
+  driverId   String
+  driver     DriverProfile @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  type       DocumentType
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  expiresAt  DateTime?
+  uploadedAt DateTime      @default(now())
+
+  @@unique([driverId, type])
+}
+
+model LocationPing {
+  id        String   @id @default(cuid())
+  driverId  String
+  driver    User     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  orderId   String?
+  lat       Float
+  lng       Float
+  accuracy  Float?
+  heading   Float?
+  speed     Float?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([driverId, createdAt])
+}
+
+model Store {
+  id                String              @id @default(cuid())
+  ownerId           String
+  owner             User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  description       String              @default("")
+  phone             String?
+  address           String
+  landmark          String              @default("")
+  lat               Float
+  lng               Float
+  isOpen            Boolean             @default(false)
+  prepTimeMinutes   Int                 @default(15)
+  openingHours      String              @default("")
+  commissionPercent Float               @default(10)
+  /// Validation de la boutique par la console : seules les boutiques APPROVED sont visibles des clients.
+  approvalStatus    StoreApprovalStatus @default(PENDING)
+  approvalNote      String?
+  approvedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  products Product[]
+  orders   Order[]
+
+  @@index([ownerId])
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String
+  description   String   @default("")
+  category      String   @default("")
+  price         Int
+  isAvailable   Boolean  @default(true)
+  isDeleted     Boolean  @default(false)
+  imageKey      String?
+  imageMimeType String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([storeId])
+}
+
+model SavedAddress {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  lat       Float
+  lng       Float
+  address   String
+  landmark  String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  number      Int         @unique @default(autoincrement())
+  type        OrderType
+  status      OrderStatus
+  clientId    String
+  client      User        @relation("ClientOrders", fields: [clientId], references: [id])
+  storeId     String?
+  store       Store?      @relation(fields: [storeId], references: [id])
+  driverId    String?
+  driver      User?       @relation("DriverOrders", fields: [driverId], references: [id])
+  vehicleType VehicleType
+
+  pickupLat       Float
+  pickupLng       Float
+  pickupAddress   String
+  pickupLandmark  String @default("")
+  dropoffLat      Float
+  dropoffLng      Float
+  dropoffAddress  String
+  dropoffLandmark String @default("")
+
+  recipientName     String?
+  recipientPhone    String?
+  parcelDescription String?
+  notes             String?
+
+  distanceKm    Float
+  itemsTotal    Int
+  deliveryFee   Int
+  commission    Int
+  driverEarning Int
+  sellerPayout  Int
+  total         Int
+
+  paymentMethod PaymentMethod @default(CASH)
+  paymentStatus PaymentStatus @default(PENDING)
+  cashCollected Int?
+
+  deliveryCode         String
+  deliveryCodeAttempts Int       @default(0)
+  proofPhotoKey        String?
+  prepTimeMinutes      Int?
+  cancelReason         String?
+  /// Date de purge des positions et adresses du client (rétention 12 mois).
+  locationPurgedAt     DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  acceptedAt     DateTime?
+  readyAt        DateTime?
+  searchingSince DateTime?
+  assignedAt     DateTime?
+  pickedUpAt     DateTime?
+  deliveredAt    DateTime?
+  cancelledAt    DateTime?
+
+  items       OrderItem[]
+  events      OrderEvent[]
+  offers      DispatchOffer[]
+  ratings     Rating[]
+  incidents   Incident[]
+  cashEntries CashLedgerEntry[]
+  messages    OrderMessage[]
+
+  @@index([status])
+  @@index([clientId])
+  @@index([storeId])
+  @@index([driverId])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  name      String
+  unitPrice Int
+  quantity  Int
+
+  @@index([orderId])
+}
+
+model OrderEvent {
+  id         String       @id @default(cuid())
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  actorId    String?
+  actorRole  Role?
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model DispatchOffer {
+  id          String      @id @default(cuid())
+  orderId     String
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driverId    String
+  driver      User        @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  status      OfferStatus @default(OFFERED)
+  distanceKm  Float?
+  offeredAt   DateTime    @default(now())
+  expiresAt   DateTime
+  respondedAt DateTime?
+
+  @@index([orderId, status])
+  @@index([driverId, status])
+  @@index([status, expiresAt])
+}
+
+model PricingRule {
+  vehicleType       VehicleType @id
+  baseFare          Int
+  perKm             Int
+  minimumFare       Int
+  commissionPercent Float       @default(20)
+  isActive          Boolean     @default(true)
+  updatedAt         DateTime    @updatedAt
+  updatedById       String?
+}
+
+model CashLedgerEntry {
+  id           String        @id @default(cuid())
+  driverId     String
+  driver       User          @relation("CashDriver", fields: [driverId], references: [id], onDelete: Cascade)
+  type         CashEntryType
+  amount       Int
+  balanceAfter Int
+  orderId      String?
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  recordedById String?
+  recordedBy   User?         @relation("CashRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime      @default(now())
+
+  @@index([driverId, createdAt])
+}
+
+model Incident {
+  id             String         @id @default(cuid())
+  type           IncidentType
+  status         IncidentStatus @default(OPEN)
+  reporterId     String
+  reporter       User           @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  orderId        String?
+  order          Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  lat            Float?
+  lng            Float?
+  description    String
+  resolutionNote String?
+  resolvedById   String?
+  resolvedBy     User?          @relation("IncidentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  resolvedAt     DateTime?
+
+  @@index([status, type])
+}
+
+model Rating {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromUserId String
+  fromUser   User     @relation("RatingFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("RatingTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  score      Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([orderId, fromUserId])
+  @@index([toUserId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+}
+
+/// Jeton de notification push (Expo / FCM) d'un appareil.
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+/// Message échangé entre le client et le livreur pendant une course.
+model OrderMessage {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderRole Role
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}

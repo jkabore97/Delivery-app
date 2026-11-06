@@ -1,0 +1,1184 @@
+# Yaar Livraison: API contract (Lot 1)
+
+This is the single source of truth for the console (`apps/console`) and the mobile app (`apps/mobile`).
+Every request/response type named here is exported by `@yaar/shared` (`packages/shared/src/types.ts`),
+and every request body is validated by the zod schema of the same name in `packages/shared/src/schemas.ts`.
+Clients should import those types and, ideally, validate forms with the same schemas.
+
+- Base URL (dev): `http://localhost:3000` (no path prefix). On an Android emulator use `http://10.0.2.2:3000`.
+- Socket.IO: same origin, default path `/socket.io`.
+- Content type: `application/json; charset=utf-8` for every request body and every JSON response.
+- Dates: ISO 8601 strings in UTC (`2026-11-06T19:23:16.018Z`). Ouagadougou is UTC+0 all year, so "today" = UTC day.
+- Money: integers in FCFA. Distances: kilometres with one decimal. Coordinates: decimal degrees (WGS84).
+- IDs: opaque strings (cuid). `number` on orders is the human-readable order number (starts at 1001, shown as `#1048`).
+- Phone numbers: Burkina Faso numbers. Input accepts `70123456`, `70 12 34 56`, `+22670123456`, `0022670123456`;
+  the API always returns E.164 `+22670123456`.
+- UI language is French. API error `message`s are French sentences that can be shown to users as-is.
+
+## Contents
+
+1. [Conventions](#1-conventions): auth, errors, pagination, files, empty bodies
+2. [Enums](#2-enums)
+3. [Auth and profile](#3-auth-and-profile)
+4. [Stores and catalogue](#4-stores-and-catalogue)
+5. [Seller space](#5-seller-space)
+6. [Orders](#6-orders)
+7. [Driver space](#7-driver-space)
+8. [Controller console](#8-controller-console)
+9. [Realtime (Socket.IO)](#9-realtime-socketio)
+10. [Visibility and privacy rules](#10-visibility-and-privacy-rules)
+11. [Business rules reference](#11-business-rules-reference)
+12. [Demo accounts (seed)](#12-demo-accounts-seed)
+13. [Lot 1 scope: implemented and deferred](#13-lot-1-scope-implemented-and-deferred)
+14. [Changelog](#14-changelog)
+
+---
+
+## 1. Conventions
+
+### 1.1 Authentication
+
+Login is phone number + 6-digit SMS code (OTP). The API returns a JWT access token (HS256, valid
+`expiresIn` seconds, 7 days by default). There is no refresh token in Lot 1: when a request returns
+`401 UNAUTHENTICATED`, send the user back to the login screen.
+
+Send the token on every request except `/health` and `/auth/*`:
+
+```
+Authorization: Bearer <accessToken>
+```
+
+Every authenticated request reloads the user: a suspended account gets `403 ACCOUNT_SUSPENDED` immediately,
+even with a valid token.
+
+Development: when the API runs with `OTP_DEV_BYPASS=true` (never in production) the code `123456` is always
+accepted and real codes are printed in the API log instead of being sent by SMS.
+
+### 1.2 Roles
+
+| Role | Who | Created by |
+|------|-----|------------|
+| `CLIENT` | Customer ordering food or parcels | self sign-up (default) |
+| `SELLER` | Restaurant / shop owner | self sign-up (`role: "SELLER"`) |
+| `DRIVER` | Delivery driver (bike, moto, car) | self sign-up (`role: "DRIVER"`), then KYC approval |
+| `CONTROLLER` | Back-office agent (console) | an `ADMIN` (`POST /controller/staff`) or the seed |
+| `ADMIN` | Back-office administrator | the seed |
+
+One account = one role. `ADMIN` can do everything `CONTROLLER` can, plus create staff and suspend staff.
+In this document "back office" means `CONTROLLER` or `ADMIN`.
+
+A call with a valid token but the wrong role gets `403 FORBIDDEN`. A resource that exists but does not
+belong to the caller (another client's order, another seller's store...) gets `404 NOT_FOUND` so that its
+existence is not revealed.
+
+### 1.3 Error format
+
+Every non-2xx response has this body (`ApiErrorBody`):
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Données invalides (dropoff.lat) : Too big: expected number to be <=90",
+    "details": {
+      "dropoff.lat": ["Too big: expected number to be <=90"],
+      "dropoff.lng": ["Invalid input: expected number, received undefined"],
+      "dropoff.address": ["Invalid input: expected string, received undefined"]
+    }
+  }
+}
+```
+
+`details` is only present for validation errors (key = dotted path in the body/query, `_` for the root).
+
+| HTTP | `code` | When |
+|------|--------|------|
+| 400 | `VALIDATION_ERROR` | Body, query or path parameter rejected by zod; malformed JSON |
+| 400 | `OTP_INVALID` | Wrong, expired or exhausted OTP code |
+| 400 | `PAYMENT_METHOD_UNAVAILABLE` | `MOBILE_MONEY` requested (Lot 2) |
+| 400 | `DELIVERY_CODE_INVALID` | Wrong 4-digit delivery code (message says how many attempts remain) |
+| 401 | `UNAUTHENTICATED` | Missing, invalid or expired token |
+| 403 | `FORBIDDEN` | Wrong role, or action not allowed for this account |
+| 403 | `ACCOUNT_SUSPENDED` | Account suspended by the back office |
+| 403 | `DRIVER_NOT_APPROVED` | Driver tries to go online before KYC approval (or while suspended) |
+| 403 | `DRIVER_OFFLINE` | Location ping sent while offline (privacy rule) |
+| 403 | `CONSENT_REQUIRED` | Driver tries to go online without having consented to GPS tracking (§7.2) |
+| 404 | `NOT_FOUND` | Unknown route or resource, or resource not visible to the caller |
+| 409 | `CONFLICT` | Generic state conflict (duplicate, concurrent update, deposit above balance...) |
+| 409 | `INVALID_TRANSITION` | Order status change not allowed by the state machine |
+| 409 | `DRIVER_BUSY` | Driver has an active delivery (cannot go offline, cannot be assigned, cannot be suspended) |
+| 409 | `DRIVER_OFFLINE` | Manual assignment of an offline driver |
+| 409 | `ORDER_NOT_ACTIVE` | Message sent outside `ASSIGNED`/`PICKED_UP` |
+| 409 | `CASH_LIMIT_REACHED` | Driver holds `>= cashLimit` FCFA: cannot go online / be assigned |
+| 409 | `KYC_INCOMPLETE` | Approval attempted while a required document is missing or expired |
+| 409 | `STORE_CLOSED` | Ordering from a closed store |
+| 409 | `PRODUCT_UNAVAILABLE` | A product in the cart is unavailable |
+| 409 | `PRICING_UNAVAILABLE` | No active pricing rule for the vehicle type |
+| 409 | `OFFER_EXPIRED` | Offer no longer open (expired, rejected, cancelled, order taken) |
+| 409 | `ALREADY_RATED` | The caller already rated this order |
+| 413 | `PAYLOAD_TOO_LARGE` | Body over 8 MB or decoded file over 5 MB |
+| 415 | `UNSUPPORTED_FILE` | File content (magic bytes) does not match the declared `mimeType` |
+| 423 | `DELIVERY_CODE_LOCKED` | 5 wrong delivery codes: the back office must handle it |
+| 429 | `OTP_RATE_LIMITED` | More than 5 OTP requests for one phone in one hour |
+| 429 | `RATE_LIMITED` | Too many `/auth/*` requests from one IP (default 20 code requests / 60 verifications per 10 min) |
+| 500 | `INTERNAL_ERROR` | Unexpected server error |
+
+### 1.4 Pagination
+
+List endpoints marked *paginated* accept `?page=1&pageSize=20` (`pageSize` max 100) and return `Paginated<T>`:
+
+```json
+{ "items": [ ... ], "total": 42, "page": 1, "pageSize": 20 }
+```
+
+### 1.5 Action endpoints without a body
+
+`POST` actions that take no input (`/orders/:id/ready`, `/orders/:id/pickup`, `/driver/offers/:id/accept`, approve...)
+accept no body, an empty body with `Content-Type: application/json`, or the JSON body `{}` (all read as `{}`).
+Malformed JSON → `400 VALIDATION_ERROR` "JSON invalide".
+
+### 1.6 File uploads (base64 JSON)
+
+KYC documents and delivery proof photos are sent inside JSON (`FileUploadInput`):
+
+```json
+{ "mimeType": "image/jpeg", "dataBase64": "/9j/4AAQSkZJRgABAQAAAQABAAD..." }
+```
+
+- `mimeType`: `image/jpeg` | `image/png` | `image/webp` | `application/pdf`.
+- `dataBase64`: raw base64 **without** the `data:image/jpeg;base64,` prefix. Max 5 MB once decoded.
+- On mobile, compress photos (e.g. 1280 px, JPEG quality 0.6) before upload: the network is slow.
+- The decoded content must match `mimeType` (JPEG/PNG/WebP/PDF signature), otherwise `415 UNSUPPORTED_FILE`.
+
+Files are stored encrypted (AES-256-GCM) and are only downloadable through the authenticated binary
+endpoints below (`GET .../documents/:documentId`, `GET /orders/:id/proof-photo`, `GET /products/:id/photo`).
+Those return the raw file with its `Content-Type`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+and `Content-Disposition: inline`; fetch them with the `Authorization` header and
+display them through a blob / object URL (an `<img src>` cannot send the header).
+
+### 1.7 Health
+
+`GET /health` (public) → `200 {"status":"ok","time":"2026-11-06T19:26:46.679Z"}`
+
+---
+
+## 2. Enums
+
+All enums are exported from `@yaar/shared` both as constant objects and as types (e.g. `OrderStatus.DELIVERED`
+and `type OrderStatus`). French UI labels are in `LABELS` (e.g. `LABELS.orderStatus.SEARCHING_DRIVER`).
+
+| Enum | Values |
+|------|--------|
+| `Role` | `CLIENT`, `SELLER`, `DRIVER`, `CONTROLLER`, `ADMIN` |
+| `VehicleType` | `BIKE` (Vélo), `MOTO` (Moto), `CAR` (Voiture) |
+| `DriverStatus` | `PENDING`, `APPROVED`, `REJECTED`, `SUSPENDED` |
+| `DocumentType` | `CNIB`, `PERMIS`, `CARTE_GRISE`, `ASSURANCE`, `SELFIE` |
+| `OrderType` | `FOOD` (from a store), `PARCEL` (A to B) |
+| `OrderStatus` | `PENDING`, `ACCEPTED`, `READY`, `SEARCHING_DRIVER`, `ASSIGNED`, `PICKED_UP`, `DELIVERED`, `CANCELLED` |
+| `PaymentMethod` | `CASH`, `MOBILE_MONEY` (reserved, rejected in Lot 1) |
+| `PaymentStatus` | `PENDING`, `PAID`, `CANCELLED` |
+| `OfferStatus` | `OFFERED`, `ACCEPTED`, `REJECTED`, `EXPIRED`, `CANCELLED` |
+| `CashEntryType` | `COLLECTION` (+, cash collected at delivery), `DEPOSIT` (-, cash handed to the company) |
+| `IncidentType` | `SOS`, `DISPUTE`, `OTHER` |
+| `IncidentStatus` | `OPEN`, `IN_PROGRESS`, `RESOLVED` |
+| `StoreApprovalStatus` | `PENDING` (new store, hidden from clients), `APPROVED`, `SUSPENDED` |
+
+Required KYC documents (`requiredDocuments(vehicleType)` in shared):
+
+| Vehicle | Plate | Documents |
+|---------|-------|-----------|
+| `BIKE` | not required | `CNIB`, `SELFIE` |
+| `MOTO` | required | `CNIB`, `PERMIS`, `CARTE_GRISE`, `ASSURANCE` (with `expiresAt`), `SELFIE` |
+| `CAR` | required | `CNIB`, `PERMIS`, `CARTE_GRISE`, `ASSURANCE` (with `expiresAt`), `SELFIE` |
+
+---
+
+## 3. Auth and profile
+
+### `POST /auth/otp/request` (public)
+
+Body `RequestOtpInput`: `{ "phone": "70 11 22 33" }`
+
+`200` → `OtpRequestResponse`
+```json
+{ "sent": true, "expiresInSeconds": 300 }
+```
+Errors: `400 VALIDATION_ERROR` (bad phone), `429 OTP_RATE_LIMITED` (max 5 per phone per hour),
+`429 RATE_LIMITED` (too many requests from this IP, `AUTH_RATE_LIMIT_REQUEST`, default 20 per 10 min).
+
+### `POST /auth/otp/verify` (public)
+
+Body `VerifyOtpInput`:
+```json
+{ "phone": "+22672000001", "code": "123456", "role": "CLIENT", "name": "Aminata K." }
+```
+- `code`: 6 digits.
+- `role` (optional, default `CLIENT`): one of `CLIENT`, `SELLER`, `DRIVER`. **Only used when the account is created.**
+  For an existing account it is ignored and the stored role is returned. `CONTROLLER`/`ADMIN` → 400.
+- `name` (optional): only used at creation (can be set later with `PATCH /me`).
+
+`200` → `AuthResponse`
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 604800,
+  "isNewUser": false,
+  "user": {
+    "id": "cmw5d3yzl001e7d3b0dnx4mx2",
+    "phone": "+22672000003",
+    "name": "Mariam O.",
+    "role": "CLIENT",
+    "isSuspended": false,
+    "suspensionReason": null,
+    "createdAt": "2026-11-06T19:23:16.065Z"
+  }
+}
+```
+Errors: `400 OTP_INVALID` ("Code incorrect" / "Code invalide ou expiré. Demandez un nouveau code."),
+`403 ACCOUNT_SUSPENDED`, `429 RATE_LIMITED` (per IP, default 60 per 10 min). Each attempt is reserved
+atomically before the comparison: parallel requests cannot exceed 5 attempts per code.
+
+Mobile flow: phone screen → `otp/request` → code screen (+ role choice "Je suis client / vendeur / livreur"
+for first-time users) → `otp/verify` → route by `user.role` (CLIENT, SELLER, DRIVER modes). A back-office
+account logging into the mobile app should get a message "Utilisez la console web".
+Console flow: same two calls; reject any role other than `CONTROLLER`/`ADMIN` client-side.
+
+### `GET /me` (any role) → `UserDto`
+
+### `PATCH /me` (any role)
+
+Body: `{ "name": "Aminata Kaboré" }` → `200 UserDto`
+
+### Saved addresses (`CLIENT`)
+
+`SavedAddressDto`: `{ id, label, lat, lng, address, landmark, createdAt }`
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /me/addresses` | | `200 SavedAddressDto[]` (newest first) |
+| `POST /me/addresses` | `{ "label": "Maison", "lat": 12.3395, "lng": -1.517, "address": "Patte d'Oie, secteur 15", "landmark": "Derrière la station Total, portail bleu" }` | `201 SavedAddressDto` |
+| `DELETE /me/addresses/:id` | | `204` |
+
+### Push notifications (any role)
+
+| Method & path | Body | Response |
+|---|---|---|
+| `POST /me/push-tokens` | `PushTokenInput` `{ "token": "ExponentPushToken[xxxx]", "platform": "expo" }` (`platform`: `expo` (default) \| `fcm` \| `apns`) | `204`. Call after login and when the token changes. A token belongs to the last account that registered it. |
+| `DELETE /me/push-tokens` | `{ "token": "ExponentPushToken[xxxx]" }` | `204`. Call on logout. |
+
+The API sends a push (through the `PushProvider` interface; Lot 1 dev implementation logs it) when:
+a driver receives an offer ("Nouvelle course"), is assigned or un-assigned by the console; a seller receives a
+new order or a cancellation; the client's order is accepted, assigned, picked up, delivered or cancelled; a
+chat message arrives (§6.7). The push `data` always carries `orderId` (and `offerId` for offers).
+
+---
+
+## 4. Stores and catalogue
+
+### `GET /stores` (any role, *paginated*)
+
+Only stores validated by the console (`approvalStatus: "APPROVED"`) are listed. Query: `lat`, `lng` (optional, the client's map position: adds `distanceKm` and sorts open stores first then by distance),
+`q` (name search), `openOnly=true|false`, `page`, `pageSize`.
+
+`200` → `Paginated<StoreDto>`
+```json
+{
+  "items": [
+    {
+      "id": "cmw5d3yyo00047d3btdhgncnv",
+      "ownerId": "cmw5d3yym00027d3b3ll7ibce",
+      "name": "Le Verdoyant",
+      "description": "Cuisine burkinabè et grillades",
+      "phone": "+22671000001",
+      "address": "Avenue Kwame Nkrumah, centre-ville",
+      "landmark": "En face de la BCEAO",
+      "lat": 12.3686,
+      "lng": -1.5275,
+      "isOpen": true,
+      "prepTimeMinutes": 15,
+      "openingHours": "Lun-Dim 10h-23h",
+      "commissionPercent": null,
+      "distanceKm": 3.4,
+      "approvalStatus": "APPROVED",
+      "approvalNote": null,
+      "createdAt": "2026-11-06T19:23:16.032Z"
+    }
+  ],
+  "total": 4, "page": 1, "pageSize": 20
+}
+```
+`distanceKm` is straight-line distance (null when `lat`/`lng` are not given).
+`commissionPercent` and `approvalNote` are internal: they are filled only for the store owner (`/seller/*`,
+`GET /stores/:id` by the owner) and the back office, and are `null` for clients and drivers.
+
+### `GET /stores/:storeId` (any role) → `StoreDetailDto`
+
+`StoreDto` + `products: ProductDto[]` sorted by category then name. Clients only receive products with
+`isAvailable: true`; other roles receive all (non-deleted) products. A store that is not `APPROVED` → `404`,
+except for its owner and the back office.
+
+```json
+{
+  "...": "StoreDto fields",
+  "products": [
+    { "id": "cmw5d3yyx000c7d3bmg7x1yyn", "storeId": "cmw5d3yyo00047d3btdhgncnv", "name": "Bissap 50 cl",
+      "description": "", "category": "Boissons", "price": 500, "isAvailable": true,
+      "photoUrl": "/products/cmw5d3yyx000c7d3bmg7x1yyn/photo" }
+  ]
+}
+```
+`photoUrl` (null without photo) is a path on the API: `GET /products/:productId/photo` (any authenticated
+role, `Authorization` header required, see §1.6) returns the image.
+
+---
+
+## 5. Seller space (`SELLER`)
+
+A seller can own several stores. All routes check ownership (`404` otherwise).
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /seller/stores` | | `200 StoreDto[]` |
+| `POST /seller/stores` | `StoreCreateInput` | `201 StoreDto` (created **closed** and `approvalStatus: "PENDING"`: invisible to clients until the console approves it, §8.5) |
+| `PATCH /seller/stores/:storeId` | `StoreUpdateInput` (any subset) | `200 StoreDto` |
+| `GET /seller/stores/:storeId/products` | | `200 ProductDto[]` (includes unavailable) |
+| `POST /seller/stores/:storeId/products` | `ProductCreateInput` | `201 ProductDto` |
+| `PATCH /seller/products/:productId` | `ProductUpdateInput` (any subset) | `200 ProductDto` |
+| `DELETE /seller/products/:productId` | | `204` (soft delete, past orders keep their lines) |
+| `PUT /seller/products/:productId/photo` | `ImageUploadInput` (`FileUploadInput` with `image/jpeg`\|`image/png`\|`image/webp`) | `200 ProductDto` (replaces the previous photo) |
+| `DELETE /seller/products/:productId/photo` | | `200 ProductDto` (`photoUrl: null`) |
+| `GET /seller/stores/:storeId/stats` | | `200 SellerStatsDto` |
+| `GET /orders?status=PENDING,ACCEPTED` | | orders of the seller's stores, see §6 |
+| `POST /orders/:id/accept` | `{ "prepTimeMinutes": 15 }` (optional, default store value) | `200 OrderDto` (PENDING → ACCEPTED) |
+| `POST /orders/:id/reject` | `{ "reason": "Rupture de poulet" }` | `200 OrderDto` (PENDING → CANCELLED) |
+| `POST /orders/:id/ready` | | `200 OrderDto` (ACCEPTED → READY → SEARCHING_DRIVER, dispatch starts) |
+
+`StoreCreateInput`:
+```json
+{
+  "name": "Le Verdoyant",
+  "description": "Cuisine burkinabè",
+  "phone": "71000001",
+  "address": "Avenue Kwame Nkrumah",
+  "landmark": "En face de la BCEAO",
+  "lat": 12.3686,
+  "lng": -1.5275,
+  "prepTimeMinutes": 15,
+  "openingHours": "Lun-Dim 10h-23h"
+}
+```
+Required: `name`, `address`, `lat`, `lng`. `StoreUpdateInput` = the same fields, all optional, plus
+`isOpen: boolean` (open/close toggle) and `phone` may be `null`. `commissionPercent` is set by the back office only.
+
+`ProductCreateInput`: `{ "name": "Riz gras poulet", "description": "", "category": "Plats", "price": 2500, "isAvailable": true }`
+(required: `name`, `price` integer FCFA).
+
+`SellerStatsDto`:
+```json
+{
+  "storeId": "cmw...",
+  "today": { "orders": 23, "delivered": 18, "cancelled": 1, "sales": 184500, "commission": 18450, "payout": 166050, "avgPrepMinutes": 12 },
+  "pendingOrders": 2
+}
+```
+`sales` = items total of today's non-cancelled orders; `commission`/`payout` are for delivered orders.
+`pendingOrders` = orders in `PENDING` or `ACCEPTED`.
+
+Seller UI hint (mockup "Commandes du jour"): new orders arrive via the `order.updated` socket event (the seller
+is in the `user:<sellerId>` room) → refetch `GET /orders?status=PENDING,ACCEPTED,READY,SEARCHING_DRIVER,ASSIGNED,PICKED_UP`.
+
+---
+
+## 6. Orders
+
+### 6.1 Status machine
+
+```
+FOOD   : PENDING ─accept→ ACCEPTED ─ready→ READY ─(auto)→ SEARCHING_DRIVER ─→ ASSIGNED ─pickup→ PICKED_UP ─deliver→ DELIVERED
+PARCEL : PENDING ─(auto, at creation)→ SEARCHING_DRIVER ─→ ASSIGNED ─pickup→ PICKED_UP ─deliver→ DELIVERED
+ASSIGNED ─→ SEARCHING_DRIVER   (back office reassignment, immediately followed by ASSIGNED to the new driver)
+CANCELLED from PENDING, ACCEPTED, READY, SEARCHING_DRIVER (client or back office), ASSIGNED and PICKED_UP (back office only)
+PICKED_UP ─→ DELIVERED also by the back office (`force-deliver`, audited) when the code is locked or lost
+```
+The machine is `ORDER_TRANSITIONS` / `canTransition()` in `@yaar/shared`; every transition is stored as an
+`OrderEventDto` (returned in `events` by `GET /orders/:id`). Any other transition → `409 INVALID_TRANSITION`.
+
+Who triggers what:
+
+| Transition | Endpoint | Role |
+|---|---|---|
+| create | `POST /orders` | CLIENT |
+| PENDING → ACCEPTED | `POST /orders/:id/accept` | SELLER (owner) |
+| PENDING → CANCELLED | `POST /orders/:id/reject` | SELLER (owner) |
+| ACCEPTED → READY → SEARCHING_DRIVER | `POST /orders/:id/ready` | SELLER (owner) |
+| SEARCHING_DRIVER → ASSIGNED | `POST /driver/offers/:id/accept` or `POST /controller/orders/:id/assign` | DRIVER / back office |
+| ASSIGNED → PICKED_UP | `POST /orders/:id/pickup` | assigned DRIVER |
+| PICKED_UP → DELIVERED | `POST /orders/:id/deliver` (+ code) | assigned DRIVER |
+| PICKED_UP → DELIVERED | `POST /controller/orders/:id/force-deliver` | back office (audited) |
+| → CANCELLED | `POST /orders/:id/cancel` | CLIENT (owner, early states) or back office (up to PICKED_UP; from PICKED_UP an `OTHER` incident is opened) |
+
+### 6.2 `POST /orders/quote` (`CLIENT`)
+
+Price shown before ordering. Body `QuoteInput`:
+
+```json
+{
+  "type": "FOOD",
+  "storeId": "cmw5d3yyo00047d3btdhgncnv",
+  "items": [{ "productId": "cmw5d3yyx000c7d3bmg7x1yyn", "quantity": 2 }],
+  "dropoff": { "lat": 12.3395, "lng": -1.517, "address": "Patte d'Oie, secteur 15", "landmark": "Derrière la station Total" }
+}
+```
+For `PARCEL`: omit `storeId`/`items` and give `pickup` (same shape as `dropoff`). For `FOOD`, `pickup` is
+ignored (the store address is used). `landmark` (repère) is optional (max 200 chars), `address` required.
+
+`200` → `QuoteResponse` (always one option per vehicle type, in order BIKE, MOTO, CAR):
+```json
+{
+  "type": "FOOD",
+  "distanceKm": 4.5,
+  "itemsTotal": 1000,
+  "pickup": { "lat": 12.3686, "lng": -1.5275, "address": "Avenue Kwame Nkrumah, centre-ville", "landmark": "En face de la BCEAO" },
+  "dropoff": { "lat": 12.3395, "lng": -1.517, "address": "Patte d'Oie, secteur 15", "landmark": "Derrière la station Total" },
+  "paymentMethods": ["CASH"],
+  "options": [
+    { "vehicleType": "BIKE", "available": true, "deliveryFee": 1200, "total": 2200, "estimatedMinutes": 23 },
+    { "vehicleType": "MOTO", "available": true, "deliveryFee": 1600, "total": 2600, "estimatedMinutes": 13 },
+    { "vehicleType": "CAR",  "available": true, "deliveryFee": 3100, "total": 4100, "estimatedMinutes": 14 }
+  ]
+}
+```
+`available: false` means the back office disabled that vehicle type (do not offer it). Errors:
+`404 NOT_FOUND` (store/product), `409 STORE_CLOSED`, `409 PRODUCT_UNAVAILABLE`, `409 PRICING_UNAVAILABLE`.
+
+### 6.3 `POST /orders` (`CLIENT`)
+
+Body `CreateOrderInput` = `QuoteInput` plus:
+
+| Field | Type | Notes |
+|---|---|---|
+| `vehicleType` | `VehicleType` | required |
+| `paymentMethod` | `PaymentMethod` | default `CASH`; `MOBILE_MONEY` → `400 PAYMENT_METHOD_UNAVAILABLE` "Paiement mobile money non disponible (Lot 2)" |
+| `recipientName` | string ≤ 80 | optional (parcel recipient) |
+| `recipientPhone` | phone | optional |
+| `parcelDescription` | string ≤ 300 | optional ("Enveloppe de documents") |
+| `notes` | string ≤ 300 | optional (instructions for the driver) |
+
+```json
+{
+  "type": "PARCEL",
+  "vehicleType": "MOTO",
+  "paymentMethod": "CASH",
+  "pickup":  { "lat": 12.3805, "lng": -1.4975, "address": "Zogona, près de l’université", "landmark": "Boutique Faso Dan Fani" },
+  "dropoff": { "lat": 12.405,  "lng": -1.559,  "address": "Tampouy, marché", "landmark": "Près de la mosquée" },
+  "recipientName": "Ali", "recipientPhone": "76 00 00 00", "parcelDescription": "Enveloppe"
+}
+```
+`201` → `OrderDto` (as seen by the client, so it includes `deliveryCode`). FOOD orders start in `PENDING`,
+PARCEL orders are returned already in `SEARCHING_DRIVER`. The price is recomputed server-side (never trust
+the quote).
+
+### 6.4 `OrderDto`
+
+Example: `GET /orders/:id` by the client while the driver is on the way:
+
+```json
+{
+  "id": "cmw5d3z2l004j7d3bvvg5bywk",
+  "number": 1004,
+  "type": "FOOD",
+  "status": "PICKED_UP",
+  "vehicleType": "MOTO",
+  "paymentMethod": "CASH",
+  "paymentStatus": "PENDING",
+  "client": { "id": "cmw5d3yzl001e7d3b0dnx4mx2", "name": "Mariam O.", "phone": "+22672000003" },
+  "store": { "id": "cmw5d3yz0000h7d3b6m816x01", "name": "Maquis Chez Tanti", "phone": "+22671000002" },
+  "driver": {
+    "id": "cmw5d3yzo001h7d3bbfgy6rpg",
+    "name": "Issouf S.",
+    "phone": "+22673000001",
+    "vehicleType": "MOTO",
+    "plate": "11 JJ 4521",
+    "ratingAvg": 4.9,
+    "lastLocation": { "lat": 12.3602, "lng": -1.5248, "at": "2026-11-06T19:22:16.018Z" }
+  },
+  "pickup":  { "lat": 12.364,  "lng": -1.556,  "address": "Gounghin, rue de la mairie", "landmark": "Derrière la pharmacie de Gounghin" },
+  "dropoff": { "lat": 12.3226, "lng": -1.4977, "address": "Ouaga 2000, avenue Mouammar Kadhafi", "landmark": "Villa 12, portail noir" },
+  "recipientName": null,
+  "recipientPhone": null,
+  "parcelDescription": null,
+  "notes": null,
+  "items": [{ "productId": "cmw5d3yz2000j7d3bubexbq3s", "name": "Tô sauce feuille", "unitPrice": 1000, "quantity": 3, "lineTotal": 3000 }],
+  "distanceKm": 10.2,
+  "itemsTotal": 3000,
+  "deliveryFee": 2750,
+  "total": 5750,
+  "commission": null,
+  "driverEarning": null,
+  "sellerPayout": null,
+  "deliveryCode": "5340",
+  "cashCollected": null,
+  "prepTimeMinutes": 15,
+  "hasProofPhoto": false,
+  "cancelReason": null,
+  "createdAt": "2026-11-06T18:53:16.018Z",
+  "acceptedAt": "2026-11-06T18:57:16.018Z",
+  "readyAt": "2026-11-06T19:01:16.018Z",
+  "assignedAt": "2026-11-06T19:09:16.018Z",
+  "pickedUpAt": "2026-11-06T19:13:16.018Z",
+  "deliveredAt": null,
+  "cancelledAt": null,
+  "myRating": null,
+  "canRate": false,
+  "etaMinutes": 9,
+  "events": [
+    { "id": "cmw...", "fromStatus": null, "toStatus": "PENDING", "actorRole": "CLIENT", "note": null, "createdAt": "2026-11-06T18:53:16.018Z" },
+    { "id": "cmw...", "fromStatus": "PENDING", "toStatus": "ACCEPTED", "actorRole": "SELLER", "note": "Préparation : 15 min", "createdAt": "2026-11-06T18:57:16.018Z" }
+  ]
+}
+```
+Field notes:
+- `total` = `itemsTotal + deliveryFee` = amount the client pays (cash to collect by the driver).
+- `commission` = platform share (delivery commission + seller commission on items), back office only.
+- `driverEarning` = `deliveryFee - deliveryCommission` (assigned driver and back office).
+- `sellerPayout` = `itemsTotal - seller commission` (seller and back office).
+- `deliveryCode`: 4 digits, **client only**, and only until the order is delivered/cancelled.
+- `cashCollected`: set when a cash order is delivered.
+- `events` is only present on `GET /orders/:id` (not in lists).
+- `myRating`/`canRate`: the caller's rating and whether `POST /orders/:id/rating` is allowed.
+- `etaMinutes`: estimated minutes until delivery from the driver's last position (`ASSIGNED`: via the pickup;
+  `PICKED_UP`: straight to the dropoff; road distance ÷ average speed of the vehicle). `null` outside
+  `ASSIGNED`/`PICKED_UP` or without a driver position. Client, seller, assigned driver and back office.
+- Fields hidden by the privacy rules (§10) are `null`, never absent.
+
+### 6.5 Listing and reading
+
+`GET /orders` (any role, *paginated*, newest first). Query: `status` (comma-separated list, e.g.
+`status=ASSIGNED,PICKED_UP`), `type` (`FOOD`|`PARCEL`), `q` (back office only: order number `1048`/`#1048`,
+client phone or name), `page`, `pageSize`. Scope by role: client = own orders, seller = orders of own
+stores, driver = orders assigned to him (current and past), back office = all.
+
+`GET /orders/:id` (any role with access) → `OrderDto` with `events`.
+
+### 6.6 Other order endpoints
+
+| Method & path | Role | Body | Response |
+|---|---|---|---|
+| `POST /orders/:id/cancel` | CLIENT (owner) or back office | `{ "reason": "Erreur d’adresse" }` (optional) | `200 OrderDto` |
+| `POST /orders/:id/pickup` | assigned DRIVER | | `200 OrderDto` (ASSIGNED → PICKED_UP) |
+| `POST /orders/:id/deliver` | assigned DRIVER | `DeliverOrderInput` | `200 OrderDto` (PICKED_UP → DELIVERED). Wrong code → `400 DELIVERY_CODE_INVALID`; after 5 attempts (counted atomically, parallel requests included) → `423 DELIVERY_CODE_LOCKED`; the console can then reset the counter or validate the delivery (§8.2). |
+| `GET /orders/:id/proof-photo` | client owner, assigned driver, back office (audited) | | `200` binary image, `404` if none |
+| `POST /orders/:id/rating` | CLIENT owner (rates the driver) or assigned DRIVER (rates the client) | `{ "score": 5, "comment": "Rapide" }` | `201 RatingDto` |
+| `POST /orders/:id/dispute` | anyone who can see the order | `{ "description": "Colis endommagé" }` (3..1000 chars) | `201 IncidentDto` (type `DISPUTE`) |
+| `GET /orders/:id/messages` | client owner, assigned driver (while `ASSIGNED`/`PICKED_UP`), back office | | `200 OrderMessageDto[]` (oldest first, 200 max) |
+| `POST /orders/:id/messages` | client owner or assigned driver | `OrderMessageInput` `{ "body": "Portail bleu" }` (1..500 chars) | `201 OrderMessageDto`; `409 ORDER_NOT_ACTIVE` outside `ASSIGNED`/`PICKED_UP` |
+
+### 6.7 Client ↔ driver chat
+
+`OrderMessageDto`: `{ "id", "orderId", "sender": { "id", "name", "role" }, "body", "createdAt" }`. Each new
+message is pushed with the socket event `order.message` to `user:<clientId>` and `user:<driverId>` only (not to
+the seller) and as a push notification to the other party. To call, use `driver.phone` (client side) or
+`client.phone` (driver side), visible during the delivery (§10). Messages are deleted after 12 months.
+
+Cancellation: client allowed in `PENDING`, `ACCEPTED`, `READY`, `SEARCHING_DRIVER`; back office also in
+`ASSIGNED` (the driver is freed). Otherwise `409 INVALID_TRANSITION`.
+
+`DeliverOrderInput`:
+```json
+{ "code": "4729", "proofPhoto": { "mimeType": "image/jpeg", "dataBase64": "..." } }
+```
+`proofPhoto` is optional. Wrong code → `400 DELIVERY_CODE_INVALID` "Code de livraison incorrect (3 essai(s) restant(s))";
+after 5 wrong codes → `423 DELIVERY_CODE_LOCKED`. Delivering a `CASH` order adds `total` to the driver's
+`cashHeld` and writes a `COLLECTION` ledger entry; `paymentStatus` becomes `PAID`.
+
+Rating: only when `status = DELIVERED`, once per user per order (`409 ALREADY_RATED`). `RatingDto`:
+`{ id, orderId, fromUserId, toUserId, score (1-5), comment, createdAt }`.
+
+---
+
+## 7. Driver space (`DRIVER`)
+
+### 7.1 Onboarding (KYC)
+
+1. Log in with `role: "DRIVER"`.
+2. `PUT /driver/profile` with the vehicle → creates the profile in `PENDING`.
+3. `PUT /driver/documents/:type` for each `missingDocuments` entry.
+4. Wait for a controller: `status` becomes `APPROVED` (or `REJECTED` with `rejectionReason`). Poll
+   `GET /driver/profile` (e.g. on app focus); there is no socket event for KYC decisions in Lot 1.
+
+#### `GET /driver/profile` → `DriverProfileDto` (`404` before step 2)
+
+```json
+{
+  "userId": "cmw5d3yzo001h7d3bbfgy6rpg",
+  "name": "Issouf S.",
+  "phone": "+22673000001",
+  "vehicleType": "MOTO",
+  "plate": "11 JJ 4521",
+  "status": "APPROVED",
+  "isOnline": true,
+  "isBusy": true,
+  "isSuspendedUser": false,
+  "cashHeld": 38500,
+  "cashLimit": 50000,
+  "cashBlocked": false,
+  "rejectionReason": null,
+  "suspensionReason": null,
+  "ratingAvg": 5,
+  "ratingCount": 1,
+  "documents": [
+    { "id": "cmw5d3yzt001j7d3b33syz6jn", "type": "CNIB", "mimeType": "image/png", "sizeBytes": 70, "expiresAt": null, "isExpired": false, "uploadedAt": "2026-11-06T19:23:16.073Z" },
+    { "id": "cmw5d3yzy001p7d3bti9pyn9f", "type": "ASSURANCE", "mimeType": "image/png", "sizeBytes": 70, "expiresAt": "2027-03-31T00:00:00.000Z", "isExpired": false, "uploadedAt": "2026-11-06T19:23:16.078Z" }
+  ],
+  "requiredDocuments": ["CNIB", "PERMIS", "CARTE_GRISE", "ASSURANCE", "SELFIE"],
+  "missingDocuments": [],
+  "kycComplete": true,
+  "lastLocation": { "lat": 12.3602, "lng": -1.5248, "at": "2026-11-06T19:22:16.018Z" },
+  "approvedAt": "2026-10-07T19:23:16.018Z",
+  "createdAt": "2026-11-06T19:23:16.070Z"
+}
+```
+`missingDocuments` lists required documents not uploaded **or expired**. `cashBlocked` = `cashHeld >= cashLimit`.
+
+#### `PUT /driver/profile`
+
+Body `DriverProfileInput`: `{ "vehicleType": "MOTO", "plate": "11 KM 2280", "trackingConsent": true }` (`plate`
+required for MOTO/CAR, uppercased by the API; `trackingConsent: true` records the GPS tracking consent, see §7.2). `200 DriverProfileDto`. Changing vehicle or plate of an approved/rejected driver puts
+the file back to `PENDING`; it is refused while online (`409 CONFLICT`) and for a suspended driver (`403`).
+
+#### `PUT /driver/documents/:type`
+
+`:type` = a `DocumentType`. Body `DocumentUploadInput` = `FileUploadInput` + `expiresAt` (ISO date, **required for
+`ASSURANCE`**, e.g. `"2027-03-31"`). Replaces any previous file of that type. `200 DriverProfileDto`.
+Errors: `400` if the document is not required for this vehicle (e.g. `PERMIS` for a bike) or `expiresAt` missing,
+`413 PAYLOAD_TOO_LARGE`, `415 UNSUPPORTED_FILE`. Uploading to a `REJECTED` file puts it back to `PENDING`.
+
+### 7.2 Availability and GPS
+
+#### Tracking consent
+
+Informed consent to GPS tracking is required (brief §2, Annexe 3) and is recorded with its date in
+`DriverProfileDto.trackingConsentAt` (`null` = no consent). Show the explanation ("Votre position est suivie
+uniquement lorsque vous êtes en ligne, pour attribuer et suivre les courses ; elle est conservée 12 mois")
+and record the consent with any of:
+- `POST /driver/consent` → `200 DriverProfileDto` (idempotent);
+- `trackingConsent: true` in `PUT /driver/profile` or in `PATCH /driver/availability`.
+
+`DELETE /driver/consent` withdraws it: the driver goes offline, his last position is erased and pending offers
+are withdrawn (`409 DRIVER_BUSY` during a delivery).
+
+#### `PATCH /driver/availability`
+
+Body `AvailabilityInput`: `{ "online": true, "lat": 12.3602, "lng": -1.5248, "trackingConsent": true }`
+(`lat`/`lng` optional but recommended when going online so that dispatch can find the driver immediately;
+`trackingConsent` optional, see above).
+
+`200 DriverProfileDto`. Going online requires `status = APPROVED` (`403 DRIVER_NOT_APPROVED`),
+a recorded consent (`403 CONSENT_REQUIRED`) and `cashHeld < cashLimit` (`409 CASH_LIMIT_REACHED`). Going offline is refused during a delivery
+(`409 DRIVER_BUSY`); it erases the last known position and withdraws pending offers.
+
+UI: show a permanent "En ligne : suivi GPS actif" indicator while online (legal requirement); stop the GPS
+watcher when offline.
+
+A driver who stays online without sending any position for `DRIVER_STALE_MINUTES` (default 10; app killed,
+network lost) is set offline automatically by the dispatch cycle (position erased, `driver.status` emitted)
+and is not offered orders in the meantime. A driver on a delivery is never set offline this way.
+
+#### `POST /driver/location`
+
+Body `LocationPingInput`: `{ "lat": 12.3602, "lng": -1.5248, "accuracy": 12, "heading": 90, "speed": 6.5 }`
+(`accuracy` m, `heading` 0-360°, `speed` m/s, all optional). `204` no content.
+**Rejected with `403 DRIVER_OFFLINE` when the driver is offline.** Recommended rate: every 5-10 s while on a
+delivery, every 30-60 s while online and idle.
+
+### 7.3 Offers and deliveries
+
+When a driver is chosen by dispatch he receives the socket event `offer.new` (payload `OfferDto`). He has
+**30 seconds** (`expiresAt`) to accept, otherwise the next driver is asked.
+
+`OfferDto`: before acceptance **no client address** is disclosed (no coordinates, free-text address, landmark,
+recipient or phone). `pickup.address` is the store address for a FOOD order (public business place) or an
+approximate zone for a parcel; `dropoff.address` is always an approximate zone ("Secteur Zogona": nearest known
+Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zone. Exact addresses are in the
+`OrderDto` returned by `accept`.
+```json
+{
+  "id": "cmw8k1...",
+  "orderId": "cmw5d3z2l004j7d3bvvg5bywk",
+  "orderNumber": 1048,
+  "orderType": "FOOD",
+  "status": "OFFERED",
+  "vehicleType": "MOTO",
+  "offeredAt": "2026-11-06T09:43:00.000Z",
+  "expiresAt": "2026-11-06T09:43:30.000Z",
+  "pickup": { "address": "Avenue Kwame Nkrumah, centre-ville", "name": "Le Verdoyant", "distanceFromDriverKm": 1.1, "zone": "Secteur Centre-ville" },
+  "dropoff": { "address": "Secteur Patte d’Oie", "zone": "Secteur Patte d’Oie" },
+  "distanceKm": 6.2,
+  "cashToCollect": 6500,
+  "driverEarning": 1200
+}
+```
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /driver/offers` | | `200 OfferDto[]` (open, unexpired offers; use it on app start/resume) |
+| `POST /driver/offers/:id/accept` | | `200 OrderDto` (full details, status `ASSIGNED`); `409 OFFER_EXPIRED` / `409 DRIVER_BUSY` |
+| `POST /driver/offers/:id/reject` | | `204` (next driver is asked) |
+| `POST /driver/consent` / `DELETE /driver/consent` | | `200 DriverProfileDto` (§7.2) |
+| `GET /driver/current-order` | | `200 { "order": OrderDto \| null }` (ASSIGNED or PICKED_UP) |
+| `POST /orders/:id/pickup` | | see §6.6 |
+| `POST /orders/:id/deliver` | `DeliverOrderInput` | see §6.6 |
+| `GET /orders?status=DELIVERED` | | history (addresses hidden, see §10) |
+
+### 7.4 Earnings and cash
+
+`GET /driver/earnings` → `DriverEarningsDto`
+```json
+{
+  "today": { "deliveries": 9, "earnings": 10800, "cashCollected": 58500 },
+  "allTime": { "deliveries": 120, "earnings": 151200 },
+  "cashHeld": 38500,
+  "cashLimit": 50000,
+  "cashBlocked": false,
+  "recentLedger": [
+    {
+      "id": "cmw5d3z2500407d3b1b8dfzjd",
+      "driverId": "cmw5d3yzo001h7d3bbfgy6rpg",
+      "driverName": "Issouf S.",
+      "type": "COLLECTION",
+      "amount": 7100,
+      "balanceAfter": 38500,
+      "orderId": "cmw5d3z1n003h7d3bkwhlez8h",
+      "orderNumber": 1001,
+      "note": "Encaissement commande #1001",
+      "recordedBy": null,
+      "createdAt": "2026-11-05T23:47:16.018Z"
+    }
+  ]
+}
+```
+`recentLedger` = last 20 entries, newest first. Deposits have a negative `amount` and `recordedBy` = the controller.
+
+### 7.5 SOS
+
+`POST /driver/sos` body `SosInput`: `{ "lat": 12.3985, "lng": -1.519, "message": "Accident", "orderId": "cmw..." }`
+(`message`, `orderId` optional; when `orderId` is omitted the driver's active order is attached automatically).
+`201 IncidentDto` (type `SOS`). Controllers receive the `sos` socket event instantly. Allowed online or offline.
+
+---
+
+## 8. Controller console (`CONTROLLER`, `ADMIN`)
+
+All routes below require a back-office token. Actions marked **audited** write an `AuditLogDto`.
+
+### 8.1 Dashboard and map
+
+`GET /controller/dashboard` → `DashboardDto`
+```json
+{
+  "onlineDrivers": { "total": 4, "byVehicle": { "BIKE": 1, "MOTO": 2, "CAR": 1 }, "busy": 1 },
+  "activeOrders": 5,
+  "waitingForDriver": 2,
+  "waitingOver5Min": 1,
+  "deliveredToday": 318,
+  "cancelledToday": 3,
+  "avgDeliveryMinutesToday": 27,
+  "cashHeldTotal": 90500,
+  "driversAtCashLimit": 1,
+  "pendingKyc": 2,
+  "openIncidents": 2,
+  "generatedAt": "2026-11-06T19:26:46.740Z"
+}
+```
+`activeOrders` = all non-terminal statuses; `avgDeliveryMinutesToday` = creation → delivery (null if none);
+`openIncidents` = status not `RESOLVED`. Refresh every 30 s and on socket events.
+
+`GET /controller/map` → `MapDataDto` (initial snapshot; then apply `driver.location`, `driver.status`,
+`order.updated`, `sos` events):
+```json
+{
+  "center": { "lat": 12.3714, "lng": -1.5197 },
+  "drivers": [
+    { "id": "cmw5d3z03001u7d3bcvmuvb8j", "name": "Karim D.", "vehicleType": "MOTO", "isBusy": false,
+      "lat": 12.3985, "lng": -1.519, "lastLocationAt": "2026-11-06T19:22:16.018Z", "activeOrderId": null }
+  ],
+  "orders": [
+    { "id": "cmw5d3z32004z7d3bvpr2en11", "number": 1005, "type": "PARCEL", "status": "SEARCHING_DRIVER", "vehicleType": "BIKE",
+      "pickup": { "lat": 12.3805, "lng": -1.4975, "address": "Zogona, près de l’université" },
+      "dropoff": { "lat": 12.405, "lng": -1.559, "address": "Tampouy, marché" },
+      "driverId": null, "createdAt": "2026-11-06T19:17:16.018Z" }
+  ],
+  "stores": [{ "id": "cmw5d3yyo00047d3btdhgncnv", "name": "Le Verdoyant", "lat": 12.3686, "lng": -1.5275, "isOpen": true }],
+  "openSos": [ "IncidentDto, type SOS, not resolved" ]
+}
+```
+`drivers` = online drivers only (offline drivers have no stored position). `orders` = all active orders.
+Mockup legend: green = free driver (`isBusy: false`), blue = busy driver, orange = store, red = order waiting
+(`status: SEARCHING_DRIVER`).
+
+### 8.2 Orders and manual dispatch
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /orders?status=...&q=...` | | `Paginated<OrderDto>` (all orders, see §6.5) |
+| `GET /orders/:id` | | `OrderDto` with `events` |
+| `GET /controller/orders/pending` | | `PendingOrderDto[]` (status `SEARCHING_DRIVER`, longest waiting first) |
+| `GET /controller/orders/:id/candidates` | | `DriverCandidateDto[]` (approved, same vehicle type, nearest first; offline ones last) |
+| `POST /controller/orders/:id/assign` | `{ "driverId": "cmw..." }` | `200 OrderDto`, **audited** `ORDER_MANUALLY_ASSIGNED` |
+| `POST /orders/:id/cancel` | `{ "reason": "..." }` | `200 OrderDto`, **audited** `ORDER_CANCELLED_BY_CONTROLLER`. Allowed up to `PICKED_UP`; from `PICKED_UP` an `OTHER` incident "récupérer la marchandise auprès du livreur" is opened. The driver is freed. |
+| `POST /controller/orders/:id/force-deliver` | `{ "reason": "Client joint par téléphone" }` (required) | `200 OrderDto`; `PICKED_UP` → `DELIVERED` with the same cash ledger effect as a normal delivery; **audited** `ORDER_FORCE_DELIVERED` |
+| `POST /controller/orders/:id/reset-delivery-code` | `{ "reason": "..." }` (optional) | `200 OrderDto`; resets the attempt counter of a `PICKED_UP` order after `423 DELIVERY_CODE_LOCKED`; **audited** `ORDER_DELIVERY_CODE_RESET` |
+| `GET /orders/:id/messages` | | `OrderMessageDto[]` (read only) |
+| `GET /orders/:id/proof-photo` | | binary, **audited** `ORDER_PROOF_VIEWED` |
+
+`PendingOrderDto`:
+```json
+{
+  "id": "cmw5d3z32004z7d3bvpr2en11", "number": 1005, "type": "PARCEL", "status": "SEARCHING_DRIVER", "vehicleType": "BIKE",
+  "pickupAddress": "Zogona, près de l’université", "dropoffAddress": "Tampouy, marché", "total": 1950,
+  "waitingSeconds": 331,
+  "currentOffer": { "driverId": "cmw...", "driverName": "Fatimata Z.", "expiresAt": "2026-11-06T19:27:16.000Z" },
+  "createdAt": "2026-11-06T19:17:16.018Z"
+}
+```
+`currentOffer` null = nobody is being asked (no eligible driver in the radius): show "Affecter".
+
+`DriverCandidateDto`: `{ id, name, phone, vehicleType, isOnline, isBusy, cashBlocked, distanceKm (null if offline) }`.
+Offline candidates are listed (last) so the controller can call them, but cannot be assigned: disable
+"Affecter" when `!isOnline || isBusy || cashBlocked`.
+
+Assign works for orders in `SEARCHING_DRIVER` (assign) or `ASSIGNED` (reassign: the previous driver is
+freed, leaves the `order:<id>` socket room and gets a push). The driver must be `APPROVED`, not suspended,
+same `vehicleType`, **online** (`409 DRIVER_OFFLINE`: an offline driver sends no position and does not see the
+job), not busy (`409 DRIVER_BUSY`) and under the cash limit (`409 CASH_LIMIT_REACHED`).
+
+### 8.3 Drivers and KYC
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /controller/drivers` | query `status`, `vehicleType`, `online=true\|false`, `q` (name/phone/plate), paginated | `Paginated<DriverProfileDto>` (oldest first, i.e. FIFO KYC queue with `status=PENDING`) |
+| `GET /controller/drivers/:id` | | `DriverProfileDto` (`:id` = driver user id) |
+| `GET /controller/drivers/:id/documents/:documentId` | | binary file, **audited** `DRIVER_DOCUMENT_VIEWED` (every view) |
+| `POST /controller/drivers/:id/approve` | | `DriverProfileDto`; from `PENDING`/`REJECTED`; `409 KYC_INCOMPLETE` if a required document is missing/expired or plate missing; **audited** |
+| `POST /controller/drivers/:id/reject` | `{ "reason": "Assurance expirée" }` | from `PENDING` only; **audited** |
+| `POST /controller/drivers/:id/suspend` | `{ "reason": "..." }` | from `APPROVED`; forces offline; `409 DRIVER_BUSY` during a delivery (reassign, force-deliver or cancel it first); **audited** |
+| `POST /controller/drivers/:id/reinstate` | | `SUSPENDED` → `APPROVED`; **audited** |
+
+KYC card (mockup "Dossiers livreurs à valider"): show `documents[].type` chips with ✓, red chip when
+`isExpired`, and enable "Valider" only when `kycComplete`.
+
+### 8.4 Users and staff
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /controller/users` | query `role`, `q` (name/phone), `suspended=true\|false`, paginated | `Paginated<UserDto>` (newest first) |
+| `POST /controller/users/:id/suspend` | `{ "reason": "Fraude" }` | `UserDto`; **audited** `USER_SUSPENDED`. A CONTROLLER cannot suspend staff; nobody can suspend himself (`403`); a driver on a delivery → `409 DRIVER_BUSY`. The user's open sockets are disconnected. |
+| `POST /controller/users/:id/unsuspend` | | `UserDto`; **audited** |
+| `POST /controller/staff` (**ADMIN only**) | `{ "phone": "70998877", "name": "Salif K.", "role": "CONTROLLER" }` | `201 UserDto`; **audited** `STAFF_CREATED` |
+
+A suspended user (any role) gets `403 ACCOUNT_SUSPENDED` on every request. `DriverProfile.status = SUSPENDED`
+(8.3) only blocks driving; `User.isSuspended` (8.4) blocks the whole account.
+
+### 8.5 Stores (back office)
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /controller/stores` | query `approvalStatus=PENDING\|APPROVED\|SUSPENDED`, paginated | `Paginated<StoreDto>` (internal fields included) |
+| `POST /controller/stores/:id/approve` | | `StoreDto` (`approvalStatus: APPROVED`, now visible to clients); **audited** `STORE_APPROVED` |
+| `POST /controller/stores/:id/suspend` | `{ "reason": "Hygiène" }` | `StoreDto` (`SUSPENDED`, closed, hidden from clients; orders in progress continue); **audited** `STORE_SUSPENDED` |
+| `PATCH /controller/stores/:id` | `{ "commissionPercent": 12, "isOpen": false }` (any subset) | `StoreDto`; **audited** |
+
+Seller onboarding = store validation: a new store is `PENDING` until a controller approves it (queue:
+`GET /controller/stores?approvalStatus=PENDING`).
+
+### 8.6 Pricing
+
+`GET /controller/pricing-rules` → `PricingRuleDto[]` (BIKE, MOTO, CAR):
+```json
+[
+  { "vehicleType": "BIKE", "baseFare": 500,  "perKm": 150, "minimumFare": 1000, "commissionPercent": 20, "isActive": true, "updatedAt": "..." },
+  { "vehicleType": "MOTO", "baseFare": 700,  "perKm": 200, "minimumFare": 1500, "commissionPercent": 20, "isActive": true, "updatedAt": "..." },
+  { "vehicleType": "CAR",  "baseFare": 1500, "perKm": 350, "minimumFare": 3000, "commissionPercent": 20, "isActive": true, "updatedAt": "..." }
+]
+```
+`PUT /controller/pricing-rules/:vehicleType` body `PricingRuleUpdateInput`
+`{ "baseFare": 700, "perKm": 200, "minimumFare": 1500, "commissionPercent": 20, "isActive": true }` → `PricingRuleDto`;
+**audited** `PRICING_RULE_UPDATED` (metadata `before`/`after`). Applies to new quotes/orders only.
+Use `computeDeliveryFee()` from shared to show a live preview ("6 km en moto = 1 950 FCFA").
+
+### 8.7 Cash ledger
+
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /controller/cash` | | `CashOverviewDto` |
+| `GET /controller/cash/ledger` | query `driverId`, paginated | `Paginated<CashLedgerEntryDto>` (newest first) |
+| `POST /controller/drivers/:id/cash-deposits` | `{ "amount": 30000, "note": "Versement agence Zogona" }` | `201 CashLedgerEntryDto` (`type: DEPOSIT`, `amount: -30000`, `balanceAfter`); `409 CONFLICT` if `amount > cashHeld` (checked atomically: concurrent deposits never make the balance negative); **audited** |
+
+`CashOverviewDto`:
+```json
+{
+  "cashLimit": 50000,
+  "totalHeld": 90500,
+  "drivers": [
+    { "driverId": "cmw...", "name": "Adama N.", "phone": "+22673000005", "vehicleType": "MOTO", "cashHeld": 52000, "cashBlocked": true, "lastDepositAt": null }
+  ]
+}
+```
+(drivers holding cash or approved, highest balance first).
+
+### 8.8 Incidents (SOS, disputes)
+
+`GET /controller/incidents` (query `status`, `type`, paginated, newest first) → `Paginated<IncidentDto>`
+
+```json
+{
+  "id": "cmw5d3z3q005l7d3bxqnk8v0r",
+  "type": "SOS",
+  "status": "OPEN",
+  "description": "Crevaison, besoin d’assistance",
+  "lat": 12.3985,
+  "lng": -1.519,
+  "orderId": null,
+  "orderNumber": null,
+  "reporter": { "id": "cmw5d3z03001u7d3bcvmuvb8j", "name": "Karim D.", "phone": "+22673000002", "role": "DRIVER" },
+  "resolutionNote": null,
+  "resolvedBy": null,
+  "createdAt": "2026-11-06T19:23:16.215Z",
+  "resolvedAt": null
+}
+```
+`PATCH /controller/incidents/:id` body `{ "status": "RESOLVED", "resolutionNote": "Livreur dépanné" }` →
+`IncidentDto`; **audited**; emits `incident.updated`. The reporter's phone is there for the "Appeler" button.
+
+### 8.9 CSV exports
+
+| Method & path | Query | Response |
+|---|---|---|
+| `GET /controller/exports/orders.csv` | `from`, `to` (ISO dates, optional; `from` inclusive, `to` exclusive) | `text/csv` (`;` separator, UTF-8 with BOM, 10 000 rows max): number, date, type, status, vehicle, store, driver, distance, amounts, commission, driver earning, seller payout, payment, cash collected, delivered/cancelled dates. **No address and no phone.** |
+| `GET /controller/exports/cash-ledger.csv` | `from`, `to` | `text/csv`: date, driver, phone, type, amount, balance after, order number, note, recorded by |
+
+Every export is **audited** `DATA_EXPORTED` (metadata: period and row count). Download with the
+`Authorization` header (blob), not a plain link.
+
+### 8.10 Audit log
+
+`GET /controller/audit-logs` (query `action`, `actorId`, `entityType`, `entityId`, paginated, newest first) → `Paginated<AuditLogDto>`
+```json
+{
+  "id": "cmw...",
+  "actor": { "id": "cmw...", "name": "Salif K.", "role": "CONTROLLER" },
+  "action": "DRIVER_DOCUMENT_VIEWED",
+  "entityType": "DriverDocument",
+  "entityId": "cmw5d3yzt001j7d3b33syz6jn",
+  "metadata": { "driverId": "cmw5d3yzo001h7d3bbfgy6rpg", "documentType": "CNIB" },
+  "ip": "127.0.0.1",
+  "createdAt": "2026-11-06T19:30:00.000Z"
+}
+```
+Actions: `DRIVER_DOCUMENT_VIEWED`, `DRIVER_APPROVED`, `DRIVER_REJECTED`, `DRIVER_SUSPENDED`, `DRIVER_REINSTATED`,
+`USER_SUSPENDED`, `USER_UNSUSPENDED`, `STAFF_CREATED`, `PRICING_RULE_UPDATED`, `STORE_UPDATED_BY_CONTROLLER`,
+`CASH_DEPOSIT_RECORDED`, `ORDER_MANUALLY_ASSIGNED`, `ORDER_CANCELLED_BY_CONTROLLER`, `ORDER_PROOF_VIEWED`, `INCIDENT_UPDATED`,
+`ORDER_FORCE_DELIVERED`, `ORDER_DELIVERY_CODE_RESET`, `STORE_APPROVED`, `STORE_SUSPENDED`, `DATA_EXPORTED`.
+
+The `ip` is the socket address of the caller. Behind a reverse proxy set `TRUST_PROXY` (`true` or the proxy
+IPs/CIDRs); by default `X-Forwarded-For` is ignored so that the audited IP cannot be forged.
+
+---
+
+## 9. Realtime (Socket.IO)
+
+Server: Socket.IO v4 on the API origin. Client: `socket.io-client@4`. Typed with `ServerToClientEvents` /
+`ClientToServerEvents` from `@yaar/shared`.
+
+```ts
+import { io, Socket } from 'socket.io-client';
+import type { ServerToClientEvents, ClientToServerEvents } from '@yaar/shared';
+
+const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(API_URL, {
+  auth: { token: accessToken },          // JWT, with or without "Bearer "
+  transports: ['websocket'],             // recommended on React Native
+});
+socket.on('connect_error', (err) => { /* err.message: "UNAUTHENTICATED" | "ACCOUNT_SUSPENDED" */ });
+```
+
+### 9.1 Rooms (joined automatically on connect)
+
+| Room | Members |
+|------|---------|
+| `user:<userId>` | every socket of that user |
+| `driver:<driverUserId>` | the driver's sockets |
+| `controllers` | every CONTROLLER/ADMIN socket |
+| `order:<orderId>` | joined explicitly with `order.subscribe` (client owner, store owner, assigned driver while ASSIGNED/PICKED_UP, back office). The server **removes** the driver from the room when he is reassigned, when the order is delivered or cancelled; he then no longer receives its events nor the new driver's position. A suspended account's sockets are disconnected. |
+
+### 9.2 Client → server
+
+| Event | Payload | Ack |
+|---|---|---|
+| `order.subscribe` | `{ "orderId": "cmw..." }` | `{ "ok": true }` or `{ "ok": false, "error": { "code": "NOT_FOUND", "message": "Commande introuvable" } }` |
+| `order.unsubscribe` | `{ "orderId": "cmw..." }` | `{ "ok": true }` (ack optional) |
+
+Re-emit `order.subscribe` after every reconnect (rooms are per connection).
+
+### 9.3 Server → client
+
+| Event | Payload type | Sent to | When |
+|---|---|---|---|
+| `order.updated` | `OrderUpdatedEvent` | `order:<id>`, `user:<clientId>`, `user:<sellerId>`, `user:<driverId>`, `controllers` | any status change (creation, accept, ready, assignment, pickup, delivery, cancel) |
+| `driver.location` | `DriverLocationEvent` | `controllers` always; `order:<orderId>` only when the driver has an active order (ASSIGNED/PICKED_UP) | each accepted `POST /driver/location` |
+| `driver.status` | `DriverStatusEvent` | `controllers`, `driver:<id>` | online/offline/busy changes |
+| `offer.new` | `OfferDto` | `driver:<id>` | dispatch offers an order to this driver |
+| `offer.closed` | `OfferClosedEvent` | `driver:<id>` | the offer expired (`EXPIRED`) or was withdrawn (`CANCELLED`: order cancelled, manually assigned, driver went offline) |
+| `sos` | `SosEvent` = `{ incident: IncidentDto }` | `controllers` | driver SOS |
+| `incident.updated` | `IncidentEvent` = `{ incident: IncidentDto }` | `controllers` | dispute created, incident status changed, order cancelled after pickup |
+| `order.message` | `OrderMessageDto` | `user:<clientId>`, `user:<driverId>` | chat message (§6.7) |
+
+Payloads:
+```json
+// order.updated (minimal on purpose: refetch GET /orders/:id to get the role-filtered OrderDto)
+{ "orderId": "cmw...", "number": 1048, "status": "ASSIGNED", "driverId": "cmw...", "updatedAt": "2026-11-06T09:43:12.000Z" }
+
+// driver.location
+{ "driverId": "cmw...", "lat": 12.3602, "lng": -1.5248, "heading": 90, "speed": 6.5, "orderId": "cmw...", "at": "2026-11-06T09:44:00.000Z" }
+
+// driver.status
+{ "driverId": "cmw...", "isOnline": true, "isBusy": false }
+
+// offer.closed
+{ "offerId": "cmw...", "orderId": "cmw...", "status": "EXPIRED" }
+```
+
+Sockets are a convenience: always be able to recover state with REST (`GET /orders/:id`,
+`GET /driver/offers`, `GET /controller/map`) after reconnecting or resuming the app.
+
+---
+
+## 10. Visibility and privacy rules
+
+Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`); clients must not try to work around them.
+
+| Field of `OrderDto` | Client (owner) | Seller (store owner) | Driver (assigned) | Back office |
+|---|---|---|---|---|
+| `deliveryCode` | yes, until delivered/cancelled | no | **no** | **no** |
+| `pickup`, `dropoff`, `notes`, `recipientName` | yes | while the order is active (not after delivery/cancellation) | only while `ASSIGNED`/`PICKED_UP` | yes |
+| `client.phone`, `recipientPhone` | yes | while the order is active | only while `ASSIGNED`/`PICKED_UP` | yes |
+| `driver.phone` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | own | yes |
+| `driver.lastLocation` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | no | while `ASSIGNED`/`PICKED_UP` |
+| `commission` | no | no | no | yes |
+| `driverEarning` | no | no | yes | yes |
+| `sellerPayout` | no | yes | no | yes |
+
+- A driver never sees an order that is not assigned to him (`404`); an offer shows no client address, only the
+  store address (FOOD) and approximate zones (§7.3). After delivery, his history keeps amounts and store name
+  but `pickup`/`dropoff`/phones become `null`. The same applies to the seller once the order is delivered or
+  cancelled (no history of customers' addresses).
+- GPS tracking requires the driver's recorded consent (§7.2). Location pings are accepted only while online
+  (`403 DRIVER_OFFLINE` otherwise); going offline erases the last position; a silent online driver is set
+  offline after `DRIVER_STALE_MINUTES`.
+- The client's position is never tracked: it only exists as the order's `dropoff` (or `pickup`).
+- Retention job (`runRetention`, daily, 12 months): deletes driver location pings and chat messages; on
+  delivered/cancelled orders older than 12 months, sets the client's coordinates to `0`, replaces the address
+  by "Adresse supprimée (conservation 12 mois)" and erases landmark, recipient and notes (`locationPurgedAt` set;
+  a FOOD pickup = store address is kept); erases incident (SOS) positions; deletes OTPs expired for 24 h.
+  Amounts, statuses and dates are kept for accounting.
+- KYC documents are encrypted at rest, only back office can download them, every download is in the audit log.
+
+---
+
+## 11. Business rules reference
+
+| Rule | Value | Where |
+|---|---|---|
+| Delivery fee | `max(minimumFare, baseFare + perKm × distanceKm)` rounded **up** to 50 FCFA | `computeDeliveryFee` |
+| Distance | haversine × 1.3, rounded to 0.1 km | `roadDistanceKm` |
+| Delivery commission | `floor(deliveryFee × commissionPercent / 100)` (pricing rule, 20 % by default) | `computeDeliveryPrice` |
+| Seller commission | `floor(itemsTotal × store.commissionPercent / 100)` (10 % by default) | `computeOrderTotals` |
+| Driver earning | `deliveryFee − delivery commission` | |
+| Client pays | `itemsTotal + deliveryFee` (cash on delivery) | |
+| Dispatch radius | 5 km straight line from pickup (`DISPATCH_RADIUS_KM`) | |
+| Offer timeout | 30 s (`OFFER_TIMEOUT_SECONDS`), then next nearest driver; a driver who refused/let expire is not re-asked for 5 min | |
+| Eligible driver | `APPROVED`, account not suspended, online, not busy, same vehicle type, `cashHeld < CASH_LIMIT`, has a position | |
+| Cash limit | 50 000 FCFA (`CASH_LIMIT`); at or above: cannot go online, receives no offers, cannot be assigned | |
+| Delivery code | 4 random digits, 5 attempts (atomic counter), then console reset or force-deliver | |
+| OTP | 6 digits, valid 5 min, 5 attempts (atomic), 5 requests/hour/phone, per-IP limits on `/auth/*` | |
+| Stale online driver | set offline after 10 min without position (`DRIVER_STALE_MINUTES`) | `DispatchService.tick` |
+| Location retention | 12 months (pings, order client positions, SOS positions, chat) | `runRetention` |
+| Upload size | 5 MB per file | `MAX_UPLOAD_BYTES` |
+
+Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Format amounts with
+`formatFcfa(6500)` → `"6 500 FCFA"`.
+
+---
+
+## 12. Demo accounts (seed)
+
+`npm run db:seed` (wipes the dev database). With `OTP_DEV_BYPASS=true`, log in with code `123456`.
+
+| Phone | Role | Notes |
+|---|---|---|
+| `+22670000001` | ADMIN | Admin Yaar |
+| `+22670000002` | CONTROLLER | Salif K. |
+| `+22671000001` | SELLER | Le Verdoyant (centre-ville), riz gras, poulet bicyclette, tô, bissap |
+| `+22671000002` | SELLER | Maquis Chez Tanti (Gounghin) |
+| `+22671000003` | SELLER | Saveurs de Zogona |
+| `+22671000004` | SELLER | Alimentation Wend-Panga (Tampouy, closed) |
+| `+22671000009` | SELLER | Grillades de Pissy, **pending approval** (store validation queue) |
+| `+22672000001` | CLIENT | Aminata K. (saved address Patte d'Oie) |
+| `+22672000002` / `+22672000003` | CLIENT | Paul T. / Mariam O. |
+| `+22673000001` | DRIVER | Issouf S., moto, approved, online, on a delivery, 38 500 FCFA held |
+| `+22673000002` | DRIVER | Karim D., moto, approved, online (has an open SOS) |
+| `+22673000003` | DRIVER | Fatimata Z., bike, approved, online |
+| `+22673000004` | DRIVER | Abdoul T., car, approved, online |
+| `+22673000005` | DRIVER | Adama N., moto, approved, offline, above the cash limit |
+| `+22673000006` | DRIVER | Ousmane B., moto, PENDING, complete file |
+| `+22673000007` | DRIVER | Rasmané P., bike, PENDING, selfie missing |
+
+Seeded approved drivers have already given their tracking consent. Online seeded drivers that send no
+position are set offline after 10 minutes (stale driver rule).
+
+---
+
+## 13. Lot 1 scope: implemented and deferred
+
+Against Annexe 1 of the contract. API side:
+
+| Annexe 1 item | API status |
+|---|---|
+| Client: order food / parcel, quote, tracking, delivery code, ratings, disputes | implemented |
+| Client: call and chat with the driver | chat: §6.7; call: phone numbers exposed during the delivery (§10) |
+| Notifications (push and SMS) | push: token registration + `PushProvider` (§3); the production Expo/FCM sender is to be plugged into `PushProvider`. SMS: OTP only (`SmsProvider`) |
+| Client ETA ("Votre livreur arrive dans 8 min") | `OrderDto.etaMinutes` (§6.4) |
+| Seller: catalogue with prices, availability and photos | implemented (photos: §5) |
+| Back office: validation of driver **and seller** files | drivers: §8.3; sellers = store validation, §8.5 |
+| Back office: exports | CSV exports of orders and cash ledger (§8.9) |
+| Back office: zone management | **deferred**: Lot 1 uses one dispatch radius (`DISPATCH_RADIUS_KM`) and the Ouagadougou neighbourhood list of `approximateZone()`; zones with their own pricing are not implemented |
+| Refunds | **deferred**: cash only in Lot 1, a dispute is resolved by the back office with a resolution note; no refund ledger |
+| Receipts | **deferred**: the `OrderDto` of a delivered order holds every receipt field; no PDF receipt |
+| Mobile money | reserved (`MOBILE_MONEY` → `400 PAYMENT_METHOD_UNAVAILABLE`, Lot 2) |
+
+Deployment note: dispatch serialises offer creation in-process and the rate limits are in memory, so Lot 1
+assumes **one API instance**. Running several instances needs a shared lock (Postgres advisory lock or Redis)
+and a shared rate-limit store.
+
+---
+
+## 14. Changelog
+
+Corrections after the acceptance review (backward compatible unless marked **breaking**):
+
+- **Breaking for the driver app**: going online now needs the tracking consent (`403 CONSENT_REQUIRED`); send
+  `trackingConsent: true` once (§7.2).
+- **Breaking for seller onboarding**: new stores are `PENDING` and hidden until approved (§8.5). Existing stores
+  were migrated as `APPROVED`.
+- **Breaking for the console**: manual assignment refuses offline drivers (`409 DRIVER_OFFLINE`); suspending a
+  driver on a delivery is refused (`409 DRIVER_BUSY`).
+- `OfferDto` no longer contains the client's free-text addresses (zones instead, `zone` field added).
+- `StoreDto.commissionPercent` is `null` for clients and drivers; `approvalStatus`/`approvalNote` added.
+- Sellers no longer see the client's address after delivery/cancellation.
+- New: `force-deliver`, `reset-delivery-code`, PICKED_UP cancellation by the back office, store approval,
+  product photos, push tokens, chat, `etaMinutes`, CSV exports, driver consent endpoints, `order.message` event.
+- Delivery code and OTP attempts are counted atomically; cash deposits are atomic; offers cannot be duplicated.
+- zod validation messages are in French (`z.config(fr())` in `@yaar/shared`).
+- Files: content checked against `mimeType` (`415 UNSUPPORTED_FILE`), `nosniff` on downloads.
+- Config: `TRUST_PROXY` (default off), `CORS_ORIGINS=*` refused in production, `AUTH_RATE_LIMIT_*`,
+  `DRIVER_STALE_MINUTES`.

@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest';
+import { haversineKm, roadDistanceKm, OUAGADOUGOU_CENTER } from '../src';
+
+describe('haversineKm', () => {
+  it('vaut 0 pour un même point', () => {
+    expect(haversineKm(OUAGADOUGOU_CENTER, OUAGADOUGOU_CENTER)).toBe(0);
+  });
+
+  it('1 degré de latitude ≈ 111,2 km', () => {
+    expect(haversineKm({ lat: 0, lng: 0 }, { lat: 1, lng: 0 })).toBeCloseTo(111.2, 0);
+  });
+
+  it('est symétrique', () => {
+    const a = { lat: 12.3714, lng: -1.5197 };
+    const b = { lat: 12.3299, lng: -1.4908 };
+    expect(haversineKm(a, b)).toBeCloseTo(haversineKm(b, a), 10);
+  });
+
+  it('Ouaga centre -> Ouaga 2000 ≈ 5,6 km à vol d’oiseau', () => {
+    const d = haversineKm(OUAGADOUGOU_CENTER, { lat: 12.3226, lng: -1.4977 });
+    expect(d).toBeGreaterThan(5.5);
+    expect(d).toBeLessThan(6.0);
+  });
+});
+
+describe('roadDistanceKm', () => {
+  it('applique le facteur 1,3 et arrondit à 0,1 km', () => {
+    const a = { lat: 0, lng: 0 };
+    const b = { lat: 0.01, lng: 0 }; // ≈ 1,112 km
+    expect(roadDistanceKm(a, b)).toBe(1.4);
+  });
+});

@@ -1,2 +1,31 @@
 __pycache__/
 _tmp_contract.pdf
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# API local storage (uploaded KYC documents, proofs)
+apps/api/storage/
+apps/api/uploads/
+
+# Expo / React Native
+apps/mobile/.expo/
+apps/mobile/web-build/
+apps/mobile/ios/
+apps/mobile/android/
+
+# OS / editors
+.DS_Store
+*.log
+.idea/
+.vscode/
