@@ -29,7 +29,7 @@ accounts (`CONTROLLER`, `ADMIN`) do **not** accept `123456`: they use `DEMO_STAF
 | `npm run db:seed` | wipe + demo data around Ouagadougou |
 | `npm run retention` | 12-month purge: GPS pings, client positions/addresses on finished orders, SOS positions, chat messages; expired OTP codes (also runs daily inside the server, and from `GET /cron/daily` on Vercel) |
 | `npm run db:seed:if-empty` | demo data only if the database has no user yet (never wipes; used by the Vercel build) |
-| `npm run vercel-build` | Vercel build: `prisma generate`, esbuild bundle `dist/vercel.mjs`; **production deployments only** (`VERCEL_ENV=production`): runtime config check (`scripts/check-config.ts`), `prisma migrate deploy`, demo seed if `SEED_DEMO=true` and `DEMO_MODE=true` |
+| `npm run build:vercel` | Vercel build (not named `vercel-build`, which Vercel would run a second time on its own): `prisma generate`, esbuild bundle `dist/vercel.mjs`; **production deployments only** (`VERCEL_ENV=production`): runtime config check (`scripts/check-config.ts`), `prisma migrate deploy`, demo seed if `SEED_DEMO=true` and `DEMO_MODE=true` |
 | `npm run build:bundle` | the same without database steps (local check of the bundle) |
 | `npm run smoke:vercel` | starts the bundled Vercel handler as an HTTP server (`VERCEL=1`, production, poll, db storage, demo with a test `DEMO_STAFF_CODE`) against `DATABASE_URL` and checks `/health`, `/config`, CORS (cached preflight, preview pattern), OTP login (`123456` for client/driver, refused for a controller, staff code accepted), `/me`, `/driver/offers`, upload limits (`413` JSON), `/cron/daily`, and the CORS headers of the start-up failure response |
 
@@ -142,7 +142,7 @@ Vercel Marketplace. The whole API is one function (`api/index.js` → `dist/verc
 | Root Directory | `apps/api` (keep "Include files outside the root directory" **enabled**: `packages/shared` and the hoisted `node_modules` are outside) |
 | Framework Preset | Other (`vercel.json` sets `"framework": null`) |
 | Install Command | default (npm installs the workspaces from the repository root, `postinstall` runs `prisma generate`) |
-| Build Command | `npm run vercel-build` (from `vercel.json`) |
+| Build Command | `npm run build:vercel` (from `vercel.json`) |
 | Output Directory | `public` (from `vercel.json`, intentionally empty: no source file is served statically) |
 | Node.js version | 22.x |
 | Function | `api/index.js`, `maxDuration` 30 s, region `fra1`; every path is rewritten to it |

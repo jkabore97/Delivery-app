@@ -4,7 +4,7 @@ import { isOriginAllowed, parseCorsOrigins, type CorsOrigins } from './lib/cors'
 
 /**
  * Point d'entrée des fonctions Vercel (Node, Fluid compute). Pré-compilé par esbuild dans
- * `dist/vercel.mjs` (script `vercel-build`) puis importé par `api/index.js`.
+ * `dist/vercel.mjs` (script `build:vercel`) puis importé par `api/index.js`.
  * L'application Fastify est construite une fois par instance et réutilisée entre requêtes ;
  * aucun `listen()` : chaque requête Node est transmise au serveur HTTP interne de Fastify.
  * Variables d'environnement : celles du projet Vercel (pas de fichier .env).

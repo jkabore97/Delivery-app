@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build Vercel de l'API (Root Directory = apps/api, Build Command = `npm run vercel-build`).
+ * Build Vercel de l'API (Root Directory = apps/api, Build Command = `npm run build:vercel`).
  *   1. prisma generate (moteur rhel-openssl-3.0.x pour les fonctions Vercel, cf. binaryTargets) ;
  *   2. bundle esbuild de src/vercel.ts → dist/vercel.mjs (inclut le source TypeScript de @yaar/shared ;
  *      les paquets npm restent externes et sont tracés par Vercel depuis node_modules) ;

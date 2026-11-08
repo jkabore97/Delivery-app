@@ -17,7 +17,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:if-empty": "tsx prisma/seed.ts --if-empty",
     "retention": "tsx src/jobs/runRetention.ts",
-    "vercel-build": "node scripts/vercel-build.mjs",
+    "build:vercel": "node scripts/vercel-build.mjs",
     "build:bundle": "node scripts/vercel-build.mjs --skip-db",
     "smoke:vercel": "node scripts/smoke-vercel.mjs"
   },

@@ -29,7 +29,7 @@ export function LiveMap({ data, filter, onOrderClick, onDriverClick }: LiveMapPr
     if (!containerRef.current || mapRef.current) return undefined;
     const center = data.center ?? OUAGADOUGOU_CENTER;
     const map = L.map(containerRef.current, { zoomControl: true }).setView([center.lat, center.lng], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
