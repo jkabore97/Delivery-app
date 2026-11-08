@@ -10,7 +10,8 @@ import { AppError } from './lib/errors';
 import { CashPaymentProvider, MobileMoneyProvider, PaymentRegistry } from './providers/payment';
 import { ConsolePushProvider, Notifier, type PushProvider } from './providers/push';
 import { ConsoleSmsProvider, type SmsProvider } from './providers/sms';
-import { LocalDiskStorage, type StorageProvider } from './providers/storage';
+import { createStorage, type StorageProvider } from './providers/storage';
+import { WhatsAppOtpProvider } from './providers/whatsapp';
 import { createSocketServer } from './realtime/gateway';
 import { RealtimeHub, type IoServer } from './realtime/hub';
 import { authRoutes } from './routes/auth';
@@ -19,8 +20,10 @@ import { driverRoutes } from './routes/driver';
 import { meRoutes } from './routes/me';
 import { orderRoutes } from './routes/orders';
 import { storeRoutes } from './routes/stores';
+import { systemRoutes } from './routes/system';
 import { DispatchService } from './services/dispatch';
 import { OrderService } from './services/orders';
+import { BackgroundWork } from './services/work';
 
 export interface BuildOptions {
   config?: AppConfig;
@@ -35,8 +38,24 @@ export interface BuildOptions {
 export interface BuiltApp {
   app: FastifyInstance;
   ctx: AppContext;
-  io: IoServer;
+  /** Serveur Socket.IO ; null en mode poll (REALTIME_MODE=poll, Vercel). */
+  io: IoServer | null;
 }
+
+/** Routes qui déclenchent `runDueWork()` en mode poll (écrans qui attendent une affectation). */
+export const WORK_TRIGGER_ROUTES = new Set([
+  'GET /driver/offers',
+  'GET /driver/profile',
+  'GET /driver/current-order',
+  'POST /driver/location',
+  'PATCH /driver/availability',
+  'POST /orders',
+  'GET /orders/:id',
+  'POST /orders/:id/ready',
+  'GET /controller/map',
+  'GET /controller/orders/pending',
+  'GET /controller/dashboard',
+]);
 
 /** Taille max d'une requête JSON : une pièce de 5 Mo encodée en base64 + marge. */
 const BODY_LIMIT = 8 * 1024 * 1024;
@@ -57,7 +76,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   });
 
   const realtime = new RealtimeHub();
-  const storage = opts.storage ?? new LocalDiskStorage(config.storageDir, config.storageEncryptionKey);
+  const storage = opts.storage ?? createStorage(config, prisma);
   const payments = new PaymentRegistry([new CashPaymentProvider(), new MobileMoneyProvider()]);
   const push = opts.push ?? new ConsolePushProvider((m) => app.log.info(m));
   const notifier = new Notifier(prisma, push, (err) => app.log.warn({ err }, 'Échec d’envoi de notification push'));
@@ -76,9 +95,26 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   );
   const orders = new OrderService(prisma, clock, realtime, dispatch, payments, storage, notifier);
   dispatch.onAssigned = (orderId) => orders.notify(orderId);
-  const sms = opts.sms ?? new ConsoleSmsProvider((m) => app.log.info(m));
+  const sms =
+    opts.sms ??
+    (config.otpProvider === 'whatsapp' ? new WhatsAppOtpProvider() : new ConsoleSmsProvider((m) => app.log.info(m)));
+  const work = new BackgroundWork(
+    prisma,
+    clock,
+    dispatch,
+    { throttleMs: config.workThrottleMs, budgetMs: config.workBudgetMs, leaseMs: 30_000 },
+    (err) => app.log.error({ err }, 'Échec du cycle d’affectation (runDueWork)'),
+  );
 
-  const ctx: AppContext = { prisma, config, clock, sms, storage, payments, push, notifier, realtime, dispatch, orders };
+  const ctx: AppContext = { prisma, config, clock, sms, storage, payments, push, notifier, realtime, dispatch, orders, work };
+
+  if (config.demoMode) {
+    app.log.warn(
+      '⚠⚠⚠ DEMO_MODE=true : le code OTP 123456 est accepté pour TOUS les numéros (y compris en production) et le seed de démonstration est autorisé. Ne jamais utiliser avec de vrais utilisateurs. ⚠⚠⚠',
+    );
+  } else if (config.otpDevBypass) {
+    app.log.warn('OTP_DEV_BYPASS actif : le code 123456 est accepté (développement uniquement)');
+  }
 
   // JSON tolérant : un corps vide (actions POST sans paramètre) est lu comme `{}`.
   app.removeContentTypeParser('application/json');
@@ -128,6 +164,16 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
 
   app.get('/health', async () => ({ status: 'ok', time: clock.now().toISOString() }));
 
+  if (config.realtimeMode === 'poll') {
+    // Pas de processus permanent : les requêtes des écrans qui attendent une affectation déclenchent
+    // le cycle d'affectation (au plus une fois par WORK_THROTTLE_MS, toutes instances confondues).
+    app.addHook('onRequest', async (req) => {
+      const route = `${req.method} ${req.routeOptions.url ?? ''}`;
+      if (WORK_TRIGGER_ROUTES.has(route)) await work.kick();
+    });
+  }
+
+  await systemRoutes(app, ctx);
   await authRoutes(app, ctx);
   await meRoutes(app, ctx);
   await storeRoutes(app, ctx);
@@ -135,15 +181,20 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   await driverRoutes(app, ctx);
   await controllerRoutes(app, ctx);
 
-  const io = createSocketServer(app.server, {
-    prisma,
-    jwtSecret: config.jwtSecret,
-    hub: realtime,
-    corsOrigins: config.corsOrigins,
-  });
-  app.addHook('onClose', async () => {
-    await new Promise<void>((resolve) => io.close(() => resolve()));
-  });
+  // Mode poll : pas de Socket.IO, les émissions du RealtimeHub sont ignorées (aucun serveur attaché).
+  let io: IoServer | null = null;
+  if (config.realtimeMode === 'socket') {
+    const server = createSocketServer(app.server, {
+      prisma,
+      jwtSecret: config.jwtSecret,
+      hub: realtime,
+      corsOrigins: config.corsOrigins,
+    });
+    io = server;
+    app.addHook('onClose', async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+  }
 
   return { app, ctx, io };
 }

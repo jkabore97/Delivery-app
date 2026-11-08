@@ -9,12 +9,17 @@ async function main(): Promise<void> {
   const { config } = ctx;
 
   // Tâche d'affectation : expiration des offres (30 s) et relance des commandes en attente.
-  const runTick = () =>
-    ctx.dispatch.tick().catch((err: unknown) => app.log.error({ err }, 'Échec du cycle d’affectation'));
-  void runTick();
-  const dispatchTimer = setInterval(() => void runTick(), config.dispatchTickMs);
+  // Mode socket (serveur persistant, une instance) : appel périodique. Mode poll : déclenchée par les
+  // requêtes (ctx.work.kick(), cf. app.ts), comme sur Vercel ; pas d'intervalle.
+  let dispatchTimer: NodeJS.Timeout | undefined;
+  if (config.realtimeMode === 'socket') {
+    const runTick = () =>
+      ctx.dispatch.tick().catch((err: unknown) => app.log.error({ err }, 'Échec du cycle d’affectation'));
+    void runTick();
+    dispatchTimer = setInterval(() => void runTick(), config.dispatchTickMs);
+  }
 
-  // Rétention : purge quotidienne des positions GPS de plus de 12 mois.
+  // Rétention : purge quotidienne (12 mois). Sur Vercel : GET /cron/daily (Vercel Cron).
   const retention = async () => {
     try {
       const r = await runRetention(ctx.prisma, ctx.clock);
@@ -39,7 +44,6 @@ async function main(): Promise<void> {
   }
 
   await app.listen({ port: config.port, host: config.host });
-  if (config.otpDevBypass) app.log.warn('OTP_DEV_BYPASS actif : le code 123456 est accepté (développement uniquement)');
 }
 
 main().catch((err: unknown) => {

@@ -154,6 +154,7 @@ export const ErrorCode = {
   RATE_LIMITED: 'RATE_LIMITED',
   UNSUPPORTED_FILE: 'UNSUPPORTED_FILE',
   ORDER_NOT_ACTIVE: 'ORDER_NOT_ACTIVE',
+  OTP_PROVIDER_UNAVAILABLE: 'OTP_PROVIDER_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

@@ -1,11 +1,11 @@
 /**
  * Données de démonstration autour de Ouagadougou.
- * ATTENTION : vide toutes les tables de la base visée par DATABASE_URL.
- *   npm run db:seed -w apps/api
+ *   npm run db:seed -w apps/api            ATTENTION : vide toutes les tables de la base visée par DATABASE_URL.
+ *   npm run db:seed:if-empty -w apps/api   ne fait rien si la base contient déjà un utilisateur ; ne vide jamais
+ *                                          (build Vercel avec SEED_DEMO=true).
+ * Autorisé avec NODE_ENV=production seulement si DEMO_MODE=true (ou SEED_FORCE=true pour le mode qui vide).
  */
 import 'dotenv/config';
-import { rm } from 'node:fs/promises';
-import path from 'node:path';
 import { PrismaClient, type OrderStatus, type VehicleType } from '@prisma/client';
 import {
   DEFAULT_PRICING_RULES,
@@ -15,11 +15,21 @@ import {
   requiredDocuments,
 } from '@yaar/shared';
 import { loadConfig } from '../src/config';
-import { LocalDiskStorage } from '../src/providers/storage';
+import { createStorage } from '../src/providers/storage';
 
-const prisma = new PrismaClient();
+const IF_EMPTY = process.argv.includes('--if-empty');
+
+/** Une seule connexion : le verrou consultatif de session (anti double seed) reste sur la même connexion. */
+function singleConnectionUrl(url: string): string {
+  const u = new URL(url);
+  u.searchParams.set('connection_limit', '1');
+  return u.toString();
+}
+
 const config = loadConfig();
-const storage = new LocalDiskStorage(config.storageDir, config.storageEncryptionKey);
+const prisma = new PrismaClient({ datasources: { db: { url: singleConnectionUrl(config.databaseUrl) } } });
+const storage = createStorage(config, prisma);
+const SEED_LOCK_KEY = 7_242_001;
 
 /** Quartiers (coordonnées approximatives). */
 const Q = {
@@ -42,7 +52,7 @@ const FAKE_PNG = Buffer.from(
 
 async function wipe(): Promise<void> {
   const tables = [
-    'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
+    'StoredFile', 'JobLease', 'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
     'SavedAddress', 'Product', 'Store', 'LocationPing', 'DriverDocument', 'DriverProfile', 'OtpCode', 'PricingRule', 'User',
   ];
   await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
@@ -50,16 +60,40 @@ async function wipe(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (IF_EMPTY) {
+    if (config.nodeEnv === 'production' && !config.demoMode)
+      throw new Error('Seed de démonstration interdit en production sans DEMO_MODE=true.');
+    // Deux builds simultanés : un seul seed (verrou consultatif de session, connexion unique).
+    await prisma.$executeRawUnsafe(`SELECT pg_advisory_lock(${SEED_LOCK_KEY})`);
+    try {
+      const users = await prisma.user.count();
+      if (users > 0) {
+        console.info(`Seed de démonstration ignoré : la base contient déjà ${users} utilisateur(s).`);
+        return;
+      }
+      console.info('Base vide : création des données de démonstration (sans effacement).');
+      await seed();
+    } finally {
+      await prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`);
+    }
+    return;
+  }
   if (config.nodeEnv === 'production' && process.env.SEED_FORCE !== 'true')
     throw new Error('Seed interdit en production (il vide la base). Forcer avec SEED_FORCE=true.');
   await wipe();
   // Les fichiers des exécutions précédentes (pièces KYC, preuves, photos) ne sont plus référencés.
-  for (const dir of ['kyc', 'proofs', 'products'])
-    await rm(path.join(path.resolve(config.storageDir), dir), { recursive: true, force: true });
+  for (const dir of ['kyc', 'proofs', 'products']) await storage.deletePrefix(dir);
+  await seed();
+}
+
+async function seed(): Promise<void> {
+  // Base vide (aucune commande) : la numérotation des commandes démarre à 1001.
+  if ((await prisma.order.count()) === 0) await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Order_number_seq" RESTART WITH 1001`);
   const now = new Date();
   const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
 
-  for (const r of DEFAULT_PRICING_RULES) await prisma.pricingRule.create({ data: r });
+  for (const r of DEFAULT_PRICING_RULES)
+    await prisma.pricingRule.upsert({ where: { vehicleType: r.vehicleType }, create: r, update: {} });
 
   /* ---------------- Console ---------------- */
   const admin = await prisma.user.create({ data: { phone: '+22670000001', name: 'Admin Yaar', role: 'ADMIN' } });
@@ -322,7 +356,7 @@ async function main(): Promise<void> {
   });
 
   console.info('Base de démonstration créée.');
-  console.info('Connexion (OTP 123456 si OTP_DEV_BYPASS=true) :');
+  console.info('Connexion (OTP 123456 si OTP_DEV_BYPASS=true ou DEMO_MODE=true) :');
   console.info(`  Admin       ${admin.phone}`);
   console.info(`  Contrôleur  ${controller.phone}`);
   console.info('  Vendeurs    +22671000001 (Le Verdoyant), +22671000002, +22671000003, +22671000004, +22671000009 (boutique à valider)');

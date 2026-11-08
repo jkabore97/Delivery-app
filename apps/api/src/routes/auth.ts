@@ -6,6 +6,7 @@ import { signAccessToken } from '../lib/auth';
 import { AppError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validation';
+import { OtpProviderNotConfiguredError } from '../providers/sms';
 import { toUserDto } from '../services/serializers';
 
 const MAX_OTP_PER_HOUR = 5;
@@ -40,7 +41,15 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
         createdAt: now,
       },
     });
-    await ctx.sms.send(phone, `Yaar Livraison : votre code de connexion est ${code}. Il expire dans ${Math.round(config.otpTtlSeconds / 60)} min.`);
+    try {
+      await ctx.sms.send(phone, `Yaar Livraison : votre code de connexion est ${code}. Il expire dans ${Math.round(config.otpTtlSeconds / 60)} min.`);
+    } catch (err) {
+      if (err instanceof OtpProviderNotConfiguredError) {
+        req.log.error(err.message);
+        throw new AppError(503, 'OTP_PROVIDER_UNAVAILABLE', 'L’envoi des codes de connexion est momentanément indisponible.');
+      }
+      throw err;
+    }
     return { sent: true, expiresInSeconds: config.otpTtlSeconds };
   });
 

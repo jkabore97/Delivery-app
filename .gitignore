@@ -29,3 +29,6 @@ apps/mobile/android/
 *.log
 .idea/
 .vscode/
+
+# Vercel
+.vercel/

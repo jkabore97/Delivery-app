@@ -241,6 +241,11 @@ export interface OrderDto {
   pickedUpAt: IsoDateString | null;
   deliveredAt: IsoDateString | null;
   cancelledAt: IsoDateString | null;
+  /**
+   * Dernière modification de la commande (toujours renseignée par l'API). Mode poll : passer le plus
+   * grand `updatedAt` reçu en `updatedSince` de GET /orders pour ne recevoir que les changements.
+   */
+  updatedAt?: IsoDateString;
   /** Note déjà donnée par l'utilisateur courant pour cette commande. */
   myRating: number | null;
   canRate: boolean;
@@ -552,4 +557,36 @@ export interface SubscribeAck {
 export interface ClientToServerEvents {
   'order.subscribe': (p: { orderId: string }, ack: (r: SubscribeAck) => void) => void;
   'order.unsubscribe': (p: { orderId: string }, ack?: (r: SubscribeAck) => void) => void;
+}
+
+/* ---------------------------- Configuration publique ---------------------------- */
+
+/** Mode temps réel de l'API : `socket` (Socket.IO) ou `poll` (interrogation REST, hébergement Vercel). */
+export type RealtimeMode = 'socket' | 'poll';
+
+/** Canal d'envoi des codes de connexion. */
+export type OtpChannel = 'sms' | 'whatsapp' | 'console';
+
+/** GET /config (public, sans authentification) : comment l'application doit se comporter. */
+export interface PublicConfigDto {
+  realtime: RealtimeMode;
+  /** Intervalle de rafraîchissement conseillé en mode poll (ms). */
+  pollIntervalMs: number;
+  /** Mode démonstration : afficher « Mode démo : code 123456 » sur l'écran de connexion. */
+  demoMode: boolean;
+  otpChannel: OtpChannel;
+}
+
+/** GET /cron/daily (Vercel Cron, `Authorization: Bearer <CRON_SECRET>`). */
+export interface CronDailyResultDto {
+  retention: {
+    locationPingsDeleted: number;
+    otpCodesDeleted: number;
+    orderLocationsPurged: number;
+    incidentLocationsPurged: number;
+    orderMessagesDeleted: number;
+    cutoff: IsoDateString;
+  };
+  dispatch: { ran: boolean; expired: number; offered: number; staleOffline: number };
+  ranAt: IsoDateString;
 }

@@ -126,6 +126,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   type: orderTypeSchema.optional(),
   /** Recherche (numéro de commande, téléphone) : contrôleurs uniquement. */
   q: z.string().trim().max(100).optional(),
+  /** Mode poll : seulement les commandes modifiées à partir de cette date (ISO 8601, incluse). */
+  updatedSince: z.iso.datetime({ offset: true, message: 'Date ISO 8601 attendue' }).optional(),
 });
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 

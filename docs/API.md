@@ -6,7 +6,8 @@ and every request body is validated by the zod schema of the same name in `packa
 Clients should import those types and, ideally, validate forms with the same schemas.
 
 - Base URL (dev): `http://localhost:3000` (no path prefix). On an Android emulator use `http://10.0.2.2:3000`.
-- Socket.IO: same origin, default path `/socket.io`.
+- Socket.IO: same origin, default path `/socket.io`, **only when `GET /config` says `realtime: "socket"`**.
+  On Vercel the API runs in polling mode (no socket): see [Mode polling (Vercel)](#mode-polling-vercel).
 - Content type: `application/json; charset=utf-8` for every request body and every JSON response.
 - Dates: ISO 8601 strings in UTC (`2026-11-06T19:23:16.018Z`). Ouagadougou is UTC+0 all year, so "today" = UTC day.
 - Money: integers in FCFA. Distances: kilometres with one decimal. Coordinates: decimal degrees (WGS84).
@@ -26,6 +27,7 @@ Clients should import those types and, ideally, validate forms with the same sch
 7. [Driver space](#7-driver-space)
 8. [Controller console](#8-controller-console)
 9. [Realtime (Socket.IO)](#9-realtime-socketio)
+   - [Mode polling (Vercel)](#mode-polling-vercel): no socket, what to poll and how often
 10. [Visibility and privacy rules](#10-visibility-and-privacy-rules)
 11. [Business rules reference](#11-business-rules-reference)
 12. [Demo accounts (seed)](#12-demo-accounts-seed)
@@ -160,6 +162,20 @@ display them through a blob / object URL (an `<img src>` cannot send the header)
 
 `GET /health` (public) → `200 {"status":"ok","time":"2026-11-06T19:26:46.679Z"}`
 
+### 1.8 Public configuration
+
+`GET /config` (public, no auth) → `PublicConfigDto`. Read it when the app starts, before logging in.
+```json
+{ "realtime": "poll", "pollIntervalMs": 4000, "demoMode": true, "otpChannel": "console" }
+```
+- `realtime`: `"socket"` → connect Socket.IO (§9); `"poll"` → do not open a socket, poll the REST endpoints
+  listed in [Mode polling (Vercel)](#mode-polling-vercel) every `pollIntervalMs`.
+- `demoMode`: `true` → show "Mode démo : code 123456" on the login screen (the code `123456` is accepted for
+  every number, even in production). Never `true` with real users.
+- `otpChannel`: how the login code is delivered: `"console"` (written in the API log: demo/dev), `"whatsapp"`
+  (planned, not implemented yet: `POST /auth/otp/request` answers `503 OTP_PROVIDER_UNAVAILABLE`),
+  `"sms"` (reserved). Use it for the wording ("Code envoyé par WhatsApp" / "par SMS").
+
 ---
 
 ## 2. Enums
@@ -204,7 +220,9 @@ Body `RequestOtpInput`: `{ "phone": "70 11 22 33" }`
 { "sent": true, "expiresInSeconds": 300 }
 ```
 Errors: `400 VALIDATION_ERROR` (bad phone), `429 OTP_RATE_LIMITED` (max 5 per phone per hour),
-`429 RATE_LIMITED` (too many requests from this IP, `AUTH_RATE_LIMIT_REQUEST`, default 20 per 10 min).
+`429 RATE_LIMITED` (too many requests from this IP, `AUTH_RATE_LIMIT_REQUEST`, default 20 per 10 min),
+`503 OTP_PROVIDER_UNAVAILABLE` (the delivery channel is not configured, e.g. `OTP_PROVIDER=whatsapp` before a
+WhatsApp provider is plugged in; in demo mode the code `123456` still works).
 
 ### `POST /auth/otp/verify` (public)
 
@@ -550,13 +568,16 @@ Field notes:
 - `etaMinutes`: estimated minutes until delivery from the driver's last position (`ASSIGNED`: via the pickup;
   `PICKED_UP`: straight to the dropoff; road distance ÷ average speed of the vehicle). `null` outside
   `ASSIGNED`/`PICKED_UP` or without a driver position. Client, seller, assigned driver and back office.
+- `updatedAt`: last change of the order row (status, assignment, payment…). It does **not** move when only the
+  driver's position changes: poll `GET /orders/:id` for live tracking.
 - Fields hidden by the privacy rules (§10) are `null`, never absent.
 
 ### 6.5 Listing and reading
 
 `GET /orders` (any role, *paginated*, newest first). Query: `status` (comma-separated list, e.g.
 `status=ASSIGNED,PICKED_UP`), `type` (`FOOD`|`PARCEL`), `q` (back office only: order number `1048`/`#1048`,
-client phone or name), `page`, `pageSize`. Scope by role: client = own orders, seller = orders of own
+client phone or name), `updatedSince` (ISO 8601: only orders whose `updatedAt` is at or after this instant;
+for polling, pass the largest `updatedAt` already received), `page`, `pageSize`. Scope by role: client = own orders, seller = orders of own
 stores, driver = orders assigned to him (current and past), back office = all.
 
 `GET /orders/:id` (any role with access) → `OrderDto` with `events`.
@@ -1053,6 +1074,70 @@ Sockets are a convenience: always be able to recover state with REST (`GET /orde
 
 ---
 
+## Mode polling (Vercel)
+
+When the API runs on Vercel (serverless functions: ephemeral instances, several at once, no persistent
+connection), `GET /config` returns `realtime: "poll"`. Then:
+
+- **Do not open a Socket.IO connection** (`/socket.io` answers `404`). No socket event is ever sent.
+- Poll the REST endpoints below every `pollIntervalMs` (default **4000 ms**) while the screen that needs them is
+  visible; stop when the app is in the background (resume = one immediate refresh). Back off (×2, max 30 s) on
+  network errors.
+- Every piece of information the socket events carried is available by REST, with the same privacy rules (§10).
+- Background work (30 s offer timeout, next driver, re-offering waiting orders, stale drivers set offline) has no
+  timer in this mode: it runs **lazily**, triggered by the polling requests marked ⚙ below (at most once every
+  `WORK_THROTTLE_MS` = 4 s across all instances; the triggering request waits for it at most `WORK_BUDGET_MS`).
+  So an offer is closed 30-35 s after it was made as long as someone is polling. The 12-month retention purge
+  runs daily from Vercel Cron (`GET /cron/daily`, below).
+
+### What to poll
+
+| Who / screen | Endpoint | Interval | Replaces socket event |
+|---|---|---|---|
+| Driver online, idle | ⚙ `GET /driver/offers` | `pollIntervalMs` (4 s) | `offer.new`, `offer.closed` (an offer that disappears from the list was taken, expired or withdrawn; accepting it then gives `409 OFFER_EXPIRED`) |
+| Driver online, idle | ⚙ `POST /driver/location` | 30-60 s (unchanged) | |
+| Driver (any screen) | ⚙ `GET /driver/profile` | 30 s and on resume | `driver.status` (`isOnline`/`isBusy`, e.g. set offline as stale, suspended) |
+| Driver on a delivery | ⚙ `POST /driver/location` | 5-10 s (unchanged) | |
+| Driver on a delivery | ⚙ `GET /driver/current-order` (or `GET /orders/:id`) | 10 s | `order.updated` (cancelled, reassigned: `order` becomes `null` / `404`) |
+| Client, order `SEARCHING_DRIVER` / `ASSIGNED` / `PICKED_UP` | ⚙ `GET /orders/:id` | `pollIntervalMs` (4 s) | `order.updated`, `driver.location` (`driver.lastLocation` + `etaMinutes`, only while ASSIGNED/PICKED_UP) |
+| Client, order `PENDING` / `ACCEPTED` / `READY` | ⚙ `GET /orders/:id` | 10 s | `order.updated` |
+| Client, order list | `GET /orders?updatedSince=<max updatedAt>` | 30 s | `order.updated` |
+| Seller, orders screen | `GET /orders?status=PENDING,ACCEPTED,READY,SEARCHING_DRIVER,ASSIGNED,PICKED_UP&updatedSince=<max updatedAt>` | 5-10 s | `order.updated` (new order = `PENDING`) |
+| Seller, one order | `GET /orders/:id` | 10 s | `order.updated`, `driver.location` |
+| Chat open (client / driver) | `GET /orders/:id/messages` | 5 s | `order.message` |
+| Console, map | ⚙ `GET /controller/map` | 5 s | `driver.location`, `driver.status`, `sos` (`openSos`), `order.updated` (active orders) |
+| Console, dispatch queue | ⚙ `GET /controller/orders/pending` | 5 s | `order.updated`, `offer.*` (`currentOffer`) |
+| Console, dashboard | ⚙ `GET /controller/dashboard` | 30 s | |
+| Console, incidents | `GET /controller/incidents?status=OPEN` | 10-15 s | `sos`, `incident.updated` |
+| Console, one order | `GET /orders/:id` | 5-10 s | `order.updated`, `driver.location` |
+
+⚙ = also triggers the dispatch cycle (`runDueWork`). `POST /orders`, `POST /orders/:id/ready` and
+`PATCH /driver/availability` trigger it too.
+
+`updatedSince` keeps list polling cheap: keep the largest `updatedAt` you received (server clock, so no skew),
+send it back, merge the returned items by `id`. An empty `items` means nothing changed. `total` is the count
+of changed orders, not of all orders.
+
+A suspended account gets `403 ACCOUNT_SUSPENDED` on its next request (instead of a socket disconnection);
+a reassigned driver gets `404` on the order (instead of being removed from the room).
+
+### Daily job: `GET /cron/daily`
+
+Called by Vercel Cron once a day (Hobby plan limit) with `Authorization: Bearer <CRON_SECRET>`; `401` otherwise
+(and always `401` when `CRON_SECRET` is not set). Runs the 12-month retention purge (§11) and one dispatch cycle.
+`200 CronDailyResultDto`:
+```json
+{
+  "retention": { "locationPingsDeleted": 0, "otpCodesDeleted": 3, "orderLocationsPurged": 0, "incidentLocationsPurged": 0, "orderMessagesDeleted": 0, "cutoff": "2025-11-08T02:30:00.000Z" },
+  "dispatch": { "ran": true, "expired": 0, "offered": 0, "staleOffline": 1 },
+  "ranAt": "2026-11-08T02:30:00.000Z"
+}
+```
+Self-hosted (`npm start`) servers keep their in-process timers: dispatch every `DISPATCH_TICK_MS` in socket mode,
+retention every 24 h in both modes.
+
+---
+
 ## 10. Visibility and privacy rules
 
 Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`); clients must not try to work around them.
@@ -1112,7 +1197,9 @@ Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Forma
 
 ## 12. Demo accounts (seed)
 
-`npm run db:seed` (wipes the dev database). With `OTP_DEV_BYPASS=true`, log in with code `123456`.
+`npm run db:seed` (wipes the dev database). With `OTP_DEV_BYPASS=true` (or `DEMO_MODE=true`), log in with code
+`123456`. On Vercel, the build seeds the same accounts once, only when the database has no user yet
+(`SEED_DEMO=true`, `npm run db:seed:if-empty`, never wipes).
 
 | Phone | Role | Notes |
 |---|---|---|
@@ -1156,15 +1243,30 @@ Against Annexe 1 of the contract. API side:
 | Receipts | **deferred**: the `OrderDto` of a delivered order holds every receipt field; no PDF receipt |
 | Mobile money | reserved (`MOBILE_MONEY` → `400 PAYMENT_METHOD_UNAVAILABLE`, Lot 2) |
 
-Deployment note: dispatch serialises offer creation in-process and the rate limits are in memory, so Lot 1
-assumes **one API instance**. Running several instances needs a shared lock (Postgres advisory lock or Redis)
-and a shared rate-limit store.
+Deployment note: several API instances (Vercel) are supported for dispatch: Postgres partial unique indexes
+allow at most one open offer per order and per driver, and the dispatch cycle is guarded by a lease row
+(`JobLease`). The per-IP limits on `/auth/*` are still in memory (per instance); the per-phone OTP limit
+(5 per hour) is in the database. Files can be stored in Postgres (`STORAGE_DRIVER=db`).
 
 ---
 
 ## 14. Changelog
 
-Corrections after the acceptance review (backward compatible unless marked **breaking**):
+Vercel deployment (backward compatible):
+
+- New `GET /config` (`PublicConfigDto`: `realtime`, `pollIntervalMs`, `demoMode`, `otpChannel`) and polling mode
+  without Socket.IO ([Mode polling (Vercel)](#mode-polling-vercel)).
+- `OrderDto.updatedAt` and `GET /orders?updatedSince=`.
+- `GET /cron/daily` (Vercel Cron, `CRON_SECRET`).
+- `503 OTP_PROVIDER_UNAVAILABLE` on `POST /auth/otp/request` when the OTP channel is not configured
+  (`OTP_PROVIDER=whatsapp` placeholder).
+- `DEMO_MODE=true` accepts the code `123456` even in production (announced by `GET /config`).
+- Request bodies are limited to **4.5 MB on Vercel** (platform limit), below the API's own 8 MB: on Vercel keep
+  uploaded files under ~3.3 MB (base64 adds a third) and compress photos before upload; a larger request is
+  refused by Vercel itself with `413` (not the API's JSON error format).
+
+Earlier corrections after the acceptance review (backward compatible unless marked **breaking**):
+
 
 - **Breaking for the driver app**: going online now needs the tracking consent (`403 CONSENT_REQUIRED`); send
   `trackingConsent: true` once (§7.2).

@@ -26,11 +26,24 @@ export const P = {
   bobo: { lat: 11.1771, lng: -4.2979 }, // hors rayon
 };
 
-export async function createTestApp(): Promise<TestApp> {
-  const clock = new ManualClock(T0);
+/**
+ * Application de test. `env` remplace des variables d'environnement (ex. REALTIME_MODE=poll) ;
+ * `opts.sms: null` garde le fournisseur OTP choisi par la configuration (OTP_PROVIDER).
+ */
+export async function createTestApp(
+  env: Record<string, string> = {},
+  opts: { clock?: ManualClock; sms?: null } = {},
+): Promise<TestApp> {
+  const clock = opts.clock ?? new ManualClock(T0);
   const sms = new MemorySmsProvider();
   const push = new MemoryPushProvider();
-  const built = await buildApp({ config: loadConfig(), clock, sms, push, logger: false });
+  const built = await buildApp({
+    config: loadConfig({ ...process.env, ...env }),
+    clock,
+    ...(opts.sms === null ? {} : { sms }),
+    push,
+    logger: false,
+  });
   built.ctx.realtime.record(true);
   await built.app.ready();
   return { ...built, clock, sms, push, prisma: built.ctx.prisma };
@@ -38,7 +51,7 @@ export async function createTestApp(): Promise<TestApp> {
 
 export async function resetDb(prisma: PrismaClient): Promise<void> {
   const tables = [
-    'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
+    'StoredFile', 'JobLease', 'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
     'SavedAddress', 'Product', 'Store', 'LocationPing', 'DriverDocument', 'DriverProfile', 'OtpCode', 'PricingRule', 'User',
   ];
   await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t}"`).join(', ')} CASCADE`);

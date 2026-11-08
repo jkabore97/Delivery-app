@@ -8,6 +8,7 @@ import type { Notifier, PushProvider } from './providers/push';
 import type { RealtimeHub } from './realtime/hub';
 import type { DispatchService } from './services/dispatch';
 import type { OrderService } from './services/orders';
+import type { BackgroundWork } from './services/work';
 
 /** Dépendances partagées par les routes et services (injectées, donc remplaçables en test). */
 export interface AppContext {
@@ -22,4 +23,6 @@ export interface AppContext {
   realtime: RealtimeHub;
   dispatch: DispatchService;
   orders: OrderService;
+  /** Tâches de fond déclenchées à la demande (mode poll) et par le cron. */
+  work: BackgroundWork;
 }

@@ -25,3 +25,6 @@ npm test             # every workspace (the API tests need PostgreSQL, see apps/
 npm run dev:api      # start the API on http://localhost:3000
 npm run dev:console  # start the controller console on http://localhost:5173
 ```
+
+Hosting: the API deploys to Vercel (root directory `apps/api`, Neon Postgres, polling instead of sockets):
+see "Déploiement Vercel" in [apps/api/README.md](apps/api/README.md).

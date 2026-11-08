@@ -266,6 +266,7 @@ export class OrderService {
     const where: Prisma.OrderWhereInput = {};
     if (q.status?.length) where.status = { in: q.status };
     if (q.type) where.type = q.type;
+    if (q.updatedSince) where.updatedAt = { gte: new Date(q.updatedSince) };
     switch (viewer.role) {
       case 'CLIENT':
         where.clientId = viewer.id;

@@ -230,6 +230,7 @@ export function toOrderDto(
     pickedUpAt: isoOrNull(o.pickedUpAt),
     deliveredAt: isoOrNull(o.deliveredAt),
     cancelledAt: isoOrNull(o.cancelledAt),
+    updatedAt: iso(o.updatedAt),
     myRating,
     canRate,
     etaMinutes: showDriverLive || driverSeesDetails ? estimateEtaMinutes(o, profile) : null,

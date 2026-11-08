@@ -3,6 +3,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // native : poste local / CI ; rhel-openssl-3.0.x : fonctions Node de Vercel (Amazon Linux 2023).
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -359,6 +361,7 @@ model OrderEvent {
   @@index([orderId, createdAt])
 }
 
+/// Index partiels uniques (migration 20261108120000) : une seule offre OFFERED par commande et par livreur.
 model DispatchOffer {
   id          String      @id @default(cuid())
   orderId     String
@@ -481,4 +484,22 @@ model OrderMessage {
   createdAt  DateTime @default(now())
 
   @@index([orderId, createdAt])
+}
+
+/// Fichier stocké en base (STORAGE_DRIVER=db, hébergement sans disque persistant comme Vercel).
+/// `data` contient les octets déjà chiffrés (AES-256-GCM) par le StorageProvider.
+model StoredFile {
+  key       String   @id
+  data      Bytes
+  sizeBytes Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Bail d'exécution des tâches de fond (runDueWork) partagé entre instances : une seule instance
+/// exécute le cycle d'affectation à la fois, au plus une fois par fenêtre de throttling.
+model JobLease {
+  name          String   @id
+  lastStartedAt DateTime
+  lockedUntil   DateTime
 }

@@ -1,4 +1,4 @@
-import type { DriverProfile, OrderStatus, OrderType, PrismaClient, User } from '@prisma/client';
+import { Prisma, type DriverProfile, type OrderStatus, type OrderType, type PrismaClient, type User } from '@prisma/client';
 import { haversineKm, type DriverCandidateDto, type VehicleType } from '@yaar/shared';
 import type { Clock } from '../lib/clock';
 import { AppError, conflict, notFound } from '../lib/errors';
@@ -98,8 +98,8 @@ export class DispatchService {
 
   /**
    * Propose la commande au prochain livreur éligible. Renvoie l'id de l'offre créée ou null.
-   * Les appels sont sérialisés : un livreur ne reçoit jamais deux offres ouvertes, ni une commande
-   * deux offres simultanées (Lot 1 : une seule instance d'API).
+   * Les appels sont sérialisés dans l'instance ; entre instances (Vercel), des index uniques partiels
+   * garantissent qu'un livreur n'a jamais deux offres ouvertes, ni une commande deux offres simultanées.
    */
   offerNext(orderId: string): Promise<string | null> {
     return this.serial(() => this.offerNextUnlocked(orderId));
@@ -109,6 +109,8 @@ export class DispatchService {
     const now = this.clock.now();
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.status !== 'SEARCHING_DRIVER') return null;
+    // Offres échues encore « OFFERED » : closes d'abord (index uniques partiels, cf. migration).
+    await this.expireDueOffers(now);
     const active = await this.prisma.dispatchOffer.findFirst({
       where: { orderId, status: 'OFFERED', expiresAt: { gt: now } },
     });
@@ -123,16 +125,24 @@ export class DispatchService {
     const best = candidates[0];
     if (!best) return null;
 
-    const offer = await this.prisma.dispatchOffer.create({
-      data: {
-        orderId,
-        driverId: best.profile.userId,
-        distanceKm: best.distanceKm,
-        offeredAt: now,
-        expiresAt: new Date(now.getTime() + this.cfg.offerTimeoutSeconds * 1000),
-      },
-      include: { order: { include: { store: true } } },
-    });
+    let offer;
+    try {
+      offer = await this.prisma.dispatchOffer.create({
+        data: {
+          orderId,
+          driverId: best.profile.userId,
+          distanceKm: best.distanceKm,
+          offeredAt: now,
+          expiresAt: new Date(now.getTime() + this.cfg.offerTimeoutSeconds * 1000),
+        },
+        include: { order: { include: { store: true } } },
+      });
+    } catch (err) {
+      // Une autre instance d'API vient d'ouvrir une offre pour cette commande ou ce livreur :
+      // l'index unique partiel l'a refusée, aucune offre en double.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return null;
+      throw err;
+    }
     this.realtime.offerNew(offer.driverId, toOfferDto(offer));
     if (this.notifier)
       void this.notifier.toUser(offer.driverId, {
@@ -157,19 +167,32 @@ export class DispatchService {
     return this.running;
   }
 
-  private async runTick(): Promise<TickResult> {
-    const now = this.clock.now();
-    const staleOffline = await this.timeoutStaleDrivers(now);
-    const expired = await this.prisma.dispatchOffer.findMany({
+  /**
+   * Passe en EXPIRED les offres échues (mise à jour conditionnelle : sûre entre plusieurs instances,
+   * chaque offre n'est close et annoncée qu'une fois). Renvoie le nombre d'offres closes ici.
+   */
+  async expireDueOffers(now: Date = this.clock.now()): Promise<number> {
+    const due = await this.prisma.dispatchOffer.findMany({
       where: { status: 'OFFERED', expiresAt: { lte: now } },
     });
-    for (const o of expired) {
+    let closed = 0;
+    for (const o of due) {
       const r = await this.prisma.dispatchOffer.updateMany({
         where: { id: o.id, status: 'OFFERED' },
         data: { status: 'EXPIRED', respondedAt: now },
       });
-      if (r.count > 0) this.realtime.offerClosed(o.driverId, { offerId: o.id, orderId: o.orderId, status: 'EXPIRED' });
+      if (r.count > 0) {
+        closed++;
+        this.realtime.offerClosed(o.driverId, { offerId: o.id, orderId: o.orderId, status: 'EXPIRED' });
+      }
     }
+    return closed;
+  }
+
+  private async runTick(): Promise<TickResult> {
+    const now = this.clock.now();
+    const staleOffline = await this.timeoutStaleDrivers(now);
+    const expired = await this.expireDueOffers(now);
     const waiting = await this.prisma.order.findMany({
       where: { status: 'SEARCHING_DRIVER' },
       orderBy: { searchingSince: 'asc' },
@@ -179,7 +202,7 @@ export class DispatchService {
     for (const w of waiting) {
       if (await this.offerNext(w.id)) offered++;
     }
-    return { expired: expired.length, offered, staleOffline };
+    return { expired, offered, staleOffline };
   }
 
   /**
