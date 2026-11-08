@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { LABELS } from '@yaar/shared';
 import { ProfileScreen } from '../../../components/ProfileScreen';
@@ -7,6 +6,7 @@ import { Banner, Button, Card, KeyValue, Muted, Subtitle } from '../../../compon
 import { hasTrackingConsent, trackingConsentStatus } from '../../../lib/consent';
 import { useDriver } from '../../../state/driver';
 import { colors } from '../../../theme';
+import { confirmAsync } from '../../../lib/dialog';
 
 /** Suivi GPS : état du consentement, lecture / acceptation, retrait (hors ligne forcé). */
 function TrackingConsentCard() {
@@ -16,22 +16,18 @@ function TrackingConsentCard() {
   const consented = hasTrackingConsent(profile);
 
   const withdraw = () => {
-    Alert.alert(
-      'Retirer votre consentement ?',
-      'Vous passerez immédiatement hors ligne, votre dernière position sera effacée et vous ne recevrez plus de courses tant que vous n’aurez pas de nouveau accepté le suivi.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Retirer',
-          style: 'destructive',
-          onPress: async () => {
-            setMessage(null);
-            const err = await withdrawTrackingConsent();
-            setMessage(err ? { text: err, ok: false } : { text: 'Consentement retiré : vous êtes hors ligne.', ok: true });
-          },
-        },
-      ],
-    );
+    void confirmAsync({
+      title: 'Retirer votre consentement ?',
+      message:
+        'Vous passerez immédiatement hors ligne, votre dernière position sera effacée et vous ne recevrez plus de courses tant que vous n’aurez pas de nouveau accepté le suivi.',
+      confirmText: 'Retirer',
+      destructive: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      setMessage(null);
+      const err = await withdrawTrackingConsent();
+      setMessage(err ? { text: err, ok: false } : { text: 'Consentement retiré : vous êtes hors ligne.', ok: true });
+    });
   };
 
   return (

@@ -5,8 +5,11 @@ export interface AsyncState<T> {
   data: T | null;
   error: string | null;
   loading: boolean;
-  /** Recharge ; `silent` garde les données affichées pendant le chargement. */
-  reload: (silent?: boolean) => void;
+  /**
+   * Recharge ; `silent` garde les données affichées pendant le chargement.
+   * La promesse renvoyée indique si le chargement a réussi (utile au polling, qui ralentit sur erreur).
+   */
+  reload: (silent?: boolean) => Promise<boolean>;
   setData: Dispatch<SetStateAction<T | null>>;
 }
 
@@ -22,19 +25,21 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
-  const run = useCallback((silent = false) => {
+  const run = useCallback((silent = false): Promise<boolean> => {
     const id = ++seq.current;
     if (!silent) setLoading(true);
-    fnRef
+    return fnRef
       .current()
       .then((value) => {
-        if (id !== seq.current) return;
+        if (id !== seq.current) return true;
         setData(value);
         setError(null);
+        return true;
       })
       .catch((err: unknown) => {
-        if (id !== seq.current) return;
+        if (id !== seq.current) return false;
         setError(errorMessage(err));
+        return false;
       })
       .finally(() => {
         if (id === seq.current) setLoading(false);
@@ -42,7 +47,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
   }, []);
 
   useEffect(() => {
-    run();
+    void run();
     return () => {
       seq.current++;
     };

@@ -23,7 +23,8 @@ import {
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { formatDateTime, formatFcfa, formatKm, formatPhone, formatTime } from '../lib/format';
-import { useSocketEvent } from '../realtime/RealtimeContext';
+import { POLL_MS } from '../config';
+import { usePolling, useSocketEvent } from '../realtime/RealtimeContext';
 
 function Address({ a }: { a: AddressDto | null }) {
   if (!a) return <span className="muted">Masqué</span>;
@@ -81,6 +82,9 @@ export function OrderDetailPage() {
   useSocketEvent('order.updated', (e) => {
     if (e.orderId === id) refresh();
   });
+  // Mode poll : statut et position du livreur rechargés tant que la course n'est pas terminée.
+  const finished = order.data?.status === 'DELIVERED' || order.data?.status === 'CANCELLED';
+  usePolling(() => order.reload(true), POLL_MS.order, !finished);
 
   if (order.loading && !order.data) return <Loading />;
   if (!order.data) return <ErrorBanner message={order.error ?? 'Commande introuvable'} onRetry={() => order.reload()} />;

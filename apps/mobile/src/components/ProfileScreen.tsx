@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Alert } from 'react-native';
 import { LABELS } from '@yaar/shared';
 import { errorMessage } from '../lib/api';
 import { formatPhone } from '../lib/phone';
 import { useAuth } from '../state/auth';
 import { colors } from '../theme';
 import { Banner, Button, Card, Field, Muted, Screen, Subtitle, Title } from './ui';
+import { confirmAsync, notify } from '../lib/dialog';
 
 export interface ProfileScreenProps {
   color: string;
@@ -31,7 +31,7 @@ export function ProfileScreen({ color, children, beforeSignOut }: ProfileScreenP
     try {
       const blocked = beforeSignOut ? await beforeSignOut() : null;
       if (blocked) {
-        Alert.alert('Déconnexion impossible', blocked);
+        notify('Déconnexion impossible', blocked);
         return;
       }
       await signOut();
@@ -72,10 +72,14 @@ export function ProfileScreen({ color, children, beforeSignOut }: ProfileScreenP
         loading={signingOut}
         testID="signout-button"
         onPress={() =>
-          Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Se déconnecter', style: 'destructive', onPress: () => void doSignOut() },
-          ])
+          void confirmAsync({
+            title: 'Déconnexion',
+            message: 'Voulez-vous vous déconnecter ?',
+            confirmText: 'Se déconnecter',
+            destructive: true,
+          }).then((ok) => {
+            if (ok) void doSignOut();
+          })
         }
       />
       <Muted style={{ textAlign: 'center', color: colors.textMuted }}>Yaar Livraison · version 0.1.0 (Lot 1)</Muted>

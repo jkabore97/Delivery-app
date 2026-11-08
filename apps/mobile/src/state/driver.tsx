@@ -7,7 +7,8 @@ import { hasTrackingConsent } from '../lib/consent';
 import { formatOrderNumber } from '../lib/format';
 import { useDriverLocationTracking, type TrackedPosition } from '../hooks/useDriverLocationTracking';
 import { useApi } from './auth';
-import { useSocketEvent } from './socket';
+import { POLL_MS } from '../lib/publicConfig';
+import { usePolling, useSocketEvent } from './socket';
 
 interface DriverContextValue {
   /** undefined = chargement ; null = pas encore de dossier (onboarding). */
@@ -24,6 +25,11 @@ interface DriverContextValue {
   gpsError: string | null;
   position: TrackedPosition | null;
   togglingOnline: boolean;
+  /**
+   * Dernier échec du passage en ligne (localisation refusée, véhicule bloqué…), y compris quand il a été
+   * lancé depuis la fenêtre de consentement, déjà fermée : l'écran d'accueil l'affiche.
+   */
+  availabilityError: string | null;
   /**
    * Passe en ligne / hors ligne. Sans consentement au suivi GPS, ouvre d'abord la fenêtre de
    * consentement (et renvoie null) : le passage en ligne reprend une fois le consentement donné.
@@ -65,6 +71,7 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   }, []);
   const [offers, setOffers] = useState<OfferDto[]>([]);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [consentPromptOpen, setConsentPromptOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   /** Passage en ligne demandé avant le consentement : on le reprend après acceptation. */
@@ -149,6 +156,32 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   });
 
   const online = profile?.isOnline === true;
+
+  // Mode poll (Vercel) : les requêtes REST remplacent offer.new / offer.closed / driver.status / order.updated.
+  // Livreur en ligne sans course : GET /driver/offers toutes les pollIntervalMs (une offre qui disparaît
+  // a été prise, a expiré ou a été retirée). En course : GET /driver/current-order toutes les 10 s.
+  const onDelivery = currentOrder !== null;
+  usePolling(
+    () =>
+      api.driverOffers().then(
+        (list) => {
+          setOffers(list);
+          return true;
+        },
+        () => false,
+      ),
+    POLL_MS.driverOffers,
+    approved && online && !onDelivery,
+  );
+  usePolling(
+    async () => {
+      await refreshCurrentOrder();
+    },
+    onDelivery ? POLL_MS.driverCurrentOrder : POLL_MS.driverProfile,
+    approved && (online || onDelivery),
+  );
+  usePolling(() => refreshProfile(), POLL_MS.driverProfile, profile !== undefined);
+
   const tracking = useDriverLocationTracking({
     online,
     onDelivery: currentOrder !== null,
@@ -172,11 +205,21 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   const changeAvailability = useCallback(
     async (wantOnline: boolean): Promise<string | null> => {
       setTogglingOnline(true);
+      setAvailabilityError(null);
       try {
         let coords: { lat: number; lng: number } | undefined;
         if (wantOnline) {
-          const perm = await Location.requestForegroundPermissionsAsync();
-          if (!perm.granted) return 'Autorisez la localisation pour passer en ligne.';
+          let granted = false;
+          try {
+            granted = (await Location.requestForegroundPermissionsAsync()).granted;
+          } catch {
+            granted = false; // navigateur sans géolocalisation (page hors HTTPS…)
+          }
+          if (!granted) {
+            const msg = 'Autorisez la localisation pour passer en ligne (réglages du téléphone ou du navigateur).';
+            setAvailabilityError(msg);
+            return msg;
+          }
           try {
             const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
             coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -196,7 +239,9 @@ export function DriverProvider({ children }: { children: ReactNode }) {
           openConsentPrompt(true);
           return null;
         }
-        return errorMessage(e);
+        const msg = errorMessage(e);
+        setAvailabilityError(msg);
+        return msg;
       } finally {
         setTogglingOnline(false);
       }
@@ -266,6 +311,7 @@ export function DriverProvider({ children }: { children: ReactNode }) {
       gpsError: tracking.error,
       position: tracking.position,
       togglingOnline,
+      availabilityError,
       setOnline,
       consentPromptOpen,
       openConsentPrompt,
@@ -292,6 +338,7 @@ export function DriverProvider({ children }: { children: ReactNode }) {
       tracking.error,
       tracking.position,
       togglingOnline,
+      availabilityError,
       setOnline,
       consentPromptOpen,
       openConsentPrompt,

@@ -1,24 +1,55 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { ServerToClientEvents } from '@yaar/shared';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { RealtimeMode, ServerToClientEvents } from '@yaar/shared';
 import { API_URL } from '../config';
+import { appStateVisibility, PollScheduler, type PollTask, type VisibilitySource } from '../lib/pollScheduler';
 import { createSocket, type YaarSocket } from '../lib/socket';
 import { useAuth } from './auth';
+import { useAppConfig } from './config';
 
 interface SocketContextValue {
   socket: YaarSocket | null;
   connected: boolean;
+  /** null tant que GET /config n'a pas répondu. */
+  mode: RealtimeMode | null;
+  /** Mode poll : planificateur des rafraîchissements (null en mode socket). */
+  scheduler: PollScheduler | null;
+  pollIntervalMs: number;
 }
 
-const SocketContext = createContext<SocketContextValue>({ socket: null, connected: false });
+const SocketContext = createContext<SocketContextValue>({
+  socket: null,
+  connected: false,
+  mode: null,
+  scheduler: null,
+  pollIntervalMs: 4000,
+});
 
-/** Une connexion Socket.IO par session (authentifiée par le JWT). */
-export function SocketProvider({ children }: { children: ReactNode }) {
+/**
+ * Temps réel de la session : une connexion Socket.IO (authentifiée par le JWT) en mode « socket » ;
+ * en mode « poll » (API sur Vercel), aucun socket mais un planificateur de rafraîchissements REST
+ * suspendu quand l'application passe en arrière-plan (voir usePolling).
+ */
+export function SocketProvider({ children, visibility }: { children: ReactNode; visibility?: VisibilitySource }) {
   const { token, signOut } = useAuth();
+  const { config } = useAppConfig();
+  const mode = config?.realtime ?? null;
+  const pollIntervalMs = config?.pollIntervalMs ?? 4000;
   const [socket, setSocket] = useState<YaarSocket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [scheduler, setScheduler] = useState<PollScheduler | null>(null);
 
   useEffect(() => {
-    if (!token) {
+    if (!token || mode !== 'poll') return;
+    const sched = new PollScheduler(visibility ?? appStateVisibility());
+    setScheduler(sched);
+    return () => {
+      sched.dispose();
+      setScheduler(null);
+    };
+  }, [token, mode, visibility]);
+
+  useEffect(() => {
+    if (!token || mode !== 'socket') {
       setSocket(null);
       setConnected(false);
       return;
@@ -36,9 +67,38 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       s.removeAllListeners();
       s.disconnect();
     };
-  }, [token, signOut]);
+  }, [token, signOut, mode]);
 
-  return <SocketContext.Provider value={{ socket, connected }}>{children}</SocketContext.Provider>;
+  const value = useMemo<SocketContextValue>(
+    () =>
+      mode === 'poll'
+        ? { socket: null, connected: true, mode, scheduler, pollIntervalMs }
+        : { socket, connected, mode, scheduler: null, pollIntervalMs },
+    [mode, scheduler, pollIntervalMs, socket, connected],
+  );
+  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
+}
+
+/** Mode du temps réel ('socket' | 'poll' | null pendant le chargement de /config). */
+export function useRealtimeMode(): RealtimeMode | null {
+  return useContext(SocketContext).mode;
+}
+
+/**
+ * Mode poll uniquement : appelle `task` toutes les `intervalMs` (jamais plus vite que `pollIntervalMs`
+ * de GET /config ; 0 = `pollIntervalMs`), en pause quand l'application est en arrière-plan et relancée
+ * immédiatement au retour. Sans effet en mode socket (les événements font le travail).
+ * `task` peut renvoyer `false` ou rejeter : l'intervalle est alors doublé (30 s au plus).
+ */
+export function usePolling(task: PollTask, intervalMs: number, enabled = true): void {
+  const { scheduler, pollIntervalMs } = useContext(SocketContext);
+  const ref = useRef(task);
+  ref.current = task;
+  const every = Math.max(intervalMs, pollIntervalMs);
+  useEffect(() => {
+    if (!scheduler || !enabled) return;
+    return scheduler.add(() => ref.current(), every);
+  }, [scheduler, every, enabled]);
 }
 
 export function useSocket(): SocketContextValue {

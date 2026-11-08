@@ -11,8 +11,8 @@ import { ErrorBanner, Loading } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { applyDriverLocation, applyDriverStatus, applyIncident, type VehicleFilter } from '../lib/mapState';
-import { MAP_SAFETY_REFRESH_MS } from '../config';
-import { useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
+import { MAP_SAFETY_REFRESH_MS, POLL_MS } from '../config';
+import { usePolling, useRealtime, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
 const FILTERS: Array<{ value: VehicleFilter; label: string }> = [
   { value: 'ALL', label: 'Tous' },
@@ -59,10 +59,19 @@ export function LivePage() {
   });
 
   const { reload: reloadMap } = map;
+  const { mode } = useRealtime();
   useEffect(() => {
-    const t = setInterval(() => reloadMap(true), MAP_SAFETY_REFRESH_MS);
+    if (mode !== 'socket') return undefined;
+    const t = setInterval(() => void reloadMap(true), MAP_SAFETY_REFRESH_MS);
     return () => clearInterval(t);
-  }, [reloadMap]);
+  }, [reloadMap, mode]);
+
+  // Mode poll (Vercel) : la carte, la file d'attente et les alertes remplacent les événements Socket.IO.
+  // Les indicateurs (et donc la file KYC, rechargée quand sa pastille change) sont gérés par DashboardProvider.
+  usePolling(() => map.reload(true), POLL_MS.map);
+  usePolling(() => pending.reload(true), POLL_MS.pendingOrders);
+  usePolling(() => incidents.reload(true), POLL_MS.incidents);
+  usePolling(() => kyc.reload(true), POLL_MS.kyc);
 
   // Nouveau dossier déposé (pastille KYC qui change) : on recharge la file affichée.
   const pendingKyc = dashboard?.pendingKyc;

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Linking, Modal, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import type { OrderDto, SellerStatsDto } from '@yaar/shared';
 import { DisputeBox } from '../../../components/DisputeBox';
 import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
@@ -28,8 +28,9 @@ import { telUrl } from '../../../lib/phone';
 import { clampPrepTime, ordersOfStore, SELLER_ACTIVE_STATUSES, sortSellerOrders } from '../../../lib/sellerOrders';
 import { useApi } from '../../../state/auth';
 import { useSeller } from '../../../state/seller';
-import { useSocketEvent } from '../../../state/socket';
-import { colors, radius, spacing } from '../../../theme';
+import { POLL_MS } from '../../../lib/publicConfig';
+import { usePolling, useSocketEvent } from '../../../state/socket';
+import { colors, radius, spacing, MAX_APP_WIDTH } from '../../../theme';
 
 const REJECT_REASONS = ['Rupture de stock', 'Trop de commandes', 'Fermeture imminente'];
 
@@ -44,9 +45,9 @@ export default function SellerOrdersScreen() {
   const now = useNow(30_000);
 
   const storeId = store?.id;
-  const load = useCallback(async () => {
-    if (!storeId) return;
-    setLoading(true);
+  const load = useCallback(async (silent = false): Promise<boolean> => {
+    if (!storeId) return true;
+    if (!silent) setLoading(true);
     try {
       const [list, st] = await Promise.all([
         api.listOrders({ status: SELLER_ACTIVE_STATUSES, pageSize: 100 }),
@@ -55,8 +56,10 @@ export default function SellerOrdersScreen() {
       setOrders(sortSellerOrders(ordersOfStore(list.items, storeId)));
       setStats(st);
       setError(null);
+      return true;
     } catch (e) {
       setError(errorMessage(e));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -69,6 +72,8 @@ export default function SellerOrdersScreen() {
   );
   // Nouvelle commande ou changement de statut : le vendeur est dans la salle user:<id>.
   useSocketEvent('order.updated', () => void load());
+  // Mode poll (Vercel) : nouvelles commandes et changements de statut relus toutes les 7 s à l'écran.
+  usePolling(() => load(true), POLL_MS.sellerOrders, useIsFocused() && !!storeId);
 
   const replace = (o: OrderDto) => {
     setOrders((prev) => (prev ? sortSellerOrders(prev.map((x) => (x.id === o.id ? o : x))) : prev));
@@ -289,6 +294,10 @@ const styles = StyleSheet.create({
   prep: { fontSize: 16, fontWeight: '800', minWidth: 60, textAlign: 'center' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
+    // Sur le web, la fenêtre modale couvre tout l'écran : la feuille garde la largeur de l'application.
+    width: '100%',
+    maxWidth: MAX_APP_WIDTH,
+    alignSelf: 'center',
     backgroundColor: colors.white,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,

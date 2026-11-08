@@ -1,6 +1,9 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import type { ClientToServerEvents, ServerToClientEvents } from '@yaar/shared';
+import type { ClientToServerEvents, RealtimeMode, ServerToClientEvents } from '@yaar/shared';
+import { POLL_MS } from '../config';
+import { useAppConfig } from './AppConfigContext';
+import { documentVisibility, PollScheduler, type PollTask, type VisibilitySource } from './pollScheduler';
 
 export type ConsoleSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export type ServerEventName = keyof ServerToClientEvents;
@@ -20,10 +23,23 @@ export const SOCKET_AUTH_ERRORS = ['UNAUTHENTICATED', 'ACCOUNT_SUSPENDED'] as co
 
 interface RealtimeValue {
   bus: RealtimeBus | null;
+  /** Socket connecté (mode socket) ; toujours vrai en mode poll (REST). */
   connected: boolean;
+  /** null tant que GET /config n'a pas répondu. */
+  mode: RealtimeMode | null;
+  /** Mode poll : planificateur des rafraîchissements (null en mode socket). */
+  scheduler: PollScheduler | null;
+  /** Intervalle minimal conseillé par l'API (GET /config). */
+  pollIntervalMs: number;
 }
 
-const RealtimeContext = createContext<RealtimeValue>({ bus: null, connected: false });
+const RealtimeContext = createContext<RealtimeValue>({
+  bus: null,
+  connected: false,
+  mode: null,
+  scheduler: null,
+  pollIntervalMs: 4000,
+});
 
 function busFromSocket(socket: ConsoleSocket): RealtimeBus {
   const reconnectHandlers = new Set<() => void>();
@@ -60,15 +76,37 @@ export interface RealtimeProviderProps {
   busOverride?: RealtimeBus;
   /** Jeton refusé ou compte suspendu à la connexion du socket : la session doit être fermée. */
   onAuthError?: (code: (typeof SOCKET_AUTH_ERRORS)[number]) => void;
+  /** Pour les tests : source de visibilité de l'onglet (mode poll). */
+  visibility?: VisibilitySource;
 }
 
-export function RealtimeProvider({ url, token, children, busOverride, onAuthError }: RealtimeProviderProps) {
+interface SocketState {
+  bus: RealtimeBus | null;
+  connected: boolean;
+}
+
+export function RealtimeProvider({ url, token, children, busOverride, onAuthError, visibility }: RealtimeProviderProps) {
   const onAuthErrorRef = useRef(onAuthError);
   onAuthErrorRef.current = onAuthError;
-  const [value, setValue] = useState<RealtimeValue>({ bus: busOverride ?? null, connected: Boolean(busOverride) });
+  const { config } = useAppConfig();
+  const mode: RealtimeMode | null = busOverride ? 'socket' : (config?.realtime ?? null);
+  const pollIntervalMs = config?.pollIntervalMs ?? 4000;
+  const [socketState, setValue] = useState<SocketState>({ bus: busOverride ?? null, connected: Boolean(busOverride) });
+  const [scheduler, setScheduler] = useState<PollScheduler | null>(null);
+
+  // Mode poll : aucun socket ; un planificateur suspendu quand l'onglet est masqué.
+  useEffect(() => {
+    if (mode !== 'poll' || !token) return undefined;
+    const s = new PollScheduler(visibility ?? documentVisibility());
+    setScheduler(s);
+    return () => {
+      s.dispose();
+      setScheduler(null);
+    };
+  }, [mode, token, visibility]);
 
   useEffect(() => {
-    if (busOverride || !token) return undefined;
+    if (busOverride || !token || mode !== 'socket') return undefined;
     const socket: ConsoleSocket = io(url, { auth: { token }, transports: ['websocket', 'polling'] });
     const bus = busFromSocket(socket);
     setValue({ bus, connected: false });
@@ -87,7 +125,15 @@ export function RealtimeProvider({ url, token, children, busOverride, onAuthErro
       socket.disconnect();
       setValue({ bus: null, connected: false });
     };
-  }, [url, token, busOverride]);
+  }, [url, token, busOverride, mode]);
+
+  const value = useMemo<RealtimeValue>(
+    () =>
+      mode === 'poll'
+        ? { bus: null, connected: true, mode, scheduler, pollIntervalMs }
+        : { ...socketState, mode, scheduler: null, pollIntervalMs },
+    [mode, scheduler, pollIntervalMs, socketState],
+  );
 
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
 }
@@ -118,6 +164,29 @@ export function useReconnect(handler: () => void): void {
     if (!bus) return undefined;
     return bus.onReconnect(() => ref.current());
   }, [bus]);
+}
+
+/**
+ * Mode poll uniquement : appelle `task` toutes les `intervalMs` (jamais plus vite que `pollIntervalMs`
+ * de GET /config), en pause quand l'onglet est masqué, immédiatement au retour. Sans effet en mode
+ * socket (les événements Socket.IO font le travail). `task` peut renvoyer `false` ou rejeter :
+ * l'intervalle est alors doublé (30 s au plus).
+ */
+export function usePolling(task: PollTask, intervalMs: number, enabled = true): void {
+  const { scheduler, pollIntervalMs } = useRealtime();
+  const ref = useRef(task);
+  ref.current = task;
+  const every = Math.max(intervalMs, pollIntervalMs);
+  useEffect(() => {
+    if (!scheduler || !enabled) return undefined;
+    return scheduler.add(() => ref.current(), every);
+  }, [scheduler, every, enabled]);
+}
+
+/** Intervalle affiché dans l'en-tête en mode poll (celui de la carte en direct). */
+export function useLiveIntervalMs(): number {
+  const { pollIntervalMs } = useRealtime();
+  return Math.max(POLL_MS.map, pollIntervalMs);
 }
 
 /** Bus en mémoire (tests, démonstration) : `emit` déclenche les gestionnaires abonnés. */

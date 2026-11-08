@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { errorMessage } from '../lib/api';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
 import { colors, radius, spacing } from '../theme';
+import { confirmAsync, notify } from '../lib/dialog';
 
 /**
  * Bandeau en ligne / hors ligne avec l'indicateur légal « En ligne : suivi GPS actif ».
@@ -60,13 +61,13 @@ export function SosButton() {
         }
       }
       if (!coords) {
-        Alert.alert('SOS', 'Position indisponible : appelez directement le support.');
+        notify('SOS', 'Position indisponible : appelez directement le support.');
         return;
       }
       await api.sos({ ...coords, message: 'SOS livreur', ...(currentOrder ? { orderId: currentOrder.id } : {}) });
-      Alert.alert('SOS envoyé', 'Les contrôleurs ont reçu votre alerte et votre position. Restez en sécurité.');
+      notify('SOS envoyé', 'Les contrôleurs ont reçu votre alerte et votre position. Restez en sécurité.');
     } catch (e) {
-      Alert.alert('SOS', errorMessage(e));
+      notify('SOS', errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -78,10 +79,14 @@ export function SosButton() {
       accessibilityLabel="SOS, alerter les contrôleurs"
       style={[styles.sos, busy && { opacity: 0.6 }]}
       onPress={() =>
-        Alert.alert('Envoyer un SOS ?', 'Votre position sera transmise immédiatement aux contrôleurs Yaar.', [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Envoyer le SOS', style: 'destructive', onPress: () => void send() },
-        ])
+        void confirmAsync({
+          title: 'Envoyer un SOS ?',
+          message: 'Votre position sera transmise immédiatement aux contrôleurs Yaar.',
+          confirmText: 'Envoyer le SOS',
+          destructive: true,
+        }).then((ok) => {
+          if (ok) void send();
+        })
       }
       disabled={busy}
     >

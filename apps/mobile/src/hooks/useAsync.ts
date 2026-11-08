@@ -7,8 +7,11 @@ export interface AsyncState<T> {
   /** Erreur brute (pour tester le code API, ex. NOT_FOUND). */
   rawError: unknown;
   loading: boolean;
-  /** Recharge sans vider les données affichées. */
-  reload: () => Promise<void>;
+  /**
+   * Recharge sans vider les données affichées. `silent` : sans indicateur de chargement (polling).
+   * Renvoie true si le chargement a réussi.
+   */
+  reload: (silent?: boolean) => Promise<boolean>;
   setData: (d: T | null) => void;
 }
 
@@ -33,9 +36,9 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[], enab
     };
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (silent = false): Promise<boolean> => {
     const id = ++callId.current;
-    setLoading(true);
+    if (silent !== true) setLoading(true);
     try {
       const result = await fnRef.current();
       if (mounted.current && id === callId.current) {
@@ -43,11 +46,13 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[], enab
         setError(null);
         setRawError(null);
       }
+      return true;
     } catch (e) {
       if (mounted.current && id === callId.current) {
         setError(errorMessage(e));
         setRawError(e);
       }
+      return false;
     } finally {
       if (mounted.current && id === callId.current) setLoading(false);
     }

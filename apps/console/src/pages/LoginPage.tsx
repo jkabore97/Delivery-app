@@ -4,10 +4,16 @@ import { requestOtpSchema } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { isBackOffice, useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ui';
+import { DEMO_ACCOUNTS, DEMO_OTP_CODE } from '../lib/demo';
+import { formatPhone } from '../lib/format';
+import { useAppConfig } from '../realtime/AppConfigContext';
 
 /** Connexion téléphone + code SMS, réservée aux rôles CONTROLLER / ADMIN. */
 export function LoginPage() {
   const { api, login, token, logoutReason } = useAuth();
+  const { config } = useAppConfig();
+  const demo = config?.demoMode === true;
+  const channel = config?.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const [step, setStep] = useState<'phone' | 'code'>('phone');
   const [phoneInput, setPhoneInput] = useState('');
   const [phone, setPhone] = useState('');
@@ -31,7 +37,12 @@ export function LoginPage() {
       const res = await api.requestOtp(parsed.data.phone);
       setPhone(parsed.data.phone);
       setStep('code');
-      setInfo(`Code envoyé par SMS au ${parsed.data.phone}. Valable ${Math.round(res.expiresInSeconds / 60)} min.`);
+      if (demo) setCode(DEMO_OTP_CODE);
+      setInfo(
+        demo
+          ? `Mode démo : le code ${DEMO_OTP_CODE} est déjà saisi pour le ${parsed.data.phone}.`
+          : `Code envoyé par ${channel} au ${parsed.data.phone}. Valable ${Math.round(res.expiresInSeconds / 60)} min.`,
+      );
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -69,6 +80,30 @@ export function LoginPage() {
         </div>
         <p className="muted">Console de contrôle · Ouagadougou</p>
         {logoutReason && step === 'phone' && <div className="alert alert-info">{logoutReason}</div>}
+        {demo && step === 'phone' && (
+          <div className="demo-notice" role="note" aria-label="Mode démo">
+            <strong>Mode démo : utilisez le code {DEMO_OTP_CODE}</strong>
+            <span className="muted small">Comptes de démonstration (un clic pour remplir) :</span>
+            <ul className="demo-accounts">
+              {DEMO_ACCOUNTS.map((a) => (
+                <li key={a.phone}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhoneInput(a.phone);
+                      setError(null);
+                    }}
+                  >
+                    <span>
+                      {a.role} · {a.label}
+                    </span>
+                    <span className="muted">{formatPhone(`+226${a.phone}`)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {step === 'phone' ? (
           <form className="form" onSubmit={sendCode} noValidate>
             <label htmlFor="phone">Numéro de téléphone</label>
@@ -90,7 +125,7 @@ export function LoginPage() {
         ) : (
           <form className="form" onSubmit={verify} noValidate>
             {info && <div className="alert alert-info">{info}</div>}
-            <label htmlFor="code">Code reçu par SMS</label>
+            <label htmlFor="code">{demo ? `Code (démo : ${DEMO_OTP_CODE})` : `Code reçu par ${channel}`}</label>
             <input
               id="code"
               inputMode="numeric"

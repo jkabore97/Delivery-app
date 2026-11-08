@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import { ACTIVE_ORDER_STATUSES, LABELS, type OrderDto, type SavedAddressDto } from '@yaar/shared';
 import { AddressPicker } from '../../../components/AddressPicker';
 import { Badge, Banner, Button, Card, Chip, Muted, Row, Screen, SectionTitle, Subtitle, Title } from '../../../components/ui';
@@ -8,7 +8,8 @@ import { isAddressComplete } from '../../../lib/address';
 import { formatFcfa, formatOrderNumber } from '../../../lib/format';
 import { useApi, useAuth } from '../../../state/auth';
 import { useClientOrder } from '../../../state/cart';
-import { useSocketEvent } from '../../../state/socket';
+import { POLL_MS } from '../../../lib/publicConfig';
+import { usePolling, useSocketEvent } from '../../../state/socket';
 import { colors } from '../../../theme';
 
 export default function ClientHome() {
@@ -28,6 +29,18 @@ export default function ClientHome() {
 
   useFocusEffect(refresh);
   useSocketEvent('order.updated', refresh);
+  usePolling(
+    () =>
+      api.listOrders({ status: [...ACTIVE_ORDER_STATUSES], pageSize: 5 }).then(
+        (p) => {
+          setActive(p.items);
+          return true;
+        },
+        () => false,
+      ),
+    POLL_MS.clientOrders,
+    useIsFocused(),
+  );
 
   const go = (target: '/client/stores' | '/client/parcel') => {
     if (target === '/client/stores' && !isAddressComplete(dropoff)) {

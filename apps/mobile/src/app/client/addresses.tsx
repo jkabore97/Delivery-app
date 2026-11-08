@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Alert } from 'react-native';
 import { Banner, Button, Card, Empty, Field, Loading, Muted, Row, Screen, SectionTitle, Subtitle } from '../../components/ui';
 import { useAsync } from '../../hooks/useAsync';
 import { addressLine, isAddressComplete, toAddressInput } from '../../lib/address';
 import { errorMessage } from '../../lib/api';
 import { useApi } from '../../state/auth';
 import { useClientOrder } from '../../state/cart';
+import { confirmAsync } from '../../lib/dialog';
 
 /** Adresses enregistrées (Maison, Bureau...) : ajout depuis l'adresse choisie sur l'accueil. */
 export default function AddressesScreen() {
@@ -32,21 +32,17 @@ export default function AddressesScreen() {
   };
 
   const remove = (id: string) =>
-    Alert.alert('Supprimer', 'Supprimer cette adresse ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await api.deleteAddress(id);
-            await list.reload();
-          } catch (e) {
-            setError(errorMessage(e));
-          }
-        },
+    void confirmAsync({ title: 'Supprimer', message: 'Supprimer cette adresse ?', confirmText: 'Supprimer', destructive: true }).then(
+      async (ok) => {
+        if (!ok) return;
+        try {
+          await api.deleteAddress(id);
+          await list.reload();
+        } catch (e) {
+          setError(errorMessage(e));
+        }
       },
-    ]);
+    );
 
   return (
     <Screen edges={['bottom']} refreshing={list.loading} onRefresh={list.reload}>

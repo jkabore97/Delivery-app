@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { type Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
 import { colors, radius, spacing } from '../theme';
 import { isPinAtDefault, PIN_NOT_PLACED_MESSAGE } from '../lib/address';
+import { AddressMap, type AddressMapHandle } from './AddressMap';
 import { Button, Field, Muted } from './ui';
 
-const DEFAULT_DELTA = 0.02;
-
-export function regionFor(lat: number, lng: number, delta = DEFAULT_DELTA): Region {
-  return { latitude: lat, longitude: lng, latitudeDelta: delta, longitudeDelta: delta };
-}
+export { regionFor } from '../lib/mapRegion';
 
 /**
  * Choix d'une adresse : épingle fixe au centre de la carte (on déplace la carte), adresse en texte libre
@@ -33,7 +29,7 @@ export function AddressPicker({
   addressLabel?: string;
   testID?: string;
 }) {
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<AddressMapHandle>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
   const current: AddressDto = value ?? {
@@ -44,7 +40,7 @@ export function AddressPicker({
   };
   const currentRef = useRef(current);
   currentRef.current = current;
-  const [initialRegion] = useState(() => regionFor(current.lat, current.lng));
+  const [initialCenter] = useState(() => ({ lat: current.lat, lng: current.lng }));
 
   // Recentre la carte si l'adresse change de l'extérieur (adresse enregistrée choisie).
   const lastCentered = useRef({ lat: current.lat, lng: current.lng });
@@ -54,7 +50,7 @@ export function AddressPicker({
       Math.abs(value.lat - lastCentered.current.lat) > 1e-5 || Math.abs(value.lng - lastCentered.current.lng) > 1e-5;
     if (moved) {
       lastCentered.current = { lat: value.lat, lng: value.lng };
-      mapRef.current?.animateToRegion(regionFor(value.lat, value.lng), 400);
+      mapRef.current?.centerOn(value.lat, value.lng);
     }
   }, [value]);
 
@@ -70,10 +66,11 @@ export function AddressPicker({
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const next = { ...currentRef.current, lat: pos.coords.latitude, lng: pos.coords.longitude };
       lastCentered.current = { lat: next.lat, lng: next.lng };
-      mapRef.current?.animateToRegion(regionFor(next.lat, next.lng, 0.01), 400);
+      mapRef.current?.centerOn(next.lat, next.lng, 0.01);
       onChange(next);
     } catch {
-      setLocError('Position indisponible.');
+      // Navigateur : refus de l'autorisation, délai dépassé ou page servie hors HTTPS.
+      setLocError('Position indisponible : déplacez la carte pour placer l’épingle.');
     } finally {
       setLocating(false);
     }
@@ -82,15 +79,13 @@ export function AddressPicker({
   return (
     <View style={{ gap: spacing.md }} testID={testID}>
       <View style={[styles.mapWrap, { height: mapHeight }]}>
-        <MapView
+        <AddressMap
           ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={initialRegion}
-          onRegionChangeComplete={(r) => {
-            lastCentered.current = { lat: r.latitude, lng: r.longitude };
-            onChange({ ...currentRef.current, lat: r.latitude, lng: r.longitude });
+          initial={initialCenter}
+          onCenterChange={(lat, lng) => {
+            lastCentered.current = { lat, lng };
+            onChange({ ...currentRef.current, lat, lng });
           }}
-          toolbarEnabled={false}
         />
         <View pointerEvents="none" style={styles.pinWrap}>
           <View style={[styles.pinHead, { backgroundColor: pinColor }]} />

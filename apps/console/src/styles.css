@@ -1033,6 +1033,65 @@ input[aria-invalid='true'] {
   margin: 0 0 6px;
 }
 
+/* ---------- Mode démo / mode poll ---------- */
+.demo-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--orange);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.poll-info {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.poll-info::before {
+  content: '⟳';
+  margin-right: 6px;
+  color: var(--green);
+}
+.demo-notice {
+  background: var(--orange-soft);
+  border: 1px solid #f6c891;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.demo-notice strong {
+  color: #9a4f00;
+}
+.demo-accounts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.demo-accounts button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.demo-accounts button:hover,
+.demo-accounts button:focus-visible {
+  border-color: var(--green);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1280px) {
   .kpis {
@@ -1095,7 +1154,8 @@ input[aria-invalid='true'] {
   .kpis-3 {
     grid-template-columns: 1fr;
   }
-  .live-dot {
+  .live-dot,
+  .poll-info {
     display: none;
   }
 }

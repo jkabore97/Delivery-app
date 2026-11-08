@@ -6,9 +6,13 @@ import { normalizePhone } from '../lib/phone';
 import { useAuth } from '../state/auth';
 import { colors, spacing } from '../theme';
 import { Banner, Button, Field, Muted, Screen, Title } from '../components/ui';
+import { DemoNotice } from '../components/DemoNotice';
+import { useAppConfig } from '../state/config';
 
 export default function LoginScreen() {
   const { api, notice } = useAuth();
+  const { config } = useAppConfig();
+  const channel = config?.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,8 +43,16 @@ export default function LoginScreen() {
           <Text style={styles.logoSub}>Livraison · Ouagadougou</Text>
         </View>
         <Title>Connexion</Title>
-        <Muted>Entrez votre numéro de téléphone : vous recevrez un code par SMS.</Muted>
+        <Muted>Entrez votre numéro de téléphone : vous recevrez un code par {channel}.</Muted>
         {notice ? <Banner message={notice} tone="orange" /> : null}
+        {config?.demoMode ? (
+          <DemoNotice
+            onPick={(p) => {
+              setPhone(p);
+              setError(null);
+            }}
+          />
+        ) : null}
         <Field
           label="Numéro de téléphone"
           placeholder="70 12 34 56"

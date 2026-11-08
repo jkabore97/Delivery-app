@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Banner, Button, Card, Loading, Muted, Row, Screen, SectionTitle, Subtitle, Title } from '../../../components/ui';
 import { Stepper } from '../../../components/Stepper';
@@ -11,6 +11,7 @@ import { useApi } from '../../../state/auth';
 import type { ProductDto } from '@yaar/shared';
 import { useClientOrder } from '../../../state/cart';
 import { colors } from '../../../theme';
+import { confirmAsync } from '../../../lib/dialog';
 
 export default function StoreMenuScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,10 +32,14 @@ export default function StoreMenuScreen() {
   const add = (p: ProductDto) => {
     const doAdd = () => dispatch({ type: 'add', storeId: s.id, storeName: s.name, product: p });
     if (cart.storeId && !inThisStore && cart.lines.length > 0) {
-      Alert.alert('Nouveau panier ?', `Votre panier de ${cart.storeName ?? 'l’autre boutique'} sera vidé.`, [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Vider et ajouter', style: 'destructive', onPress: doAdd },
-      ]);
+      void confirmAsync({
+        title: 'Nouveau panier ?',
+        message: `Votre panier de ${cart.storeName ?? 'l’autre boutique'} sera vidé.`,
+        confirmText: 'Vider et ajouter',
+        destructive: true,
+      }).then((ok) => {
+        if (ok) doAdd();
+      });
       return;
     }
     doAdd();

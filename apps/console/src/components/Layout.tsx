@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { LABELS, type IncidentDto } from '@yaar/shared';
-import { useAuth } from '../auth/AuthContext';
+import { useApi, useAuth } from '../auth/AuthContext';
+import { POLL_MS } from '../config';
+import { useAppConfig } from '../realtime/AppConfigContext';
 import { useDashboard } from '../hooks/DashboardContext';
-import { useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
+import { useLiveIntervalMs, usePolling, useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
 
 interface NavItem {
   to: string;
@@ -30,7 +32,10 @@ export function searchTarget(q: string): string {
 export function Layout() {
   const { user, logout } = useAuth();
   const { dashboard, pendingStores } = useDashboard();
-  const { connected } = useRealtime();
+  const { connected, mode } = useRealtime();
+  const { config } = useAppConfig();
+  const api = useApi();
+  const liveIntervalMs = useLiveIntervalMs();
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState('');
@@ -43,6 +48,21 @@ export function Layout() {
   useSocketEvent('incident.updated', ({ incident }) => {
     if (incident.status === 'RESOLVED') setSosToasts((prev) => prev.filter((i) => i.id !== incident.id));
   });
+
+  // Mode poll : les SOS ouverts sont relus périodiquement ; seuls les nouveaux (après le premier
+  // chargement) déclenchent une alerte, comme l'événement `sos` du socket.
+  const seenSos = useRef<Set<string> | null>(null);
+  usePolling(async () => {
+    const res = await api.listIncidents({ status: 'OPEN', type: 'SOS', pageSize: 20 });
+    const ids = new Set(res.items.map((i) => i.id));
+    const seen = seenSos.current;
+    seenSos.current = ids;
+    const fresh = seen ? res.items.filter((i) => !seen.has(i.id)) : [];
+    setSosToasts((prev) => {
+      const kept = prev.filter((i) => ids.has(i.id));
+      return [...fresh, ...kept.filter((k) => !fresh.some((f) => f.id === k.id))].slice(0, 3);
+    });
+  }, POLL_MS.incidents);
 
   const items: NavItem[] = [
     { to: '/', icon: '🗺️', label: 'Carte en direct', end: true },
@@ -118,9 +138,20 @@ export function Layout() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </form>
-          <span className={`live-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
-            {connected ? 'Temps réel' : 'Hors ligne'}
-          </span>
+          {config?.demoMode ? (
+            <span className="demo-badge" title="Mode démonstration : code de connexion 123456">
+              DÉMO
+            </span>
+          ) : null}
+          {mode === 'poll' ? (
+            <span className="poll-info" title="Mode sans temps réel : les données sont rechargées régulièrement">
+              Actualisation automatique toutes les {Math.round(liveIntervalMs / 1000)} s
+            </span>
+          ) : (
+            <span className={`live-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
+              {connected ? 'Temps réel' : 'Hors ligne'}
+            </span>
+          )}
         </header>
         {sosToasts.length > 0 && (
           <div className="toasts" aria-live="assertive">

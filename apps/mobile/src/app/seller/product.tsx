@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Switch } from 'react-native';
+import { Switch } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Banner, Body, Button, Field, Loading, Row, Screen } from '../../components/ui';
 import { errorMessage } from '../../lib/api';
@@ -7,6 +7,7 @@ import { parsePrice } from '../../lib/sellerOrders';
 import { useApi } from '../../state/auth';
 import { useSeller } from '../../state/seller';
 import { colors } from '../../theme';
+import { confirmAsync } from '../../lib/dialog';
 
 /** Création / modification d'un produit (params.id présent = modification). */
 export default function ProductFormScreen() {
@@ -65,21 +66,20 @@ export default function ProductFormScreen() {
 
   const remove = () => {
     if (!id) return;
-    Alert.alert('Supprimer', `Supprimer « ${name} » du menu ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await api.deleteProduct(id);
-            router.back();
-          } catch (e) {
-            setError(errorMessage(e));
-          }
-        },
-      },
-    ]);
+    void confirmAsync({
+      title: 'Supprimer',
+      message: `Supprimer « ${name} » du menu ?`,
+      confirmText: 'Supprimer',
+      destructive: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      try {
+        await api.deleteProduct(id);
+        router.back();
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    });
   };
 
   return (

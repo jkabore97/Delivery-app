@@ -34,8 +34,17 @@ const config: ExpoConfig = {
     blockedPermissions: ['android.permission.ACCESS_BACKGROUND_LOCATION'],
     predictiveBackGestureEnabled: false,
   },
+  // Version web (Vercel, projet « yaar-app ») : `npx expo export --platform web` → dist/ (application monopage).
   web: {
     favicon: './assets/favicon.png',
+    bundler: 'metro',
+    output: 'single',
+    name: 'Yaar Livraison',
+    shortName: 'Yaar',
+    lang: 'fr',
+    themeColor: '#0B7A4B',
+    backgroundColor: '#FFFFFF',
+    description: 'Yaar Livraison : commandez repas et colis à Ouagadougou, paiement à la livraison.',
   },
   plugins: [
     'expo-router',

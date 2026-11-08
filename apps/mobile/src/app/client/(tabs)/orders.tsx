@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
 import { Pressable } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import { LABELS, type OrderDto } from '@yaar/shared';
 import { Badge, Banner, Button, Card, Empty, Loading, Muted, Row, Screen, Subtitle, Title } from '../../../components/ui';
 import { errorMessage } from '../../../lib/api';
 import { formatDateTime, formatFcfa, formatOrderNumber, summarizeItems } from '../../../lib/format';
 import { useApi } from '../../../state/auth';
-import { useSocketEvent } from '../../../state/socket';
+import { POLL_MS } from '../../../lib/publicConfig';
+import { usePolling, useSocketEvent } from '../../../state/socket';
 
 const PAGE_SIZE = 20;
 
@@ -20,16 +21,18 @@ export default function ClientOrdersScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (p: number) => {
-      setLoading(true);
+    async (p: number, silent = false): Promise<boolean> => {
+      if (!silent) setLoading(true);
       try {
         const res = await api.listOrders({ page: p, pageSize: PAGE_SIZE });
         setItems((prev) => (p === 1 ? res.items : [...(prev ?? []), ...res.items]));
         setTotal(res.total);
         setPage(p);
         setError(null);
+        return true;
       } catch (e) {
         setError(errorMessage(e));
+        return false;
       } finally {
         setLoading(false);
       }
@@ -43,6 +46,8 @@ export default function ClientOrdersScreen() {
     }, [load]),
   );
   useSocketEvent('order.updated', () => void load(1));
+  // Mode poll : la première page est relue toutes les 30 s tant que l'écran est affiché.
+  usePolling(() => load(1, true), POLL_MS.clientOrders, useIsFocused());
 
   return (
     <Screen refreshing={loading} onRefresh={() => void load(1)}>

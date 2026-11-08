@@ -23,7 +23,8 @@ import {
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { formatDateTime, formatPhone, formatRelative } from '../lib/format';
-import { useSocketEvent } from '../realtime/RealtimeContext';
+import { POLL_MS } from '../config';
+import { usePolling, useSocketEvent } from '../realtime/RealtimeContext';
 
 /** Litiges, SOS et autres incidents, avec suivi de statut (audité). */
 export function IncidentsPage() {
@@ -44,6 +45,7 @@ export function IncidentsPage() {
   const refresh = useDebouncedCallback(() => incidents.reload(true), 500);
   useSocketEvent('sos', refresh);
   useSocketEvent('incident.updated', refresh);
+  usePolling(() => incidents.reload(true), POLL_MS.incidents);
 
   function replace(updated: IncidentDto) {
     incidents.setData((prev) =>

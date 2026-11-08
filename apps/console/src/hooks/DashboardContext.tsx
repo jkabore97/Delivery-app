@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, type ReactNode } from 'react';
 import type { DashboardDto } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
-import { useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
-import { DASHBOARD_REFRESH_MS } from '../config';
+import { usePolling, useRealtime, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
+import { DASHBOARD_REFRESH_MS, POLL_MS } from '../config';
 import { useAsync, useDebouncedCallback } from './useAsync';
 
 interface DashboardValue {
@@ -35,21 +35,28 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const reloadStores = stores.reload;
   const refreshPendingStores = useCallback(() => reloadStores(true), [reloadStores]);
 
+  const { mode } = useRealtime();
   useEffect(() => {
+    if (mode !== 'socket') return undefined;
     const t = setInterval(() => {
-      reload(true);
-      reloadStores(true);
+      void reload(true);
+      void reloadStores(true);
     }, DASHBOARD_REFRESH_MS);
     return () => clearInterval(t);
-  }, [reload, reloadStores]);
+  }, [reload, reloadStores, mode]);
+  // Mode poll : même rythme (30 s), mais en pause quand l'onglet est masqué.
+  usePolling(async () => {
+    const [a, b] = await Promise.all([reload(true), reloadStores(true)]);
+    return a && b;
+  }, POLL_MS.dashboard);
 
   useSocketEvent('order.updated', refresh);
   useSocketEvent('driver.status', refresh);
   useSocketEvent('sos', refresh);
   useSocketEvent('incident.updated', refresh);
   useReconnect(() => {
-    reload(true);
-    reloadStores(true);
+    void reload(true);
+    void reloadStores(true);
   });
 
   return (

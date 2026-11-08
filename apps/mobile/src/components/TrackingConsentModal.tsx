@@ -7,7 +7,7 @@ import {
   TRACKING_CONSENT_TITLE,
 } from '../lib/consent';
 import { useDriver } from '../state/driver';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, spacing, MAX_APP_WIDTH } from '../theme';
 import { Banner, Button, Muted, Subtitle } from './ui';
 
 /**
@@ -74,6 +74,10 @@ export function TrackingConsentModal() {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
+    // Sur le web, la fenêtre modale couvre tout l'écran : la feuille garde la largeur de l'application.
+    width: '100%',
+    maxWidth: MAX_APP_WIDTH,
+    alignSelf: 'center',
     backgroundColor: colors.white,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,

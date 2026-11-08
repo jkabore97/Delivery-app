@@ -25,7 +25,8 @@ import { useDriver } from '../../../state/driver';
 import { colors, spacing } from '../../../theme';
 
 export default function DriverHome() {
-  const { profile, profileError, currentOrder, position, refreshProfile, orderNotice, clearOrderNotice } = useDriver();
+  const { profile, profileError, currentOrder, position, refreshProfile, orderNotice, clearOrderNotice, availabilityError } =
+    useDriver();
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -87,7 +88,7 @@ export default function DriverHome() {
     <View style={{ flex: 1 }}>
       <Screen refreshing={refreshing} onRefresh={refresh}>
         <OnlineToggle onError={setError} />
-        {error ? <Banner message={error} /> : null}
+        {error || availabilityError ? <Banner message={(error ?? availabilityError)!} /> : null}
         {orderNotice ? (
           <Pressable onPress={clearOrderNotice} accessibilityRole="button" accessibilityHint="Masquer le message">
             <Banner message={`${orderNotice} (toucher pour masquer)`} tone="orange" />

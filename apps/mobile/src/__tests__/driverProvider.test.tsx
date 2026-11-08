@@ -19,6 +19,8 @@ jest.mock('../state/socket', () => ({
   useSocketEvent: (event: keyof ServerToClientEvents, handler: never) => {
     (mockHandlers as Record<string, unknown>)[event] = handler;
   },
+  // Mode socket : pas de polling.
+  usePolling: () => undefined,
 }));
 
 const mockApi = {

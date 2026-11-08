@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, View } from 'react-native';
+import { Linking, View } from 'react-native';
 import { router } from 'expo-router';
 import { LABELS, type AddressDto } from '@yaar/shared';
 import { DisputeBox } from '../../components/DisputeBox';
@@ -14,6 +14,7 @@ import { useApi } from '../../state/auth';
 import { useDriver } from '../../state/driver';
 import { useOrderRoom } from '../../state/socket';
 import { colors } from '../../theme';
+import { confirmAsync } from '../../lib/dialog';
 
 async function launchDirections(dest: AddressDto, label: string) {
   const url = externalDirectionsUrl(dest, label);
@@ -29,14 +30,15 @@ async function launchDirections(dest: AddressDto, label: string) {
  * on prévient le livreur que le client ne verra plus sa position tant qu'il reste dans l'autre application.
  */
 function openDirections(dest: AddressDto, label: string) {
-  Alert.alert(
-    'Ouvrir l’itinéraire ?',
-    'Tant que Yaar n’est pas à l’écran, votre position n’est plus transmise : le client et Yaar verront votre dernière position connue. Revenez dans Yaar dès que possible.',
-    [
-      { text: 'Rester dans Yaar', style: 'cancel' },
-      { text: 'Ouvrir le GPS', onPress: () => void launchDirections(dest, label) },
-    ],
-  );
+  void confirmAsync({
+    title: 'Ouvrir l’itinéraire ?',
+    message:
+      'Tant que Yaar n’est pas à l’écran, votre position n’est plus transmise : le client et Yaar verront votre dernière position connue. Revenez dans Yaar dès que possible.',
+    cancelText: 'Rester dans Yaar',
+    confirmText: 'Ouvrir le GPS',
+  }).then((ok) => {
+    if (ok) void launchDirections(dest, label);
+  });
 }
 
 /** Course en cours : retrait puis livraison (adresses visibles uniquement pour le livreur affecté). */

@@ -5,7 +5,9 @@ import type { SelfSignupRole } from '@yaar/shared';
 import { errorMessage } from '../lib/api';
 import { formatPhone } from '../lib/phone';
 import { BACK_OFFICE_MESSAGE, homePathForRole, spaceForRole } from '../lib/roles';
+import { DEMO_OTP_CODE } from '../lib/publicConfig';
 import { useAuth } from '../state/auth';
+import { useAppConfig } from '../state/config';
 import { colors, roleColor } from '../theme';
 import { Banner, Button, Chip, Field, Muted, Row, Screen, SectionTitle, Title } from '../components/ui';
 
@@ -18,7 +20,11 @@ const ROLE_CHOICES: { role: SelfSignupRole; label: string }[] = [
 export default function VerifyScreen() {
   const { phone } = useLocalSearchParams<{ phone: string }>();
   const { api, signIn, signOut } = useAuth();
-  const [code, setCode] = useState('');
+  const { config } = useAppConfig();
+  const demo = config?.demoMode === true;
+  const channel = config?.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+  // Mode démo : le code 123456 est accepté pour tous les numéros, on le pré-remplit.
+  const [code, setCode] = useState(demo ? DEMO_OTP_CODE : '');
   const [role, setRole] = useState<SelfSignupRole>('CLIENT');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +69,13 @@ export default function VerifyScreen() {
   return (
     <Screen>
       <Title>Code de vérification</Title>
-      <Muted>Code envoyé par SMS au {formatPhone(phone)}.</Muted>
+      {demo ? (
+        <Banner message={`Mode démo : le code ${DEMO_OTP_CODE} est accepté (déjà saisi).`} tone="orange" />
+      ) : (
+        <Muted>
+          Code envoyé par {channel} au {formatPhone(phone)}.
+        </Muted>
+      )}
       <Field
         label="Code à 6 chiffres"
         placeholder="••••••"

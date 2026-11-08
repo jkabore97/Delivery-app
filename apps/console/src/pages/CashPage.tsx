@@ -8,7 +8,8 @@ import { Badge, Card, Empty, ErrorBanner, Loading, Modal, Pagination, Vehicle } 
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { formatDateTime, formatFcfa, formatPhone } from '../lib/format';
-import { useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
+import { POLL_MS } from '../config';
+import { usePolling, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
 type CashDriver = CashOverviewDto['drivers'][number];
 
@@ -101,6 +102,11 @@ export function CashPage() {
     if (e.status === 'DELIVERED') refreshCash();
   });
   useReconnect(refreshCash);
+  // Mode poll : pas d'événement « livrée » ; soldes et grand livre rechargés toutes les 30 s.
+  usePolling(async () => {
+    const [a, b] = await Promise.all([overview.reload(true), ledger.reload(true)]);
+    return a && b;
+  }, POLL_MS.cash);
 
   const drivers = (overview.data?.drivers ?? []).filter((d) => !onlyBlocked || d.cashBlocked);
   const blockedCount = (overview.data?.drivers ?? []).filter((d) => d.cashBlocked).length;

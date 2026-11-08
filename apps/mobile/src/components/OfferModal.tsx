@@ -9,7 +9,7 @@ import { offerPlaces } from '../lib/offer';
 import { formatFcfa, formatFcfaShort, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, spacing, MAX_APP_WIDTH } from '../theme';
 import { Banner, Button, Dot, KeyValue, Muted, ProgressBar, Row, Subtitle } from './ui';
 
 /** Nouvelle course : compte à rebours de 30 s, Accepter / Refuser (maquette « Nouvelle course 🔔 »). */
@@ -135,6 +135,10 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
+    // Sur le web, la fenêtre modale couvre tout l'écran : la feuille garde la largeur de l'application.
+    width: '100%',
+    maxWidth: MAX_APP_WIDTH,
+    alignSelf: 'center',
     backgroundColor: colors.white,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,

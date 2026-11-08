@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { CLIENT_CANCELLABLE_STATUSES, LABELS, type OrderDto } from '@yaar/shared';
 import { DisputeBox } from '../../../components/DisputeBox';
@@ -23,8 +23,10 @@ import { formatDateTime, formatFcfa, formatOrderNumber, initials, summarizeItems
 import { estimateEtaMinutes, isDriverTracked, progressSteps, trackingTitle } from '../../../lib/orderProgress';
 import { telUrl } from '../../../lib/phone';
 import { useApi } from '../../../state/auth';
-import { useOrderRoom, useSocketEvent } from '../../../state/socket';
+import { POLL_MS } from '../../../lib/publicConfig';
+import { useOrderRoom, usePolling, useSocketEvent } from '../../../state/socket';
 import { colors, radius, spacing } from '../../../theme';
+import { confirmAsync } from '../../../lib/dialog';
 
 export default function ClientOrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -41,6 +43,12 @@ export default function ClientOrderScreen() {
   useSocketEvent('driver.location', (e) => {
     if (e.orderId === id) setDriverPos({ lat: e.lat, lng: e.lng });
   });
+  // Mode poll (Vercel) : GET /orders/:id remplace order.updated et driver.location
+  // (driver.lastLocation + etaMinutes), toutes les 4 s pendant la recherche / la course, 10 s avant.
+  const status = order.data?.status;
+  const live = status === 'SEARCHING_DRIVER' || status === 'ASSIGNED' || status === 'PICKED_UP';
+  const finished = status === 'DELIVERED' || status === 'CANCELLED';
+  usePolling(() => order.reload(true), live ? POLL_MS.clientOrderLive : POLL_MS.clientOrderWaiting, !!status && !finished);
 
   const o = order.data;
   if (!o) {
@@ -52,24 +60,24 @@ export default function ClientOrderScreen() {
   const eta = estimateEtaMinutes(o, driverPoint);
 
   const cancel = () => {
-    Alert.alert('Annuler la commande', 'Voulez-vous vraiment annuler cette commande ?', [
-      { text: 'Non', style: 'cancel' },
-      {
-        text: 'Oui, annuler',
-        style: 'destructive',
-        onPress: async () => {
-          setCancelling(true);
-          setActionError(null);
-          try {
-            order.setData(await api.cancelOrder(o.id, 'Annulée par le client'));
-          } catch (e) {
-            setActionError(errorMessage(e));
-          } finally {
-            setCancelling(false);
-          }
-        },
-      },
-    ]);
+    void confirmAsync({
+      title: 'Annuler la commande',
+      message: 'Voulez-vous vraiment annuler cette commande ?',
+      cancelText: 'Non',
+      confirmText: 'Oui, annuler',
+      destructive: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      setCancelling(true);
+      setActionError(null);
+      try {
+        order.setData(await api.cancelOrder(o.id, 'Annulée par le client'));
+      } catch (e) {
+        setActionError(errorMessage(e));
+      } finally {
+        setCancelling(false);
+      }
+    });
   };
 
   return (

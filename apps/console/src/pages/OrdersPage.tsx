@@ -7,7 +7,8 @@ import { Card, Empty, ErrorBanner, Loading, OrderStatusBadge, Pagination, Vehicl
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { formatDateTime, formatFcfa } from '../lib/format';
 import { enumParam, pageParam } from '../lib/params';
-import { useSocketEvent } from '../realtime/RealtimeContext';
+import { POLL_MS } from '../config';
+import { usePolling, useSocketEvent } from '../realtime/RealtimeContext';
 
 const PAGE_SIZE = 20;
 
@@ -43,6 +44,7 @@ export function OrdersPage() {
   );
   const refresh = useDebouncedCallback(() => orders.reload(true), 1000);
   useSocketEvent('order.updated', refresh);
+  usePolling(() => orders.reload(true), POLL_MS.orders);
 
   function update(next: Record<string, string>) {
     const p = new URLSearchParams(params);
