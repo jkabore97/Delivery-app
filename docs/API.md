@@ -55,6 +55,10 @@ even with a valid token.
 
 Development: when the API runs with `OTP_DEV_BYPASS=true` (never in production) the code `123456` is always
 accepted and real codes are printed in the API log instead of being sent by SMS.
+Public demo (`DEMO_MODE=true`, announced by `GET /config`): `123456` is accepted for `CLIENT`, `SELLER` and
+`DRIVER` accounts and for new sign-ups (which can never be back-office accounts), **not** for existing
+`CONTROLLER`/`ADMIN` accounts: they use the demo access code (`DEMO_STAFF_CODE`, never exposed by the API) in
+place of the received code, after `POST /auth/otp/request` (§3).
 
 ### 1.2 Roles
 
@@ -118,7 +122,7 @@ Every non-2xx response has this body (`ApiErrorBody`):
 | 409 | `PRICING_UNAVAILABLE` | No active pricing rule for the vehicle type |
 | 409 | `OFFER_EXPIRED` | Offer no longer open (expired, rejected, cancelled, order taken) |
 | 409 | `ALREADY_RATED` | The caller already rated this order |
-| 413 | `PAYLOAD_TOO_LARGE` | Body over 8 MB or decoded file over 5 MB |
+| 413 | `PAYLOAD_TOO_LARGE` | Decoded file over 5 MB (**3 MB on Vercel**), or body over 6.9 MB (**4.25 MB on Vercel**; above 4.5 MB Vercel itself answers `413` without the JSON body) |
 | 415 | `UNSUPPORTED_FILE` | File content (magic bytes) does not match the declared `mimeType` |
 | 423 | `DELIVERY_CODE_LOCKED` | 5 wrong delivery codes: the back office must handle it |
 | 429 | `OTP_RATE_LIMITED` | More than 5 OTP requests for one phone in one hour |
@@ -148,7 +152,10 @@ KYC documents and delivery proof photos are sent inside JSON (`FileUploadInput`)
 ```
 
 - `mimeType`: `image/jpeg` | `image/png` | `image/webp` | `application/pdf`.
-- `dataBase64`: raw base64 **without** the `data:image/jpeg;base64,` prefix. Max 5 MB once decoded.
+- `dataBase64`: raw base64 **without** the `data:image/jpeg;base64,` prefix. Max 5 MB once decoded, **3 MB on
+  Vercel** (`VERCEL_MAX_UPLOAD_BYTES`: 4 MB in base64, under the 4.5 MB request limit of Vercel); over it,
+  `413 PAYLOAD_TOO_LARGE` with a French message. The mobile app checks the encoded size (≤ `base64Length(3 MB)`)
+  before sending, whatever the server.
 - On mobile, compress photos (e.g. 1280 px, JPEG quality 0.6) before upload: the network is slow.
 - The decoded content must match `mimeType` (JPEG/PNG/WebP/PDF signature), otherwise `415 UNSUPPORTED_FILE`.
 
@@ -170,8 +177,12 @@ display them through a blob / object URL (an `<img src>` cannot send the header)
 ```
 - `realtime`: `"socket"` → connect Socket.IO (§9); `"poll"` → do not open a socket, poll the REST endpoints
   listed in [Mode polling (Vercel)](#mode-polling-vercel) every `pollIntervalMs`.
-- `demoMode`: `true` → show "Mode démo : code 123456" on the login screen (the code `123456` is accepted for
-  every number, even in production). Never `true` with real users.
+- `demoMode`: `true` → public demonstration, even in production. Mobile app login: show "Mode démo : utilisez le
+  code 123456" (accepted for clients, sellers, drivers and new sign-ups). Console login: say that the console demo
+  accounts use the "code d'accès démo fourni par Yaar" (never pre-filled, never returned by the API: `123456` is
+  refused for `CONTROLLER`/`ADMIN`). Show `DEMO_DATA_WARNING` from `@yaar/shared` on login screens and on the
+  driver KYC upload screen ("Démonstration publique : n’utilisez pas de vraies pièces d’identité ni de vraies
+  données personnelles."). Never `true` with real users.
 - `otpChannel`: how the login code is delivered: `"console"` (written in the API log: demo/dev), `"whatsapp"`
   (planned, not implemented yet: `POST /auth/otp/request` answers `503 OTP_PROVIDER_UNAVAILABLE`),
   `"sms"` (reserved). Use it for the wording ("Code envoyé par WhatsApp" / "par SMS").
@@ -256,6 +267,11 @@ Body `VerifyOtpInput`:
 Errors: `400 OTP_INVALID` ("Code incorrect" / "Code invalide ou expiré. Demandez un nouveau code."),
 `403 ACCOUNT_SUSPENDED`, `429 RATE_LIMITED` (per IP, default 60 per 10 min). Each attempt is reserved
 atomically before the comparison: parallel requests cannot exceed 5 attempts per code.
+
+Demo mode (`DEMO_MODE=true`): `123456` logs in any `CLIENT`/`SELLER`/`DRIVER` account and creates new accounts
+(no `otp/request` needed). An existing `CONTROLLER`/`ADMIN` account gets `400 OTP_INVALID` with `123456`; it must
+call `otp/request` then send the demo access code (`DEMO_STAFF_CODE`) as `code`: it is checked like the sent
+code (timing-safe comparison, same atomic 5-attempt counter, single use). The sent code also still works.
 
 Mobile flow: phone screen → `otp/request` → code screen (+ role choice "Je suis client / vendeur / livreur"
 for first-time users) → `otp/verify` → route by `user.role` (CLIENT, SELLER, DRIVER modes). A back-office
@@ -576,9 +592,19 @@ Field notes:
 
 `GET /orders` (any role, *paginated*, newest first). Query: `status` (comma-separated list, e.g.
 `status=ASSIGNED,PICKED_UP`), `type` (`FOOD`|`PARCEL`), `q` (back office only: order number `1048`/`#1048`,
-client phone or name), `updatedSince` (ISO 8601: only orders whose `updatedAt` is at or after this instant;
-for polling, pass the largest `updatedAt` already received), `page`, `pageSize`. Scope by role: client = own orders, seller = orders of own
-stores, driver = orders assigned to him (current and past), back office = all.
+client phone or name), `updatedSince` (ISO 8601, for incremental polling: pass the largest `updatedAt`
+already received; see [Mode polling](#mode-polling-vercel)), `page`, `pageSize`. Scope by role: client = own
+orders, seller = orders of own stores, driver = orders assigned to him (current and past), back office = all.
+
+With `updatedSince`, the response holds **every order of the caller's scope updated at or after
+`updatedSince − 2 s`**, **whatever `status`** (the `status` filter is ignored, `type` and `q` still apply), sorted
+by `updatedAt` ascending (oldest change first). Merge the items into what you display **by `id`**: replace the
+order, and remove it from your view when its new status is outside the statuses you show (e.g. `DELIVERED`,
+`CANCELLED` on the seller's "en cours" screen). Orders already received may come back (2 s overlap, against
+commits that land just after a response and clock differences between instances): merging by `id` makes that
+harmless. `total` is the number of changed orders: poll with `pageSize=100`, and when `total > items.length`
+(rare: more changes than one page) reload your list once without `updatedSince`, then resume from its largest
+`updatedAt`.
 
 `GET /orders/:id` (any role with access) → `OrderDto` with `events`.
 
@@ -950,7 +976,8 @@ Use `computeDeliveryFee()` from shared to show a live preview ("6 km en moto = 1
 
 ### 8.8 Incidents (SOS, disputes)
 
-`GET /controller/incidents` (query `status`, `type`, paginated, newest first) → `Paginated<IncidentDto>`
+`GET /controller/incidents` (query `status`: one status or a comma-separated list such as `OPEN,IN_PROGRESS`;
+`type`; paginated, newest first) → `Paginated<IncidentDto>`
 
 ```json
 {
@@ -1080,43 +1107,60 @@ When the API runs on Vercel (serverless functions: ephemeral instances, several 
 connection), `GET /config` returns `realtime: "poll"`. Then:
 
 - **Do not open a Socket.IO connection** (`/socket.io` answers `404`). No socket event is ever sent.
-- Poll the REST endpoints below every `pollIntervalMs` (default **4000 ms**) while the screen that needs them is
-  visible; stop when the app is in the background (resume = one immediate refresh). Back off (×2, max 30 s) on
-  network errors.
+- Poll the REST endpoints below every `pollIntervalMs` (default **4000 ms**) or slower, while the screen that needs
+  them is visible; stop when the app is in the background or the browser tab hidden (resume = one immediate
+  refresh). Back off (×2, max 30 s) on network errors.
 - Every piece of information the socket events carried is available by REST, with the same privacy rules (§10).
 - Background work (30 s offer timeout, next driver, re-offering waiting orders, stale drivers set offline) has no
   timer in this mode: it runs **lazily**, triggered by the polling requests marked ⚙ below (at most once every
-  `WORK_THROTTLE_MS` = 4 s across all instances; the triggering request waits for it at most `WORK_BUDGET_MS`).
-  So an offer is closed 30-35 s after it was made as long as someone is polling. The 12-month retention purge
-  runs daily from Vercel Cron (`GET /cron/daily`, below).
+  `WORK_THROTTLE_MS` = 4 s across all instances; the triggering request waits for it at most `WORK_BUDGET_MS`,
+  then the cycle finishes in the background through `waitUntil`). So an offer is closed 30-35 s after it was made
+  as long as someone is polling. The 12-month retention purge runs daily from Vercel Cron (`GET /cron/daily`, below).
+- **Quota** (Vercel Hobby: 1 M function invocations per month ≈ 0.38 request/s on average, all apps together):
+  every request is an invocation, CORS preflights included. The API answers preflights with
+  `Access-Control-Max-Age: 7200`, and browsers cache a preflight per URL: poll **constant URLs** (same query
+  string) so that a screen costs one request per interval, not two.
 
 ### What to poll
 
 | Who / screen | Endpoint | Interval | Replaces socket event |
 |---|---|---|---|
-| Driver online, idle | ⚙ `GET /driver/offers` | `pollIntervalMs` (4 s) | `offer.new`, `offer.closed` (an offer that disappears from the list was taken, expired or withdrawn; accepting it then gives `409 OFFER_EXPIRED`) |
-| Driver online, idle | ⚙ `POST /driver/location` | 30-60 s (unchanged) | |
+| Driver online, idle | ⚙ `GET /driver/offers` | `pollIntervalMs` (4 s), **never paused for inactivity** (an offer lasts 30 s); only while the app is in the foreground / the tab visible | `offer.new`, `offer.closed` (an offer that disappears from the list was taken, expired or withdrawn; accepting it then gives `409 OFFER_EXPIRED`) |
+| Driver online, idle | ⚙ `POST /driver/location` | 30-60 s (unchanged; never while the app is in the background / the tab hidden) | |
+| Driver online, idle | ⚙ `GET /driver/current-order` | 30 s (manual assignment by the console) | `order.updated` |
 | Driver (any screen) | ⚙ `GET /driver/profile` | 30 s and on resume | `driver.status` (`isOnline`/`isBusy`, e.g. set offline as stale, suspended) |
 | Driver on a delivery | ⚙ `POST /driver/location` | 5-10 s (unchanged) | |
 | Driver on a delivery | ⚙ `GET /driver/current-order` (or `GET /orders/:id`) | 10 s | `order.updated` (cancelled, reassigned: `order` becomes `null` / `404`) |
 | Client, order `SEARCHING_DRIVER` / `ASSIGNED` / `PICKED_UP` | ⚙ `GET /orders/:id` | `pollIntervalMs` (4 s) | `order.updated`, `driver.location` (`driver.lastLocation` + `etaMinutes`, only while ASSIGNED/PICKED_UP) |
 | Client, order `PENDING` / `ACCEPTED` / `READY` | ⚙ `GET /orders/:id` | 10 s | `order.updated` |
-| Client, order list | `GET /orders?updatedSince=<max updatedAt>` | 30 s | `order.updated` |
-| Seller, orders screen | `GET /orders?status=PENDING,ACCEPTED,READY,SEARCHING_DRIVER,ASSIGNED,PICKED_UP&updatedSince=<max updatedAt>` | 5-10 s | `order.updated` (new order = `PENDING`) |
+| Client, order list | `GET /orders?status=…` (constant URL) or `GET /orders?updatedSince=<max updatedAt>` | 30 s | `order.updated` |
+| Seller, orders screen | `GET /orders?status=PENDING,ACCEPTED,READY,SEARCHING_DRIVER,ASSIGNED,PICKED_UP` (full list), or incremental `GET /orders?updatedSince=<max updatedAt>` (changes whatever the status: merge by `id`, drop the orders that left the list) | 5-10 s | `order.updated` (new order = `PENDING`) |
 | Seller, one order | `GET /orders/:id` | 10 s | `order.updated`, `driver.location` |
 | Chat open (client / driver) | `GET /orders/:id/messages` | 5 s | `order.message` |
-| Console, map | ⚙ `GET /controller/map` | 5 s | `driver.location`, `driver.status`, `sos` (`openSos`), `order.updated` (active orders) |
-| Console, dispatch queue | ⚙ `GET /controller/orders/pending` | 5 s | `order.updated`, `offer.*` (`currentOffer`) |
-| Console, dashboard | ⚙ `GET /controller/dashboard` | 30 s | |
-| Console, incidents | `GET /controller/incidents?status=OPEN` | 10-15 s | `sos`, `incident.updated` |
-| Console, one order | `GET /orders/:id` | 5-10 s | `order.updated`, `driver.location` |
+| Console, map | ⚙ `GET /controller/map` | 10 s | `driver.location`, `driver.status`, `sos` (`openSos`), `order.updated` (active orders) |
+| Console, dispatch queue | ⚙ `GET /controller/orders/pending` | 10 s | `order.updated`, `offer.*` (`currentOffer`) |
+| Console, indicators (menu badges, KPIs) | ⚙ `GET /controller/dashboard` | 30 s | |
+| Console, stores to validate (badge) | `GET /controller/stores?approvalStatus=PENDING&pageSize=1` | 60 s | |
+| Console, alerts (header SOS toasts + live map panel, one shared request) | `GET /controller/incidents?status=OPEN,IN_PROGRESS&pageSize=50` | 15 s | `sos`, `incident.updated` |
+| Console, incidents screen | `GET /controller/incidents?status=…` | 15 s | `sos`, `incident.updated` |
+| Console, one order | `GET /orders/:id` | 10 s | `order.updated`, `driver.location` |
 
 ⚙ = also triggers the dispatch cycle (`runDueWork`). `POST /orders`, `POST /orders/:id/ready` and
 `PATCH /driver/availability` trigger it too.
 
-`updatedSince` keeps list polling cheap: keep the largest `updatedAt` you received (server clock, so no skew),
-send it back, merge the returned items by `id`. An empty `items` means nothing changed. `total` is the count
-of changed orders, not of all orders.
+The reference console idles on the live map at about **0.32 request/s** (map 0.1 + queue 0.1 + alerts 0.067 +
+indicators 0.033 + stores 0.017; the KYC queue is reloaded only when its badge changes). After **15 minutes
+without interaction** (pointer, keyboard, touch, tab visibility) it stops polling and shows
+"Actualisation en pause (inactivité) — cliquez pour reprendre"; any interaction resumes with an immediate refresh.
+The mobile app never pauses an online driver's offer polling for inactivity.
+
+`updatedSince` (§6.5) keeps list polling cheap: keep the largest `updatedAt` you received (server clock, so no
+skew), send it back, and **merge the returned items by `id`**. With `updatedSince` the server ignores `status` and
+returns every order of your scope changed since `updatedSince − 2 s` (oldest change first): an order that leaves
+the statuses you display (delivered, cancelled, rejected) is returned once with its new status, so remove it
+then. Items already received can come back because of the 2 s overlap; merging by `id` makes that harmless.
+An empty `items` means nothing changed. `total` is the count of changed orders, not of all orders (if
+`total > items.length`, reload the list once without `updatedSince`).
 
 A suspended account gets `403 ACCOUNT_SUSPENDED` on its next request (instead of a socket disconnection);
 a reassigned driver gets `404` on the order (instead of being removed from the room).
@@ -1188,7 +1232,7 @@ Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`);
 | OTP | 6 digits, valid 5 min, 5 attempts (atomic), 5 requests/hour/phone, per-IP limits on `/auth/*` | |
 | Stale online driver | set offline after 10 min without position (`DRIVER_STALE_MINUTES`) | `DispatchService.tick` |
 | Location retention | 12 months (pings, order client positions, SOS positions, chat) | `runRetention` |
-| Upload size | 5 MB per file | `MAX_UPLOAD_BYTES` |
+| Upload size | 5 MB per file decoded; 3 MB on Vercel (and in the mobile app) | `MAX_UPLOAD_BYTES`, `VERCEL_MAX_UPLOAD_BYTES` |
 
 Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Format amounts with
 `formatFcfa(6500)` → `"6 500 FCFA"`.
@@ -1198,8 +1242,10 @@ Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Forma
 ## 12. Demo accounts (seed)
 
 `npm run db:seed` (wipes the dev database). With `OTP_DEV_BYPASS=true` (or `DEMO_MODE=true`), log in with code
-`123456`. On Vercel, the build seeds the same accounts once, only when the database has no user yet
-(`SEED_DEMO=true`, `npm run db:seed:if-empty`, never wipes).
+`123456`; with `DEMO_MODE=true`, the `ADMIN` and `CONTROLLER` accounts use the demo access code (`DEMO_STAFF_CODE`)
+instead, after "Recevoir le code". On Vercel, the production build seeds the same accounts once, only when the
+database has no user yet (`SEED_DEMO=true` and `DEMO_MODE=true`, `npm run db:seed:if-empty`, never wipes).
+The demo is public: the seeded KYC documents are blank images, never upload real ID documents.
 
 | Phone | Role | Notes |
 |---|---|---|
@@ -1252,6 +1298,24 @@ allow at most one open offer per order and per driver, and the dispatch cycle is
 
 ## 14. Changelog
 
+Public demo safety and Vercel quota (8 Nov 2026):
+
+- **Breaking for demo console logins**: with `DEMO_MODE=true`, existing `CONTROLLER`/`ADMIN` accounts no longer
+  accept `123456`; they use the demo access code `DEMO_STAFF_CODE` after `POST /auth/otp/request` (§3). Clients,
+  sellers, drivers and sign-ups keep `123456`. `GET /config` never exposes the staff code.
+- The API refuses to start with `DEMO_MODE=true` and `OTP_PROVIDER≠console`, and in production or on Vercel with
+  `DEMO_MODE=true` without a 6-digit `DEMO_STAFF_CODE` different from `123456`.
+- **Behaviour change**: `GET /orders?updatedSince=` ignores `status`, applies a 2 s overlap and sorts by
+  `updatedAt` ascending, so that orders leaving a status set (delivered, cancelled) are seen (§6.5).
+- `GET /controller/incidents?status=` accepts a comma-separated list (`OPEN,IN_PROGRESS`).
+- CORS: preflights cached 2 h (`Access-Control-Max-Age: 7200`); `CORS_ORIGINS` entries may contain a `*` matching
+  part of one hostname label (Vercel preview URLs); `*` alone and whole-label patterns are refused in production.
+- Uploads on Vercel: 3 MB decoded per file, 4.25 MB per request body, `413 PAYLOAD_TOO_LARGE` in the API's JSON
+  format with a French message (Vercel's own limit stays 4.5 MB).
+- When the function cannot start, the `500 INTERNAL_ERROR` response carries the CORS headers of allowed origins.
+- Polling guidance: console intervals (10 s map and queue, one shared alerts request every 15 s, 60 s for the
+  stores badge) and 15-minute idle pause; constant URLs so that preflights stay cached.
+
 Vercel deployment (backward compatible):
 
 - New `GET /config` (`PublicConfigDto`: `realtime`, `pollIntervalMs`, `demoMode`, `otpChannel`) and polling mode
@@ -1260,7 +1324,8 @@ Vercel deployment (backward compatible):
 - `GET /cron/daily` (Vercel Cron, `CRON_SECRET`).
 - `503 OTP_PROVIDER_UNAVAILABLE` on `POST /auth/otp/request` when the OTP channel is not configured
   (`OTP_PROVIDER=whatsapp` placeholder).
-- `DEMO_MODE=true` accepts the code `123456` even in production (announced by `GET /config`).
+- `DEMO_MODE=true` accepts the code `123456` even in production (announced by `GET /config`; since 8 Nov 2026 not
+  for existing console accounts, see above).
 - Request bodies are limited to **4.5 MB on Vercel** (platform limit), below the API's own 8 MB: on Vercel keep
   uploaded files under ~3.3 MB (base64 adds a third) and compress photos before upload; a larger request is
   refused by Vercel itself with `413` (not the API's JSON error format).

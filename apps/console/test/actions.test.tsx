@@ -9,7 +9,6 @@ import { AuditPage } from '../src/pages/AuditPage';
 import { CashPage } from '../src/pages/CashPage';
 import { DriverDetailPage } from '../src/pages/DriverDetailPage';
 import { IncidentsPage } from '../src/pages/IncidentsPage';
-import { mergeIncidents } from '../src/pages/LivePage';
 import { LoginPage } from '../src/pages/LoginPage';
 import { OrderDetailPage } from '../src/pages/OrderDetailPage';
 import { OrdersPage } from '../src/pages/OrdersPage';
@@ -59,9 +58,7 @@ const liveRoutes = {
   'GET /controller/map': mapData,
   'GET /controller/orders/pending': [pendingOrder],
   'GET /controller/drivers': { items: [driverProfile()], total: 1, page: 1, pageSize: 4 },
-  'GET /controller/incidents': (c: FakeCall) => ({
-    body: page(c.path.includes('status=IN_PROGRESS') ? [{ ...sos, id: 'inc-old', status: 'IN_PROGRESS' as const }] : [sos]),
-  }),
+  'GET /controller/incidents': page([sos, { ...sos, id: 'inc-old', status: 'IN_PROGRESS' as const }]),
 };
 
 describe('Carte en direct : resynchronisation et alertes', () => {
@@ -70,7 +67,7 @@ describe('Carte en direct : resynchronisation et alertes', () => {
     const { calls } = renderWithProviders(<App socketUrl="http://api.test" busOverride={bus} />, { routes: liveRoutes, bus });
     expect(await screen.findByTestId('map')).toBeInTheDocument();
     const count = (p: string) => calls.filter((c) => c.path.startsWith(p)).length;
-    await waitFor(() => expect(count('/controller/incidents')).toBe(2));
+    await waitFor(() => expect(count('/controller/incidents')).toBe(1));
     const before = {
       map: count('/controller/map'),
       pending: count('/controller/orders/pending'),
@@ -81,18 +78,19 @@ describe('Carte en direct : resynchronisation et alertes', () => {
     await waitFor(() => expect(count('/controller/map')).toBe(before.map + 1));
     expect(count('/controller/orders/pending')).toBe(before.pending + 1);
     expect(count('/controller/drivers')).toBe(before.drivers + 1);
-    expect(count('/controller/incidents')).toBe(4);
+    await waitFor(() => expect(count('/controller/incidents')).toBe(2));
     await waitFor(() => expect(count('/controller/dashboard')).toBe(before.dash + 1));
   });
 
-  it('charge les incidents ouverts ET en cours, sans dépendre des incidents résolus', async () => {
+  it('charge les incidents ouverts ET en cours en une seule requête, sans dépendre des incidents résolus', async () => {
     const { calls } = renderWithProviders(<App socketUrl="http://api.test" busOverride={createMemoryBus()} />, {
       routes: liveRoutes,
     });
-    await waitFor(() => expect(calls.filter((c) => c.path.startsWith('/controller/incidents'))).toHaveLength(2));
-    const paths = calls.filter((c) => c.path.startsWith('/controller/incidents')).map((c) => c.path);
-    expect(paths.some((p) => p.includes('status=OPEN'))).toBe(true);
-    expect(paths.some((p) => p.includes('status=IN_PROGRESS'))).toBe(true);
+    await waitFor(() => expect(calls.filter((c) => c.path.startsWith('/controller/incidents'))).toHaveLength(1));
+    const path = calls.find((c) => c.path.startsWith('/controller/incidents'))!.path;
+    expect(new URL(path, 'http://x').searchParams.get('status')).toBe('OPEN,IN_PROGRESS');
+    // Le panneau « Alertes » montre les deux.
+    await waitFor(() => expect(document.querySelectorAll('.alerts li')).toHaveLength(2));
   });
 
   it('ne valide jamais un dossier KYC en un clic depuis la carte : lien vers la fiche', async () => {
@@ -103,12 +101,6 @@ describe('Carte en direct : resynchronisation et alertes', () => {
     expect(link).toHaveAttribute('href', '/kyc/drv-ousmane');
     expect(screen.queryByRole('button', { name: 'Valider' })).not.toBeInTheDocument();
     expect(posts(calls)).toHaveLength(0);
-  });
-
-  it('fusionne les incidents sans doublon, du plus récent au plus ancien', () => {
-    const older = { ...sos, id: 'a', createdAt: '2026-11-01T10:00:00.000Z' };
-    const newer = { ...sos, id: 'b', createdAt: '2026-11-05T10:00:00.000Z' };
-    expect(mergeIncidents([older], [newer, older]).map((i) => i.id)).toEqual(['b', 'a']);
   });
 });
 

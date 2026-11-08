@@ -5,7 +5,7 @@ import { externalDirectionsUrl, webDirectionsUrl } from './navigation';
 import { formatPhone, normalizePhone, telUrl } from './phone';
 import { homePathForRole, spaceForRole } from './roles';
 import { clampPrepTime, ordersOfStore, parsePrice, sortSellerOrders } from './sellerOrders';
-import { base64DecodedSize, stripDataUrl, toFileUpload, UploadTooLargeError } from './upload';
+import { base64DecodedSize, MAX_PHOTO_BASE64_LENGTH, stripDataUrl, toFileUpload, UploadTooLargeError } from './upload';
 import { pickVehicle } from '../hooks/useQuote';
 import type { OrderDto, QuoteResponse } from '@yaar/shared';
 
@@ -119,9 +119,15 @@ describe('envoi de fichiers', () => {
     expect(base64DecodedSize('QUI=')).toBe(2);
     expect(toFileUpload('QUJD')).toEqual({ mimeType: 'image/jpeg', dataBase64: 'QUJD' });
   });
-  it('refuse un fichier de plus de 5 Mo', () => {
-    const big = 'A'.repeat(Math.ceil((5 * 1024 * 1024 * 4) / 3) + 8);
+  it('vérifie la taille encodée avant l’envoi : 3 Mo décodés (4 Mo en base64) au plus, message en français', () => {
+    expect(MAX_PHOTO_BASE64_LENGTH).toBe(4 * 1024 * 1024);
+    // Sous la limite de 4,5 Mo des requêtes Vercel, avec de la marge pour le reste du JSON.
+    expect(MAX_PHOTO_BASE64_LENGTH).toBeLessThan(4.5 * 1024 * 1024 - 64 * 1024);
+    const atLimit = 'A'.repeat(MAX_PHOTO_BASE64_LENGTH);
+    expect(toFileUpload(`data:image/jpeg;base64,${atLimit}`).dataBase64).toHaveLength(MAX_PHOTO_BASE64_LENGTH);
+    const big = 'A'.repeat(MAX_PHOTO_BASE64_LENGTH + 4);
     expect(() => toFileUpload(big)).toThrow(UploadTooLargeError);
+    expect(() => toFileUpload(big)).toThrow('Photo trop volumineuse (3 Mo maximum)');
   });
 });
 

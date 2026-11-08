@@ -59,6 +59,8 @@
     "moduleNameMapper": {
       "^@yaar/shared$": "<rootDir>/../../packages/shared/src/index.ts",
       "^zod$": "<rootDir>/node_modules/zod",
+      "^zod/(.*)$": "<rootDir>/node_modules/zod/$1",
+      "^@babel/runtime/(.*)$": "<rootDir>/node_modules/@babel/runtime/$1",
       "^@/(.*)$": "<rootDir>/src/$1"
     },
     "transformIgnorePatterns": [

@@ -1,11 +1,11 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { LABELS, type IncidentDto } from '@yaar/shared';
-import { useApi, useAuth } from '../auth/AuthContext';
-import { POLL_MS } from '../config';
+import { useAuth } from '../auth/AuthContext';
 import { useAppConfig } from '../realtime/AppConfigContext';
 import { useDashboard } from '../hooks/DashboardContext';
-import { useLiveIntervalMs, usePolling, useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
+import { useIncidents } from '../hooks/IncidentsContext';
+import { useLiveIntervalMs, useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
 
 interface NavItem {
   to: string;
@@ -32,9 +32,9 @@ export function searchTarget(q: string): string {
 export function Layout() {
   const { user, logout } = useAuth();
   const { dashboard, pendingStores } = useDashboard();
-  const { connected, mode } = useRealtime();
+  const { connected, mode, idlePaused, resume } = useRealtime();
   const { config } = useAppConfig();
-  const api = useApi();
+  const { incidents } = useIncidents();
   const liveIntervalMs = useLiveIntervalMs();
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,20 +49,22 @@ export function Layout() {
     if (incident.status === 'RESOLVED') setSosToasts((prev) => prev.filter((i) => i.id !== incident.id));
   });
 
-  // Mode poll : les SOS ouverts sont relus périodiquement ; seuls les nouveaux (après le premier
-  // chargement) déclenchent une alerte, comme l'événement `sos` du socket.
+  // Mode poll : les SOS ouverts arrivent avec les alertes partagées (IncidentsProvider, une requête pour
+  // toute la console) ; seuls les nouveaux (après le premier chargement) déclenchent une alerte, comme
+  // l'événement `sos` du socket.
   const seenSos = useRef<Set<string> | null>(null);
-  usePolling(async () => {
-    const res = await api.listIncidents({ status: 'OPEN', type: 'SOS', pageSize: 20 });
-    const ids = new Set(res.items.map((i) => i.id));
+  useEffect(() => {
+    if (mode !== 'poll' || !incidents) return;
+    const open = incidents.filter((i) => i.type === 'SOS' && i.status === 'OPEN');
+    const ids = new Set(open.map((i) => i.id));
     const seen = seenSos.current;
     seenSos.current = ids;
-    const fresh = seen ? res.items.filter((i) => !seen.has(i.id)) : [];
+    const fresh = seen ? open.filter((i) => !seen.has(i.id)) : [];
     setSosToasts((prev) => {
       const kept = prev.filter((i) => ids.has(i.id));
       return [...fresh, ...kept.filter((k) => !fresh.some((f) => f.id === k.id))].slice(0, 3);
     });
-  }, POLL_MS.incidents);
+  }, [incidents, mode]);
 
   const items: NavItem[] = [
     { to: '/', icon: '🗺️', label: 'Carte en direct', end: true },
@@ -139,13 +141,18 @@ export function Layout() {
             />
           </form>
           {config?.demoMode ? (
-            <span className="demo-badge" title="Mode démonstration : code de connexion 123456">
+            <span
+              className="demo-badge"
+              title="Mode démonstration : données fictives, ne saisissez pas de vraies données personnelles"
+            >
               DÉMO
             </span>
           ) : null}
           {mode === 'poll' ? (
             <span className="poll-info" title="Mode sans temps réel : les données sont rechargées régulièrement">
-              Actualisation automatique toutes les {Math.round(liveIntervalMs / 1000)} s
+              {idlePaused
+                ? 'Actualisation en pause'
+                : `Actualisation automatique toutes les ${Math.round(liveIntervalMs / 1000)} s`}
             </span>
           ) : (
             <span className={`live-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
@@ -153,6 +160,13 @@ export function Layout() {
             </span>
           )}
         </header>
+        {idlePaused ? (
+          <div className="idle-banner" role="status">
+            <button type="button" onClick={() => resume()}>
+              Actualisation en pause (inactivité) — cliquez pour reprendre
+            </button>
+          </div>
+        ) : null}
         {sosToasts.length > 0 && (
           <div className="toasts" aria-live="assertive">
             {sosToasts.map((i) => (

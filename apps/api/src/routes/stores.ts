@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import {
-  MAX_UPLOAD_BYTES,
   acceptOrderSchema,
   imageUploadSchema,
   productCreateSchema,
@@ -129,12 +128,12 @@ export async function storeRoutes(app: FastifyInstance, ctx: AppContext): Promis
     return toProductDto(await prisma.product.update({ where: { id: productId }, data: input }));
   });
 
-  /** Photo du produit (JPEG, PNG ou WebP, 5 Mo max), remplace la précédente. */
+  /** Photo du produit (JPEG, PNG ou WebP, `config.maxUploadBytes` max : 5 Mo, 3 Mo sur Vercel), remplace la précédente. */
   app.put('/seller/products/:productId/photo', { preHandler: seller }, async (req): Promise<ProductDto> => {
     const { productId } = parse(productParams, req.params);
     const input = parse(imageUploadSchema, req.body);
     const p = await ownProduct(productId, getAuth(req).id);
-    const data = decodeUpload(input.dataBase64, input.mimeType, MAX_UPLOAD_BYTES);
+    const data = decodeUpload(input.dataBase64, input.mimeType, config.maxUploadBytes);
     const key = `products/${p.storeId}/${p.id}-${ctx.clock.now().getTime()}.${extensionFor(input.mimeType)}`;
     await ctx.storage.put(key, data);
     const updated = await prisma.product.update({ where: { id: productId }, data: { imageKey: key, imageMimeType: input.mimeType } });

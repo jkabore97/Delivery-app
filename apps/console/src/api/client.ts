@@ -91,7 +91,8 @@ export interface UserListParams extends PageQuery {
 }
 
 export interface IncidentListParams extends PageQuery {
-  status?: IncidentStatus;
+  /** Un statut, ou plusieurs (`OPEN,IN_PROGRESS`) en une seule requête. */
+  status?: IncidentStatus | readonly IncidentStatus[];
   type?: IncidentType;
 }
 

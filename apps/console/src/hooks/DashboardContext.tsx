@@ -22,7 +22,7 @@ const DashboardContext = createContext<DashboardValue>({
   refreshPendingStores: () => undefined,
 });
 
-/** Indicateurs partagés (cartes KPI + pastilles du menu), rafraîchis toutes les 30 s et sur événement. */
+/** Indicateurs partagés (cartes KPI + pastilles du menu), rafraîchis toutes les 30 s (60 s pour les boutiques) et sur événement. */
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const api = useApi();
   const { data, error, reload } = useAsync(() => api.dashboard(), [api]);
@@ -44,11 +44,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }, DASHBOARD_REFRESH_MS);
     return () => clearInterval(t);
   }, [reload, reloadStores, mode]);
-  // Mode poll : même rythme (30 s), mais en pause quand l'onglet est masqué.
-  usePolling(async () => {
-    const [a, b] = await Promise.all([reload(true), reloadStores(true)]);
-    return a && b;
-  }, POLL_MS.dashboard);
+  // Mode poll : indicateurs toutes les 30 s, boutiques à valider toutes les 60 s (rarement modifiées),
+  // en pause quand l'onglet est masqué ou la console inactive.
+  usePolling(() => reload(true), POLL_MS.dashboard);
+  usePolling(() => reloadStores(true), POLL_MS.pendingStores);
 
   useSocketEvent('order.updated', refresh);
   useSocketEvent('driver.status', refresh);

@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
  * Test de fumée du bundle Vercel : démarre `api/index.js` (→ dist/vercel.mjs) comme serveur HTTP Node,
- * dans les conditions de Vercel (NODE_ENV=production, REALTIME_MODE=poll, STORAGE_DRIVER=db, DEMO_MODE=true),
- * puis vérifie /health, /config, une connexion OTP (code démo 123456), /me, /driver/offers et /cron/daily.
+ * dans les conditions de Vercel (VERCEL=1, NODE_ENV=production, REALTIME_MODE=poll, STORAGE_DRIVER=db,
+ * DEMO_MODE=true avec un DEMO_STAFF_CODE de test), puis vérifie /health, /config, CORS (préflight mis en
+ * cache, motif de prévisualisation), la connexion OTP (123456 pour les clients et livreurs, refusé pour
+ * un contrôleur qui doit utiliser le code d'accès démo), /me, /driver/offers, les limites d'envoi (413 JSON),
+ * /cron/daily, et la réponse CORS quand l'API ne peut pas démarrer.
  *   npm run build:bundle -w apps/api && npm run smoke:vercel -w apps/api
- * Base : SMOKE_DATABASE_URL, sinon DATABASE_URL (.env), sinon yaar_dev locale.
+ * Base : SMOKE_DATABASE_URL, sinon DATABASE_URL (.env), sinon yaar_dev locale (seed de démonstration attendu).
  */
+import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -21,23 +25,30 @@ function dotenvValue(name) {
   }
 }
 const CRON_SECRET = 'smoke-cron-secret-0123456789abcdef';
-Object.assign(process.env, {
+/** Valeur de test uniquement (jamais celle du projet Vercel). */
+const STAFF_CODE = '482913';
+const CONSOLE_ORIGIN = 'https://console.example.test';
+const PREVIEW_PATTERN = 'https://yaar-console-*-equipe-test.vercel.app';
+const env = {
   DATABASE_URL:
     process.env.SMOKE_DATABASE_URL ??
     dotenvValue('DATABASE_URL') ??
     'postgresql://postgres:postgres@localhost:5433/yaar_dev?schema=public',
+  VERCEL: '1',
   NODE_ENV: 'production',
   JWT_SECRET: 'smoke-jwt-secret-0123456789abcdef0123456789',
   STORAGE_ENCRYPTION_KEY: 'b'.repeat(64),
-  CORS_ORIGINS: 'https://console.example.test,https://mobile.example.test',
+  CORS_ORIGINS: `${CONSOLE_ORIGIN},https://mobile.example.test,${PREVIEW_PATTERN}`,
   TRUST_PROXY: 'true',
   REALTIME_MODE: 'poll',
   STORAGE_DRIVER: 'db',
   DEMO_MODE: 'true',
+  DEMO_STAFF_CODE: STAFF_CODE,
   OTP_PROVIDER: 'console',
   CRON_SECRET,
   LOG_LEVEL: 'warn',
-});
+};
+Object.assign(process.env, env);
 
 const { default: handler } = await import(path.join(root, 'api/index.js'));
 const server = createServer((req, res) => void handler(req, res));
@@ -49,22 +60,71 @@ function check(name, ok, detail = '') {
   console.info(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  ${detail}` : ''}`);
   if (!ok) failures++;
 }
-async function req(method, url, { token, body, headers = {} } = {}) {
-  const res = await fetch(base + url, {
+async function req(method, url, { token, body, headers = {}, rawBody } = {}, at = base) {
+  const res = await fetch(at + url, {
     method,
     headers: {
-      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(body !== undefined || rawBody !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined),
   });
   const text = await res.text();
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {}
-  return { status: res.status, json, headers: res.headers };
+  return { status: res.status, json, text, headers: res.headers };
+}
+const login = (phone, code, extra = {}) => req('POST', '/auth/otp/verify', { body: { phone, code, ...extra } });
+
+/** L'API démarrée avec une configuration invalide répond 500 JSON, lisible par les origines autorisées. */
+async function startupFailureChecks() {
+  const brokenEnv = { ...process.env, ...env, DEMO_STAFF_CODE: '', PORT: '0' };
+  const code = `
+    import { createServer } from 'node:http';
+    const { default: handler } = await import(${JSON.stringify(path.join(root, 'api/index.js'))});
+    const s = createServer((q, r) => void handler(q, r));
+    s.listen(0, '127.0.0.1', () => console.log('PORT=' + s.address().port));`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], { env: brokenEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const port = await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('serveur de test sans réponse')), 15000);
+      child.stdout.on('data', (d) => {
+        const m = /PORT=(\d+)/.exec(String(d));
+        if (m) {
+          clearTimeout(t);
+          resolve(Number(m[1]));
+        }
+      });
+      child.on('exit', (c) => reject(new Error(`serveur de test arrêté (${c})`)));
+    });
+    const at = `http://127.0.0.1:${port}`;
+    const broken = await req('GET', '/health', { headers: { origin: CONSOLE_ORIGIN } }, at);
+    check(
+      'Démarrage impossible (DEMO_STAFF_CODE manquant) → 500 JSON avec CORS',
+      broken.status === 500 &&
+        broken.json?.error?.code === 'INTERNAL_ERROR' &&
+        broken.headers.get('access-control-allow-origin') === CONSOLE_ORIGIN,
+      `${broken.status} ${broken.headers.get('access-control-allow-origin')}`,
+    );
+    const pre = await req(
+      'OPTIONS',
+      '/me',
+      { headers: { origin: CONSOLE_ORIGIN, 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } },
+      at,
+    );
+    check(
+      'Démarrage impossible : préflight accepté (l’erreur reste lisible)',
+      pre.status === 204 && pre.headers.get('access-control-allow-origin') === CONSOLE_ORIGIN,
+      String(pre.status),
+    );
+    const other = await req('GET', '/health', { headers: { origin: 'https://evil.example.test' } }, at);
+    check('Démarrage impossible : origine inconnue sans CORS', other.status === 500 && !other.headers.get('access-control-allow-origin'));
+  } finally {
+    child.kill();
+  }
 }
 
 try {
@@ -77,17 +137,35 @@ try {
     cfg.status === 200 && cfg.json?.realtime === 'poll' && cfg.json?.demoMode === true && cfg.json?.otpChannel === 'console',
     JSON.stringify(cfg.json),
   );
+  check('GET /config ne révèle pas le code d’accès démo', !cfg.text.includes(STAFF_CODE));
 
-  const cors = await req('GET', '/health', { headers: { origin: 'https://console.example.test' } });
-  check('CORS origine autorisée', cors.headers.get('access-control-allow-origin') === 'https://console.example.test');
+  const cors = await req('GET', '/health', { headers: { origin: CONSOLE_ORIGIN } });
+  check('CORS origine autorisée', cors.headers.get('access-control-allow-origin') === CONSOLE_ORIGIN);
+  const preflight = await req('OPTIONS', '/controller/map', {
+    headers: { origin: CONSOLE_ORIGIN, 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' },
+  });
+  check(
+    'Préflight CORS mis en cache 2 h (Access-Control-Max-Age: 7200)',
+    preflight.status === 204 && preflight.headers.get('access-control-max-age') === '7200',
+    `${preflight.status} max-age=${preflight.headers.get('access-control-max-age')}`,
+  );
+  const previewOrigin = 'https://yaar-console-git-main-equipe-test.vercel.app';
+  const preview = await req('GET', '/health', { headers: { origin: previewOrigin } });
+  check('CORS motif de prévisualisation (un segment)', preview.headers.get('access-control-allow-origin') === previewOrigin);
+  const tooDeep = await req('GET', '/health', { headers: { origin: 'https://yaar-console-a.b-equipe-test.vercel.app' } });
+  check('CORS motif : un seul segment (pas de point)', !tooDeep.headers.get('access-control-allow-origin'));
+  const evil = await req('GET', '/health', { headers: { origin: 'https://evil.example.test' } });
+  check('CORS origine inconnue refusée', !evil.headers.get('access-control-allow-origin'));
 
-  const phone = '+22670000002'; // contrôleur du seed (créé comme client sinon)
+  const phone = '+22670000002'; // contrôleur du seed
   const otpReq = await req('POST', '/auth/otp/request', { body: { phone } });
   check('POST /auth/otp/request', otpReq.status === 200 && otpReq.json?.sent === true, JSON.stringify(otpReq.json));
 
-  const login = await req('POST', '/auth/otp/verify', { body: { phone, code: '123456' } });
-  const token = login.json?.accessToken;
-  check('POST /auth/otp/verify (code démo 123456, NODE_ENV=production)', login.status === 200 && !!token, `role=${login.json?.user?.role}`);
+  const refused = await login(phone, '123456');
+  check('Contrôleur avec 123456 → refusé (démo publique)', refused.status === 400 && refused.json?.error?.code === 'OTP_INVALID', JSON.stringify(refused.json?.error));
+  const staff = await login(phone, STAFF_CODE);
+  const token = staff.json?.accessToken;
+  check('Contrôleur avec DEMO_STAFF_CODE → connecté', staff.status === 200 && !!token && staff.json?.user?.role === 'CONTROLLER', `role=${staff.json?.user?.role}`);
 
   const me = await req('GET', '/me', { token });
   check('GET /me', me.status === 200 && me.json?.phone === phone);
@@ -108,12 +186,39 @@ try {
     );
   }
 
-  const wrong = await req('POST', '/auth/otp/verify', { body: { phone, code: '000000' } });
+  const wrong = await login(phone, '000000');
   check('Mauvais code refusé', wrong.status === 400, wrong.json?.error?.code);
 
-  const driver = await req('POST', '/auth/otp/verify', { body: { phone: '+22673000002', code: '123456', role: 'DRIVER' } });
+  const client = await login('+22672000001', '123456');
+  check('Client avec 123456 → connecté', client.status === 200 && client.json?.user?.role === 'CLIENT');
+
+  const driver = await login('+22673000002', '123456', { role: 'DRIVER' });
   const offers = await req('GET', '/driver/offers', { token: driver.json?.accessToken });
   check('GET /driver/offers (déclenche runDueWork)', offers.status === 200 && Array.isArray(offers.json), `${offers.json?.length} offre(s)`);
+
+  // Vercel : 3 Mo décodés au plus ; au-delà, 413 au format JSON de l'API (lisible grâce à CORS).
+  const bigFile = { mimeType: 'image/jpeg', dataBase64: Buffer.alloc(Math.round(3.1 * 1024 * 1024)).toString('base64') };
+  const tooBigFile = await req('PUT', '/driver/documents/CNIB', {
+    token: driver.json?.accessToken,
+    body: bigFile,
+    headers: { origin: CONSOLE_ORIGIN },
+  });
+  check(
+    'Fichier > 3 Mo → 413 PAYLOAD_TOO_LARGE (JSON, CORS)',
+    tooBigFile.status === 413 &&
+      tooBigFile.json?.error?.code === 'PAYLOAD_TOO_LARGE' &&
+      tooBigFile.headers.get('access-control-allow-origin') === CONSOLE_ORIGIN,
+    tooBigFile.json?.error?.message,
+  );
+  const tooBigBody = await req('PUT', '/driver/documents/CNIB', {
+    token: driver.json?.accessToken,
+    rawBody: JSON.stringify({ mimeType: 'image/jpeg', dataBase64: 'A'.repeat(Math.round(4.4 * 1024 * 1024)) }),
+  });
+  check(
+    'Corps > 4,25 Mo → 413 PAYLOAD_TOO_LARGE (JSON)',
+    tooBigBody.status === 413 && tooBigBody.json?.error?.code === 'PAYLOAD_TOO_LARGE',
+    tooBigBody.json?.error?.message,
+  );
 
   const noSecret = await req('GET', '/cron/daily');
   check('GET /cron/daily sans secret → 401', noSecret.status === 401);
@@ -122,6 +227,8 @@ try {
 
   const socket = await req('GET', '/socket.io/?EIO=4&transport=polling');
   check('Pas de Socket.IO en mode poll', socket.status === 404);
+
+  await startupFailureChecks();
 } catch (err) {
   console.error(err);
   failures++;

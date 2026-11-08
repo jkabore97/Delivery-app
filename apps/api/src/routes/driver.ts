@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
   DOCUMENTS_WITH_EXPIRY,
-  MAX_UPLOAD_BYTES,
   availabilitySchema,
   documentTypeSchema,
   documentUploadSchema,
@@ -96,7 +95,7 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
       throw badRequest(`La pièce ${type} n’est pas demandée pour ce type de véhicule`);
     if (DOCUMENTS_WITH_EXPIRY.includes(type) && !input.expiresAt)
       throw badRequest('La date d’expiration est obligatoire pour cette pièce', { expiresAt: ['Requis'] });
-    const data = decodeUpload(input.dataBase64, input.mimeType, MAX_UPLOAD_BYTES);
+    const data = decodeUpload(input.dataBase64, input.mimeType, config.maxUploadBytes);
 
     const key = `kyc/${userId}/${type.toLowerCase()}-${clock.now().getTime()}.${extensionFor(input.mimeType)}`;
     await ctx.storage.put(key, data);

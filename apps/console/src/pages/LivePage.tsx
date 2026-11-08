@@ -9,6 +9,7 @@ import { LiveMap } from '../components/LiveMap';
 import { PendingOrdersPanel } from '../components/PendingOrdersPanel';
 import { ErrorBanner, Loading } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
+import { useIncidents } from '../hooks/IncidentsContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
 import { applyDriverLocation, applyDriverStatus, applyIncident, type VehicleFilter } from '../lib/mapState';
 import { MAP_SAFETY_REFRESH_MS, POLL_MS } from '../config';
@@ -36,26 +37,19 @@ export function LivePage() {
     return res;
   }, [api]);
   const kyc = useAsync(() => api.listDrivers({ status: 'PENDING', pageSize: 4 }), [api]);
-  // L'API n'accepte qu'un statut par appel : on charge séparément les incidents ouverts et en cours,
-  // pour qu'un SOS ancien ne soit jamais masqué par des incidents résolus plus récents.
-  const incidents = useAsync<IncidentDto[]>(async () => {
-    const [open, inProgress] = await Promise.all([
-      api.listIncidents({ status: 'OPEN', pageSize: 50 }),
-      api.listIncidents({ status: 'IN_PROGRESS', pageSize: 50 }),
-    ]);
-    return mergeIncidents(open.items, inProgress.items);
-  }, [api]);
+  // Alertes (ouvertes et en cours) : même source que les toasts SOS de l'en-tête (IncidentsProvider),
+  // une seule requête pour toute la console.
+  const incidents = useIncidents();
 
   const refetchMap = useDebouncedCallback(() => map.reload(true), 1000);
   const refetchPending = useDebouncedCallback(() => pending.reload(true), 800);
-  const refetchIncidents = useDebouncedCallback(() => incidents.reload(true), 800);
 
   // Rattrapage après une coupure du temps réel : les événements manqués ne seront jamais rejoués.
+  // (Les alertes sont rechargées par IncidentsProvider.)
   useReconnect(() => {
     map.reload(true);
     pending.reload(true);
     kyc.reload(true);
-    incidents.reload(true);
   });
 
   const { reload: reloadMap } = map;
@@ -66,12 +60,11 @@ export function LivePage() {
     return () => clearInterval(t);
   }, [reloadMap, mode]);
 
-  // Mode poll (Vercel) : la carte, la file d'attente et les alertes remplacent les événements Socket.IO.
-  // Les indicateurs (et donc la file KYC, rechargée quand sa pastille change) sont gérés par DashboardProvider.
+  // Mode poll (Vercel) : la carte et la file d'attente remplacent les événements Socket.IO (10 s chacune).
+  // Les indicateurs sont gérés par DashboardProvider, les alertes par IncidentsProvider ; la file KYC est
+  // rechargée quand sa pastille (indicateurs) change : pas de requête périodique de plus.
   usePolling(() => map.reload(true), POLL_MS.map);
   usePolling(() => pending.reload(true), POLL_MS.pendingOrders);
-  usePolling(() => incidents.reload(true), POLL_MS.incidents);
-  usePolling(() => kyc.reload(true), POLL_MS.kyc);
 
   // Nouveau dossier déposé (pastille KYC qui change) : on recharge la file affichée.
   const pendingKyc = dashboard?.pendingKyc;
@@ -112,7 +105,6 @@ export function LivePage() {
   });
   const onIncident = ({ incident }: { incident: IncidentDto }) => {
     updateMap((s) => ({ state: applyIncident(s, incident), needsRefetch: false }));
-    refetchIncidents();
   };
   useSocketEvent('sos', onIncident);
   useSocketEvent('incident.updated', onIncident);
@@ -123,7 +115,7 @@ export function LivePage() {
     refreshDashboard();
   };
 
-  const openIncidents = (incidents.data ?? []).filter((i) => i.status !== 'RESOLVED');
+  const openIncidents = (incidents.incidents ?? []).filter((i) => i.status !== 'RESOLVED');
 
   return (
     <div className="page page-live">
@@ -184,17 +176,10 @@ export function LivePage() {
             drivers={kyc.data?.items ?? []}
             total={kyc.data?.total ?? 0}
           />
-          <ErrorBanner message={incidents.error} onRetry={() => incidents.reload()} />
+          <ErrorBanner message={incidents.error} onRetry={() => void incidents.reload()} />
           <AlertsPanel incidents={openIncidents} />
         </div>
       </div>
     </div>
   );
-}
-
-/** Fusionne des listes d'incidents (sans doublon), du plus récent au plus ancien. */
-export function mergeIncidents(...lists: IncidentDto[][]): IncidentDto[] {
-  const byId = new Map<string, IncidentDto>();
-  for (const list of lists) for (const i of list) byId.set(i.id, i);
-  return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

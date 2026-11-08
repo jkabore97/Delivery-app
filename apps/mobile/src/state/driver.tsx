@@ -8,7 +8,7 @@ import { formatOrderNumber } from '../lib/format';
 import { useDriverLocationTracking, type TrackedPosition } from '../hooks/useDriverLocationTracking';
 import { useApi } from './auth';
 import { POLL_MS } from '../lib/publicConfig';
-import { usePolling, useSocketEvent } from './socket';
+import { usePolling, useRealtimeMode, useSocketEvent } from './socket';
 
 interface DriverContextValue {
   /** undefined = chargement ; null = pas encore de dossier (onboarding). */
@@ -130,13 +130,18 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   }, [approved, refreshCurrentOrder, refreshOffers]);
 
   // Retour au premier plan : on resynchronise tout (le statut KYC n'a pas d'événement temps réel).
+  // Mode poll : le planificateur relance déjà immédiatement chaque rafraîchissement actif au retour
+  // (offres, course, profil) ; on ne double pas ces requêtes, sauf si le profil n'a jamais pu être lu.
+  const realtimeMode = useRealtimeMode();
+  const realtimeModeRef = useRef(realtimeMode);
+  realtimeModeRef.current = realtimeMode;
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') {
-        void refreshProfile();
-        void refreshCurrentOrder();
-        void refreshOffers();
-      }
+      if (s !== 'active') return;
+      if (realtimeModeRef.current === 'poll' && profileRef.current !== undefined) return;
+      void refreshProfile();
+      void refreshCurrentOrder();
+      void refreshOffers();
     });
     return () => sub.remove();
   }, [refreshProfile, refreshCurrentOrder, refreshOffers]);

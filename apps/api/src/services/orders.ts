@@ -86,6 +86,13 @@ function clientPush(o: { number: number; status: OrderStatus }): PushMessage | n
   }
 }
 
+/**
+ * Marge appliquée à `updatedSince` (GET /orders) : une modification écrite juste avant la précédente
+ * réponse mais validée (commit) juste après, ou horodatée par une autre instance à l'horloge un peu
+ * décalée, n'est pas perdue. Les commandes déjà reçues reviennent : fusion par `id`, sans effet.
+ */
+export const UPDATED_SINCE_OVERLAP_MS = 2000;
+
 export class OrderService {
   constructor(
     private readonly prisma: PrismaClient,
@@ -95,6 +102,8 @@ export class OrderService {
     private readonly payments: PaymentRegistry,
     private readonly storage: StorageProvider,
     private readonly notifier: Notifier,
+    /** Taille maximale d'une photo de preuve décodée (`config.maxUploadBytes`). */
+    private readonly maxUploadBytes: number = MAX_UPLOAD_BYTES,
   ) {}
 
   /* ----------------------------- Devis ----------------------------- */
@@ -264,9 +273,15 @@ export class OrderService {
 
   async list(viewer: AuthUser, q: OrderListQuery): Promise<Paginated<OrderDto>> {
     const where: Prisma.OrderWhereInput = {};
-    if (q.status?.length) where.status = { in: q.status };
+    if (q.updatedSince) {
+      // Synchronisation incrémentale (mode poll) : TOUTES les commandes de l'appelant modifiées depuis
+      // `updatedSince` moins une marge, quel que soit `status` (une commande qui sort de la liste suivie,
+      // ex. DELIVERED, doit être vue pour être retirée). Le client fusionne par `id`.
+      where.updatedAt = { gte: new Date(Date.parse(q.updatedSince) - UPDATED_SINCE_OVERLAP_MS) };
+    } else if (q.status?.length) {
+      where.status = { in: q.status };
+    }
     if (q.type) where.type = q.type;
-    if (q.updatedSince) where.updatedAt = { gte: new Date(q.updatedSince) };
     switch (viewer.role) {
       case 'CLIENT':
         where.clientId = viewer.id;
@@ -288,7 +303,14 @@ export class OrderService {
         }
     }
     const [rows, total] = await Promise.all([
-      this.prisma.order.findMany({ where, include: orderInclude, orderBy: { createdAt: 'desc' }, ...pageArgs(q) }),
+      this.prisma.order.findMany({
+        where,
+        include: orderInclude,
+        // Avec updatedSince : du plus ancien changement au plus récent, pour que le plus grand `updatedAt`
+        // reçu ne fasse sauter aucun changement (au-delà d'une page, le client recharge sa liste : docs/API.md).
+        orderBy: q.updatedSince ? [{ updatedAt: 'asc' }, { id: 'asc' }] : { createdAt: 'desc' },
+        ...pageArgs(q),
+      }),
       this.prisma.order.count({ where }),
     ]);
     const driverIds = [...new Set(rows.map((r) => r.driverId).filter((x): x is string => !!x))];
@@ -485,7 +507,7 @@ export class OrderService {
     const now = this.clock.now();
     let proofKey: string | null = null;
     if (input.proofPhoto) {
-      const buf = decodeUpload(input.proofPhoto.dataBase64, input.proofPhoto.mimeType, MAX_UPLOAD_BYTES);
+      const buf = decodeUpload(input.proofPhoto.dataBase64, input.proofPhoto.mimeType, this.maxUploadBytes);
       proofKey = `proofs/${id}-${now.getTime()}.${extensionFor(input.proofPhoto.mimeType)}`;
       await this.storage.put(proofKey, buf);
     }

@@ -102,6 +102,13 @@ describe('createApiClient', () => {
     expect((err as ApiError).code).toBe('HTTP_ERROR');
   });
 
+  it('413 sans JSON (refusé par Vercel avant l’API) : PAYLOAD_TOO_LARGE avec un message en français', async () => {
+    const { api } = setup([{ ok: false, status: 413, text: async () => 'Request Entity Too Large' } as Response]);
+    const err = await api.me().catch((e: unknown) => e);
+    expect((err as ApiError).code).toBe('PAYLOAD_TOO_LARGE');
+    expect(errorMessage(err)).toBe('Fichier trop lourd (3 Mo maximum) : reprenez la photo en plus petit.');
+  });
+
   it('construit les listes de commandes avec filtre de statut', async () => {
     const { api, calls } = setup([jsonResponse(200, { items: [], total: 0, page: 1, pageSize: 20 })]);
     await api.listOrders({ status: ['ASSIGNED', 'PICKED_UP'], pageSize: 20 });

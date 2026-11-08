@@ -1,10 +1,15 @@
 import { z } from 'zod';
 import {
+  base64Length,
   DEFAULT_CASH_LIMIT_FCFA,
   DEFAULT_DISPATCH_RADIUS_KM,
   DEFAULT_DRIVER_STALE_MINUTES,
   DEFAULT_OFFER_TIMEOUT_SECONDS,
+  DEMO_OTP_CODE,
+  MAX_UPLOAD_BYTES,
+  VERCEL_MAX_UPLOAD_BYTES,
 } from '@yaar/shared';
+import { assertCorsOriginsForProduction, parseCorsOrigins, type CorsOrigins } from './lib/cors';
 
 const boolString = z
   .enum(['true', 'false', '1', '0'])
@@ -47,8 +52,16 @@ const envSchema = z.object({
   WORK_BUDGET_MS: z.coerce.number().int().min(0).default(1500),
   /** local : disque (STORAGE_DIR) ; db : table StoredFile de PostgreSQL (hébergement sans disque persistant). */
   STORAGE_DRIVER: z.enum(['local', 'db']).optional(),
-  /** Démonstration : code OTP 123456 accepté et seed de démo autorisé, même avec NODE_ENV=production. */
+  /**
+   * Démonstration : code OTP 123456 accepté (clients, vendeurs, livreurs et nouveaux comptes) et seed de démo
+   * autorisé, même avec NODE_ENV=production.
+   */
   DEMO_MODE: boolString.default(false),
+  /**
+   * Démonstration : code à 6 chiffres des comptes de console existants (CONTRÔLEUR / ADMIN), qui n'acceptent
+   * pas 123456. Obligatoire (et différent de 123456) en production ou sur Vercel ; 123456 par défaut en dev/test.
+   */
+  DEMO_STAFF_CODE: z.string().regex(/^\d{6}$/, 'DEMO_STAFF_CODE : 6 chiffres').optional(),
   /** Canal d'envoi des codes OTP : console (logs) ou whatsapp (non implémenté, voir providers/whatsapp.ts). */
   OTP_PROVIDER: z.enum(['console', 'whatsapp']).default('console'),
   /** Secret des appels de tâches planifiées (Vercel Cron envoie `Authorization: Bearer <CRON_SECRET>`). */
@@ -73,7 +86,7 @@ export interface AppConfig {
   offerTimeoutSeconds: number;
   dispatchTickMs: number;
   driverStaleMinutes: number;
-  corsOrigins: string[] | '*';
+  corsOrigins: CorsOrigins;
   trustProxy: boolean | string[];
   authRateLimitRequest: number;
   authRateLimitVerify: number;
@@ -84,11 +97,20 @@ export interface AppConfig {
   workBudgetMs: number;
   storageDriver: 'local' | 'db';
   demoMode: boolean;
+  /** Mode démo : code des comptes de console existants (jamais exposé par l'API) ; undefined hors démo. */
+  demoStaffCode: string | undefined;
   otpProvider: 'console' | 'whatsapp';
+  /** Taille maximale d'un fichier décodé (5 Mo ; 3 Mo sur Vercel, limite de 4,5 Mo des requêtes). */
+  maxUploadBytes: number;
+  /** Taille maximale d'un corps de requête JSON : un fichier de `maxUploadBytes` encodé en base64 + marge. */
+  bodyLimitBytes: number;
   cronSecret: string | undefined;
   /** Exécution sur Vercel (fonctions éphémères, plusieurs instances, pas de disque persistant). */
   onVercel: boolean;
 }
+
+/** Marge du corps JSON autour du fichier encodé (type, date d'expiration, code de livraison…). */
+const BODY_MARGIN_BYTES = 256 * 1024;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // Une variable définie mais vide (`STORAGE_ENCRYPTION_KEY=`) est traitée comme absente.
@@ -103,22 +125,36 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   const e = parsed.data;
   const isProd = e.NODE_ENV === 'production';
+  const onVercel = e.VERCEL === '1';
   if (isProd && e.JWT_SECRET.startsWith('change-me')) {
     throw new Error('JWT_SECRET doit être changé en production');
   }
   if (isProd && !e.STORAGE_ENCRYPTION_KEY) {
     throw new Error('STORAGE_ENCRYPTION_KEY est obligatoire en production (pièces KYC chiffrées)');
   }
-  if (isProd && e.CORS_ORIGINS.trim() === '*') {
-    throw new Error('CORS_ORIGINS=* est interdit en production : listez les origines autorisées');
+  const corsOrigins = parseCorsOrigins(e.CORS_ORIGINS);
+  if (isProd) assertCorsOriginsForProduction(corsOrigins);
+  if (e.DEMO_MODE && e.OTP_PROVIDER !== 'console') {
+    throw new Error(
+      `DEMO_MODE=true exige OTP_PROVIDER=console (actuellement ${e.OTP_PROVIDER}) : le mode démonstration ne doit pas envoyer de vrais codes`,
+    );
   }
-  const onVercel = e.VERCEL === '1';
+  // Démo publique : les comptes de console (accès aux pièces KYC) ne s'ouvrent pas avec le code 123456.
+  if (e.DEMO_MODE && (isProd || onVercel)) {
+    if (!e.DEMO_STAFF_CODE)
+      throw new Error(
+        'DEMO_MODE=true en production exige DEMO_STAFF_CODE (6 chiffres, différent de 123456) : code de connexion des comptes de console',
+      );
+    if (e.DEMO_STAFF_CODE === DEMO_OTP_CODE)
+      throw new Error('DEMO_STAFF_CODE ne doit pas être 123456 (code public de la démonstration)');
+  }
   const realtimeMode = e.REALTIME_MODE ?? (onVercel ? 'poll' : 'socket');
   const storageDriver = e.STORAGE_DRIVER ?? (onVercel ? 'db' : 'local');
   if (onVercel && realtimeMode === 'socket')
     throw new Error('REALTIME_MODE=socket est impossible sur Vercel (pas de connexion persistante) : utilisez poll');
   if (onVercel && storageDriver === 'local')
     throw new Error('STORAGE_DRIVER=local est impossible sur Vercel (disque éphémère) : utilisez db');
+  const maxUploadBytes = onVercel ? VERCEL_MAX_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
   return {
     nodeEnv: e.NODE_ENV,
     port: e.PORT,
@@ -126,7 +162,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl: e.DATABASE_URL,
     jwtSecret: e.JWT_SECRET,
     jwtExpiresInSeconds: e.JWT_EXPIRES_IN_SECONDS,
-    // Le contournement OTP n'est jamais actif en production, sauf en mode démonstration (DEMO_MODE).
+    // Le contournement OTP n'est jamais actif en production, sauf en mode démonstration (DEMO_MODE),
+    // et jamais pour les comptes de console existants en mode démonstration (demoStaffCode).
     otpDevBypass: e.DEMO_MODE || (!isProd && e.OTP_DEV_BYPASS),
     otpTtlSeconds: e.OTP_TTL_SECONDS,
     storageDir: e.STORAGE_DIR,
@@ -146,12 +183,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
               .filter(Boolean),
     authRateLimitRequest: e.AUTH_RATE_LIMIT_REQUEST,
     authRateLimitVerify: e.AUTH_RATE_LIMIT_VERIFY,
-    corsOrigins:
-      e.CORS_ORIGINS.trim() === '*'
-        ? '*'
-        : e.CORS_ORIGINS.split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
+    corsOrigins,
     logLevel: e.LOG_LEVEL,
     realtimeMode,
     pollIntervalMs: e.POLL_INTERVAL_MS,
@@ -159,7 +191,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     workBudgetMs: e.WORK_BUDGET_MS,
     storageDriver,
     demoMode: e.DEMO_MODE,
+    demoStaffCode: e.DEMO_MODE ? (e.DEMO_STAFF_CODE ?? DEMO_OTP_CODE) : undefined,
     otpProvider: e.OTP_PROVIDER,
+    maxUploadBytes,
+    bodyLimitBytes: base64Length(maxUploadBytes) + BODY_MARGIN_BYTES,
     cronSecret: e.CRON_SECRET,
     onVercel,
   };

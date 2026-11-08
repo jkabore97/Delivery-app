@@ -122,6 +122,10 @@ describe('useDriverLocationTracking', () => {
     await act(async () => appListener?.('background'));
     expect(result.current.paused).toBe(true);
     expect(result.current.active).toBe(false);
+    // Onglet masqué (web) : le navigateur peut encore fournir des positions, aucune n'est envoyée.
+    now += 60_000;
+    await act(async () => callback!(fix(12.365, -1.52)));
+    expect(send).toHaveBeenCalledTimes(1);
 
     await act(async () => appListener?.('active'));
     expect(result.current.paused).toBe(false);

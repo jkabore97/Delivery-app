@@ -8,6 +8,7 @@
     "paths": {
       "@yaar/shared": ["../../packages/shared/src/index.ts"],
       "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"],
       "@/*": ["./src/*"]
     }
   },

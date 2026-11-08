@@ -4,6 +4,17 @@ Status: **Lot 1 MVP under construction.** Code: `packages/shared`, `apps/api`, `
 Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagadougou.pdf`](contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf) and short version [`Contrat_Court_Plateforme_Livraison_Ouagadougou.pdf`](contrat/Contrat_Court_Plateforme_Livraison_Ouagadougou.pdf)
 (to regenerate them, run `python3 docs/contrat/generate_contract.py` and `python3 docs/contrat/generate_contract_short.py`)
 
+## Owner decisions (8 Nov 2026)
+
+- Brand name: **"Yaar Livraison"** is kept for now.
+- Login codes will be sent **by WhatsApp**. The WhatsApp provider is not chosen yet (left open); until then the
+  API has a placeholder (`OTP_PROVIDER=whatsapp` answers `503`) and the public demo uses fixed demo codes.
+- **No mobile money provider chosen yet**: Lot 2 (mobile money) stays a stub (`MOBILE_MONEY` refused, cash only).
+- Drivers give their **GPS tracking consent the first time they go online** (consent screen in the driver app,
+  recorded by the API).
+- Hosting and database: **Vercel + Neon, region Frankfurt** (Vercel `fra1`, Neon `aws-eu-central-1`). This is a
+  transfer of personal data outside Burkina Faso: CIL formalities to complete before the real launch (§2).
+
 ## 1. What the owner must provide before development starts
 
 | # | Item | Why it matters |
@@ -55,7 +66,7 @@ Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagado
 **Product**
 1. Start with **one MVP** of four front-ends on a single backend: Client app, Seller app, Driver app and a web Controller console.
 2. **Addresses**: use a map pin plus a free-text landmark ("behind the Total station in Patte d'Oie"), saved addresses and a phone call fallback. Most Ouagadougou addresses have no street numbers, so this matters.
-3. Phone number + SMS OTP login only, with no email required.
+3. Phone number + one-time code login only, with no email required (code sent by WhatsApp: owner decision of 8 Nov 2026).
 4. A **delivery code** given by the client to the driver at hand-off, plus a photo proof. This is the main anti-fraud measure.
 5. Cash on delivery in Lot 1, with a **cash ledger per driver** and automatic blocking above a threshold. Mobile money comes in Lot 2.
 6. Dispatch: nearest available driver with the correct vehicle type, a timeout, then the next driver. The controller can always reassign manually.
@@ -67,8 +78,10 @@ Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagado
 2. Backend: **Node.js (Fastify) + Prisma + PostgreSQL**, with **WebSockets** (Socket.IO) for live tracking. PostGIS, Redis and road routing (OSRM) are planned for scale-up.
 3. Controller console: **React** web app.
 4. Maps: OpenStreetMap-based maps (Mapbox or MapLibre) to control cost. Google Maps has better POI data but costs more, so compare. Use OSRM or Valhalla for routing.
-5. Notifications: Firebase Cloud Messaging. OTP: a local SMS provider (Orange or an aggregator).
-6. Hosting: start small (a single VPS or a managed cloud with daily backups) and choose the region with the CIL in mind.
+5. Notifications: Firebase Cloud Messaging. OTP: by WhatsApp (owner decision of 8 Nov 2026; WhatsApp Business provider still to choose).
+6. Hosting (decided 8 Nov 2026): Vercel (API as one serverless function with REST polling, console and mobile web
+   build) and a Neon Postgres database, both in Frankfurt; check Neon backups/point-in-time recovery for the plan in
+   use. Frankfurt is outside Burkina Faso: complete the CIL formalities for this transfer before the real launch.
 7. Design for **weak networks**: GPS updates every 5 to 10 s only while on a job, offline queueing of status changes, small APK (under 30 MB), and low data use.
 
 **Security and anti-fraud**

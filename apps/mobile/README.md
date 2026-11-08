@@ -33,7 +33,9 @@ npm start              # QR code à scanner avec Expo Go ; touche « a » pour l
 
 Comptes de démonstration (seed de l’API, code SMS `123456`) : client `72000001`, vendeur `71000001`,
 livreur moto en course `73000001`, livreur vélo libre `73000003`, livreur en attente de validation `73000007`.
-La liste complète est dans `docs/API.md` § 12.
+La liste complète est dans `docs/API.md` § 12. En mode démo (`GET /config` → `demoMode`), l’écran de connexion
+affiche le code `123456` et l’avertissement « Démonstration publique : n’utilisez pas de vraies pièces d’identité
+ni de vraies données personnelles. », repris sur l’écran des pièces KYC du livreur.
 
 ## Scripts
 
@@ -101,7 +103,8 @@ src/lib/                 client API typé, logique pure testée (panier, cadence
 - Le livreur ne voit les adresses, repères et téléphones que pour la course qui lui est affectée ; son historique
   ne montre plus que les montants.
 - Le jeton de session est stocké dans le stockage chiffré du téléphone (`expo-secure-store`).
-- Photos (KYC, preuve) redimensionnées à 1280 px, JPEG 0,6, envoyées en base64 (5 Mo max). Les copies
+- Photos (KYC, preuve) redimensionnées à 1280 px, JPEG 0,6, envoyées en base64 : 3 Mo maximum une fois décodées
+  (taille encodée vérifiée avant l’envoi, message en français ; limite de 4,5 Mo des requêtes sur Vercel). Les copies
   temporaires (photo prise, image redimensionnée) sont supprimées du cache aussitôt l’image encodée : l’aperçu
   est gardé en mémoire uniquement. Le selfie KYC utilise la caméra frontale.
 - Adresse : une commande n’est pas possible tant que l’épingle est restée sur le centre par défaut de la carte.
@@ -111,4 +114,7 @@ src/lib/                 client API typé, logique pure testée (panier, cadence
 - Pas de notifications push : les offres arrivent par Socket.IO quand l’application est ouverte
   (au retour au premier plan, l’application relit `GET /driver/offers`, le profil et la course en cours).
 - Paiement en espèces uniquement (mobile money prévu au Lot 2).
-- L’export web n’est pas visé (`react-native-maps` ne fonctionne pas sur le web) : seules Android et iOS sont prises en charge.
+- Version web (`npm run export:web`, projet Vercel `apps/mobile`, https://yaar-livraison.vercel.app) : cartes
+  Leaflet au lieu de `react-native-maps`, API en mode poll (aucun socket ; rafraîchissements suspendus quand
+  l’onglet est masqué, offres du livreur en ligne interrogées toutes les `pollIntervalMs`, jamais suspendues pour
+  inactivité). Sur le web, la position du livreur n’est pas envoyée quand l’onglet est masqué.

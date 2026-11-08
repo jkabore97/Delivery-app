@@ -668,7 +668,8 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
   app.get('/controller/incidents', opts, async (req): Promise<Paginated<IncidentDto>> => {
     const q = parse(incidentListQuerySchema, req.query);
     const where: Prisma.IncidentWhereInput = {};
-    if (q.status) where.status = q.status;
+    // Un ou plusieurs statuts (`status=OPEN,IN_PROGRESS` : une seule requête pour la console en mode poll).
+    if (q.status?.length) where.status = { in: q.status };
     if (q.type) where.type = q.type;
     const [rows, total] = await Promise.all([
       prisma.incident.findMany({ where, include: incidentInclude, orderBy: { createdAt: 'desc' }, ...pageArgs(q) }),

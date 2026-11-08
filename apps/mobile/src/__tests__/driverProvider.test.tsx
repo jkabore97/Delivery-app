@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { AppState, Text, type AppStateStatus } from 'react-native';
 import * as Location from 'expo-location';
 import type { ServerToClientEvents } from '@yaar/shared';
 import { ApiError } from '../lib/api';
@@ -21,7 +21,9 @@ jest.mock('../state/socket', () => ({
   },
   // Mode socket : pas de polling.
   usePolling: () => undefined,
+  useRealtimeMode: () => mockRealtimeMode.current,
 }));
+const mockRealtimeMode: { current: 'socket' | 'poll' } = { current: 'socket' };
 
 const mockApi = {
   driverProfile: jest.fn(),
@@ -237,6 +239,40 @@ describe('DriverProvider', () => {
         err = (await ctx?.withdrawTrackingConsent()) ?? null;
       });
       expect(err).toBe('Vous avez une course en cours : terminez-la d’abord.');
+    });
+  });
+
+  describe('retour au premier plan', () => {
+    let listeners: Array<(s: AppStateStatus) => void> = [];
+    const original = AppState.addEventListener;
+    beforeEach(() => {
+      listeners = [];
+      AppState.addEventListener = ((_type: string, l: (s: AppStateStatus) => void) => {
+        listeners.push(l);
+        return { remove: jest.fn() };
+      }) as unknown as typeof AppState.addEventListener;
+    });
+    afterEach(() => {
+      AppState.addEventListener = original;
+      mockRealtimeMode.current = 'socket';
+    });
+    const counts = () => [mockApi.driverProfile, mockApi.currentOrder, mockApi.driverOffers].map((m) => m.mock.calls.length);
+
+    it('mode socket : profil, course et offres resynchronisés', async () => {
+      await mount();
+      await waitFor(() => expect(mockApi.driverOffers).toHaveBeenCalled());
+      const before = counts();
+      await act(async () => listeners.forEach((l) => l('active')));
+      expect(counts()).toEqual(before.map((n) => n + 1));
+    });
+
+    it('mode poll : aucune requête en double (le planificateur relance déjà ses tâches au retour)', async () => {
+      mockRealtimeMode.current = 'poll';
+      await mount();
+      await waitFor(() => expect(mockApi.driverOffers).toHaveBeenCalled());
+      const before = counts();
+      await act(async () => listeners.forEach((l) => l('active')));
+      expect(counts()).toEqual(before);
     });
   });
 });

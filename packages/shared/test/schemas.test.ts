@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createOrderSchema, driverProfileSchema, normalizePhone, verifyOtpSchema } from '../src';
+import {
+  base64Length,
+  createOrderSchema,
+  driverProfileSchema,
+  incidentListQuerySchema,
+  normalizePhone,
+  VERCEL_MAX_UPLOAD_BYTES,
+  verifyOtpSchema,
+} from '../src';
 
 describe('normalizePhone', () => {
   it('normalise les formats burkinabè', () => {
@@ -39,5 +47,19 @@ describe('schémas', () => {
     expect(driverProfileSchema.safeParse({ vehicleType: 'BIKE' }).success).toBe(true);
     expect(driverProfileSchema.safeParse({ vehicleType: 'MOTO' }).success).toBe(false);
     expect(driverProfileSchema.parse({ vehicleType: 'MOTO', plate: '11 jj 4521' }).plate).toBe('11 JJ 4521');
+  });
+
+  it('incidents : un ou plusieurs statuts séparés par des virgules', () => {
+    expect(incidentListQuerySchema.parse({ status: 'OPEN' }).status).toEqual(['OPEN']);
+    expect(incidentListQuerySchema.parse({ status: 'OPEN, IN_PROGRESS' }).status).toEqual(['OPEN', 'IN_PROGRESS']);
+    expect(incidentListQuerySchema.parse({}).status).toBeUndefined();
+    expect(incidentListQuerySchema.safeParse({ status: 'OPEN,FERME' }).success).toBe(false);
+  });
+
+  it('plafond Vercel : 3 Mo décodés tiennent sous la limite de 4,5 Mo des requêtes Vercel', () => {
+    expect(base64Length(3)).toBe(4);
+    expect(base64Length(4)).toBe(8);
+    expect(base64Length(VERCEL_MAX_UPLOAD_BYTES)).toBe(4 * 1024 * 1024);
+    expect(base64Length(VERCEL_MAX_UPLOAD_BYTES)).toBeLessThan(4.5 * 1024 * 1024);
   });
 });

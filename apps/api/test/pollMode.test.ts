@@ -1,7 +1,10 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiErrorBody, CronDailyResultDto, OfferDto, OrderDto, Paginated, PublicConfigDto } from '@yaar/shared';
 import { loadConfig } from '../src/config';
-import { call, createDriver, createTestApp, login, P, resetDb, type TestApp } from './helpers';
+import { ManualClock } from '../src/lib/clock';
+import type { DispatchService, TickResult } from '../src/services/dispatch';
+import { BackgroundWork, vercelKeepAlive } from '../src/services/work';
+import { call, createDriver, createStore, createTestApp, login, P, resetDb, T0, type TestApp } from './helpers';
 
 const CRON_SECRET = 'cron-secret-for-tests-0123456789';
 const POLL = { REALTIME_MODE: 'poll', WORK_THROTTLE_MS: '4000', WORK_BUDGET_MS: '10000', CRON_SECRET };
@@ -147,6 +150,81 @@ describe('mode poll (Vercel)', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('updatedSince : marge de 2 s, tri du plus ancien changement au plus récent', async () => {
+    const client = await login(t.app, 'CLIENT');
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) ids.push((await call(t.app, 'POST', '/orders', client.accessToken, parcel)).json<OrderDto>().id);
+    const cursor = new Date('2026-11-06T12:00:00.000Z');
+    const at = (ms: number) => new Date(cursor.getTime() + ms);
+    // updatedAt écrits directement : 3 s avant le curseur, 1 s avant, 5 s après.
+    const setUpdatedAt = (id: string, d: Date) =>
+      t.prisma.$executeRaw`UPDATE "Order" SET "updatedAt" = CAST(${d.toISOString()} AS TIMESTAMP(3)) WHERE "id" = ${id}`;
+    await setUpdatedAt(ids[0]!, at(-3000));
+    await setUpdatedAt(ids[1]!, at(5000));
+    await setUpdatedAt(ids[2]!, at(-1000));
+    const r = (
+      await call(t.app, 'GET', `/orders?updatedSince=${encodeURIComponent(cursor.toISOString())}`, client.accessToken)
+    ).json<Paginated<OrderDto>>();
+    // ids[0] (3 s avant) exclu ; ids[2] (1 s avant, dans la marge) puis ids[1].
+    expect(r.items.map((o) => o.id)).toEqual([ids[2], ids[1]]);
+    expect(r.total).toBe(2);
+  });
+
+  it('updatedSince : une commande qui sort des statuts suivis (livrée, annulée) est renvoyée', async () => {
+    // Le vendeur suit ses commandes en cours ; l'une est annulée par le client, l'autre livrée.
+    const { seller, storeId, productIds } = await createStore(t);
+    const client = await login(t.app, 'CLIENT');
+    const food = {
+      type: 'FOOD',
+      vehicleType: 'MOTO',
+      storeId,
+      items: [{ productId: productIds[0], quantity: 1 }],
+      dropoff: { ...P.zogona, address: 'Zogona' },
+    };
+    const o1 = (await call(t.app, 'POST', '/orders', client.accessToken, food)).json<OrderDto>();
+    const o2 = (await call(t.app, 'POST', '/orders', client.accessToken, food)).json<OrderDto>();
+    const active = 'PENDING,ACCEPTED,READY,SEARCHING_DRIVER,ASSIGNED,PICKED_UP';
+    const first = (await call(t.app, 'GET', `/orders?status=${active}`, seller.accessToken)).json<Paginated<OrderDto>>();
+    expect(first.items.map((o) => o.id).sort()).toEqual([o1.id, o2.id].sort());
+    const cursor = first.items.map((o) => o.updatedAt!).sort().at(-1)!;
+
+    expect((await call(t.app, 'POST', `/orders/${o1.id}/cancel`, client.accessToken, { reason: 'Erreur' })).statusCode).toBe(200);
+    const next = (
+      await call(t.app, 'GET', `/orders?status=${active}&updatedSince=${encodeURIComponent(cursor)}`, seller.accessToken)
+    ).json<Paginated<OrderDto>>();
+    // Le filtre `status` ne s'applique pas avec updatedSince : l'annulation est visible, à retirer de l'écran.
+    const changed = next.items.find((o) => o.id === o1.id);
+    expect(changed?.status).toBe('CANCELLED');
+    // Sans updatedSince, le filtre `status` reste appliqué.
+    const filtered = (await call(t.app, 'GET', `/orders?status=${active}`, seller.accessToken)).json<Paginated<OrderDto>>();
+    expect(filtered.items.map((o) => o.id)).toEqual([o2.id]);
+    // Portée inchangée : un autre client ne voit rien.
+    const other = await login(t.app, 'CLIENT');
+    const none = (await call(t.app, 'GET', `/orders?updatedSince=${encodeURIComponent(cursor)}`, other.accessToken)).json<Paginated<OrderDto>>();
+    expect(none.items).toHaveLength(0);
+  });
+
+  it('bail JobLease : créé au premier cycle, jamais d’INSERT en échec, recréé après un TRUNCATE', async () => {
+    expect(await t.prisma.jobLease.count()).toBe(0);
+    expect((await t.ctx.work.runDueWork()).ran).toBe(true);
+    // Écrit comme Prisma écrit ses dates (relu identique par Prisma) ; bail libéré en fin de cycle.
+    expect(await t.prisma.jobLease.findUnique({ where: { name: 'dispatch' } })).toEqual({
+      name: 'dispatch',
+      lastStartedAt: t.clock.now(),
+      lockedUntil: t.clock.now(),
+    });
+    // Cycles non dus : simple refus, sans exception (l'ancien code tentait à chaque fois un INSERT qui
+    // échouait en P2002, avec une ERROR dans le journal PostgreSQL).
+    for (let i = 0; i < 3; i++) expect(await t.ctx.work.runDueWork()).toEqual({ ran: false, reason: 'not_due' });
+    // Bail tenu par une instance (cycle en cours) : refusé même après la fenêtre.
+    await t.prisma.jobLease.update({ where: { name: 'dispatch' }, data: { lockedUntil: new Date(t.clock.now().getTime() + 60_000) } });
+    t.clock.advance(5_000);
+    expect((await t.ctx.work.runDueWork()).ran).toBe(false);
+    await t.prisma.$executeRawUnsafe('TRUNCATE "JobLease"');
+    expect((await t.ctx.work.runDueWork()).ran).toBe(true);
+    expect(await t.prisma.jobLease.count()).toBe(1);
+  });
+
   it('GET /cron/daily exige CRON_SECRET puis purge et lance un cycle', async () => {
     expect((await call(t.app, 'GET', '/cron/daily')).statusCode).toBe(401);
     const wrong = await t.app.inject({ method: 'GET', url: '/cron/daily', headers: { authorization: 'Bearer nope' } });
@@ -172,9 +250,10 @@ describe('configuration de production', () => {
     OTP_DEV_BYPASS: 'true',
   };
 
-  it('DEMO_MODE active le code 123456 même en production ; sinon jamais', () => {
+  it('DEMO_MODE active le code 123456 même en production (avec DEMO_STAFF_CODE) ; sinon jamais', () => {
     expect(loadConfig(prod).otpDevBypass).toBe(false);
-    expect(loadConfig({ ...prod, DEMO_MODE: 'true' })).toMatchObject({ otpDevBypass: true, demoMode: true });
+    expect(loadConfig({ ...prod, DEMO_MODE: 'true', DEMO_STAFF_CODE: '482913' })).toMatchObject({ otpDevBypass: true, demoMode: true });
+    expect(() => loadConfig({ ...prod, DEMO_MODE: 'true' })).toThrow(/DEMO_STAFF_CODE/);
     expect(loadConfig(prod).corsOrigins).toEqual(['https://console.yaar.test', 'https://app.yaar.test']);
   });
 
@@ -188,20 +267,83 @@ describe('configuration de production', () => {
   });
 });
 
-describe('mode démo et canal OTP', () => {
-  it('DEMO_MODE est annoncé par /config ; OTP_PROVIDER=whatsapp refuse proprement l’envoi (non configuré)', async () => {
-    const w = await createTestApp({ ...POLL, DEMO_MODE: 'true', OTP_PROVIDER: 'whatsapp' }, { sms: null });
+describe('canal OTP WhatsApp (emplacement réservé)', () => {
+  it('OTP_PROVIDER=whatsapp refuse proprement l’envoi (non configuré) et ne se combine pas avec DEMO_MODE', async () => {
+    expect(() => loadConfig({ ...process.env, ...POLL, DEMO_MODE: 'true', OTP_PROVIDER: 'whatsapp' })).toThrow(
+      /DEMO_MODE=true exige OTP_PROVIDER=console/,
+    );
+    const w = await createTestApp({ ...POLL, OTP_PROVIDER: 'whatsapp' }, { sms: null });
     try {
       const cfg = (await call(w.app, 'GET', '/config')).json<PublicConfigDto>();
-      expect(cfg).toMatchObject({ demoMode: true, otpChannel: 'whatsapp' });
+      expect(cfg).toMatchObject({ demoMode: false, otpChannel: 'whatsapp' });
       const r = await call(w.app, 'POST', '/auth/otp/request', null, { phone: '+22670111111' });
       expect(r.statusCode).toBe(503);
       expect(r.json<ApiErrorBody>().error.code).toBe('OTP_PROVIDER_UNAVAILABLE');
-      // Le code de démonstration reste utilisable.
+      // Développement (OTP_DEV_BYPASS) : le code 123456 reste utilisable.
       expect((await call(w.app, 'POST', '/auth/otp/verify', null, { phone: '+22670111111', code: '123456' })).statusCode).toBe(200);
     } finally {
       await w.app.close();
       await w.prisma.$disconnect();
+    }
+  });
+});
+
+describe('kick() : budget de temps et waitUntil', () => {
+  function slowWork(keepAlive: (p: Promise<unknown>) => void, budgetMs: number) {
+    let finish: (r: TickResult) => void = () => undefined;
+    const tick = vi.fn(() => new Promise<TickResult>((resolve) => (finish = resolve)));
+    const dispatch = { tick } as unknown as DispatchService;
+    const work = new BackgroundWork(t.prisma, new ManualClock(T0), dispatch, { throttleMs: 4000, budgetMs, leaseMs: 30_000 }, () => undefined, keepAlive);
+    return { work, tick, finish: (r: TickResult) => finish(r) };
+  }
+
+  it('budget dépassé : la requête n’attend plus et le cycle est confié à keepAlive (waitUntil)', async () => {
+    const keepAlive = vi.fn();
+    const { work, tick, finish } = slowWork(keepAlive, 30);
+    const started = Date.now();
+    await work.kick();
+    expect(Date.now() - started).toBeLessThan(2000);
+    await vi.waitFor(() => expect(tick).toHaveBeenCalled());
+    expect(keepAlive).toHaveBeenCalledTimes(1);
+    const kept = keepAlive.mock.calls[0]![0] as Promise<unknown>;
+    let settled = false;
+    void kept.then(() => (settled = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(settled).toBe(false);
+    finish({ expired: 0, offered: 0, staleOffline: 0 });
+    await kept;
+    expect(settled).toBe(true);
+  });
+
+  it('cycle terminé dans le budget : pas de keepAlive', async () => {
+    const keepAlive = vi.fn();
+    const tick = vi.fn(async () => ({ expired: 0, offered: 0, staleOffline: 0 }));
+    const work = new BackgroundWork(
+      t.prisma,
+      new ManualClock(T0),
+      { tick } as unknown as DispatchService,
+      { throttleMs: 4000, budgetMs: 5000, leaseMs: 30_000 },
+      () => undefined,
+      keepAlive,
+    );
+    await work.kick();
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(keepAlive).not.toHaveBeenCalled();
+  });
+
+  it('waitUntil de @vercel/functions : sans effet hors Vercel, transmis au contexte de requête Vercel', async () => {
+    const symbol = Symbol.for('@vercel/request-context');
+    const g = globalThis as Record<symbol, unknown>;
+    expect(g[symbol]).toBeUndefined();
+    expect(() => vercelKeepAlive(Promise.resolve())).not.toThrow();
+    const waitUntil = vi.fn();
+    g[symbol] = { get: () => ({ waitUntil }) };
+    try {
+      const p = Promise.resolve(1);
+      vercelKeepAlive(p);
+      expect(waitUntil).toHaveBeenCalledWith(p);
+    } finally {
+      delete g[symbol];
     }
   });
 });

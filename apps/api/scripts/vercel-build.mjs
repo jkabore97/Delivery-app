@@ -4,9 +4,13 @@
  *   1. prisma generate (moteur rhel-openssl-3.0.x pour les fonctions Vercel, cf. binaryTargets) ;
  *   2. bundle esbuild de src/vercel.ts → dist/vercel.mjs (inclut le source TypeScript de @yaar/shared ;
  *      les paquets npm restent externes et sont tracés par Vercel depuis node_modules) ;
- *   3. prisma migrate deploy sur l'URL directe (DATABASE_URL_UNPOOLED de Neon, sinon DATABASE_URL) ;
- *   4. si SEED_DEMO=true : données de démonstration UNIQUEMENT si la base n'a aucun utilisateur
- *      (jamais d'effacement ; exige DEMO_MODE=true en production).
+ *   3. UNIQUEMENT pour un déploiement de production (VERCEL_ENV=production, ou ALLOW_PREVIEW_DB_MIGRATIONS=true) :
+ *      vérification de la configuration d'exécution (scripts/check-config.ts : le build échoue plutôt que de
+ *      publier une API qui ne démarre pas), puis prisma migrate deploy sur l'URL directe
+ *      (DATABASE_URL_UNPOOLED de Neon, sinon DATABASE_URL). Les prévisualisations (branches, pull requests)
+ *      partagent les variables de la base de production : elles ne la migrent jamais ;
+ *   4. si SEED_DEMO=true et DEMO_MODE=true : données de démonstration UNIQUEMENT si la base n'a aucun
+ *      utilisateur (jamais d'effacement). SEED_DEMO=true sans DEMO_MODE=true : seed ignoré (avertissement).
  * Options locales : --skip-db (étapes 1-2 seulement).
  */
 import { execSync } from 'node:child_process';
@@ -21,7 +25,13 @@ const skipDb = process.argv.includes('--skip-db');
 
 function run(cmd, env = {}) {
   console.info(`\n$ ${cmd}`);
-  execSync(cmd, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
+  try {
+    execSync(cmd, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
+  } catch {
+    // La commande a déjà affiché son erreur : pas de pile d'appels en plus dans le journal de build.
+    console.error(`\n✖ Build interrompu : échec de « ${cmd} ».`);
+    process.exit(1);
+  }
 }
 
 run('npx prisma generate');
@@ -49,13 +59,36 @@ await build({
 mkdirSync(path.join(root, 'public'), { recursive: true });
 writeFileSync(path.join(root, 'public/.gitkeep'), '');
 
+const vercelEnv = process.env.VERCEL_ENV;
+const allowPreviewDb = process.env.ALLOW_PREVIEW_DB_MIGRATIONS === 'true';
+
 if (skipDb) {
   console.info('\n--skip-db : migrations et seed ignorés.');
+} else if (vercelEnv !== 'production' && !allowPreviewDb) {
+  console.warn(
+    `\n⚠ VERCEL_ENV=${vercelEnv ?? '(non défini)'} : PAS de migration ni de seed. Seul un déploiement de production ` +
+      'modifie la base (les prévisualisations utilisent les mêmes variables de base de données) ; ' +
+      'ALLOW_PREVIEW_DB_MIGRATIONS=true pour forcer, avec une base de prévisualisation séparée.',
+  );
 } else {
+  if (vercelEnv !== 'production') console.warn(`\n⚠ ALLOW_PREVIEW_DB_MIGRATIONS=true : migrations sur la base de VERCEL_ENV=${vercelEnv ?? '(non défini)'}.`);
+  // Configuration d'exécution invalide : le build échoue (le déploiement précédent reste en ligne).
+  run('npx tsx scripts/check-config.ts');
   const directUrl = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!directUrl) throw new Error('DATABASE_URL (ou DATABASE_URL_UNPOOLED) est requis pour appliquer les migrations');
   // Migrations et seed sur la connexion directe (verrous consultatifs, pas de pooler en mode transaction).
   run('npx prisma migrate deploy', { DATABASE_URL: directUrl });
-  if (process.env.SEED_DEMO === 'true') run('npx tsx prisma/seed.ts --if-empty', { DATABASE_URL: directUrl });
-  else console.info('\nSEED_DEMO≠true : pas de données de démonstration.');
+  if (process.env.SEED_DEMO !== 'true') {
+    console.info('\nSEED_DEMO≠true : pas de données de démonstration.');
+  } else if (process.env.DEMO_MODE !== 'true') {
+    console.warn(
+      '\n' +
+        '⚠⚠⚠ SEED_DEMO=true mais DEMO_MODE≠true : seed de démonstration IGNORÉ. ⚠⚠⚠\n' +
+        '    Les comptes de démonstration (code 123456) ne doivent jamais exister hors démonstration.\n' +
+        '    Retirez SEED_DEMO, ou activez DEMO_MODE=true (avec DEMO_STAFF_CODE) pour une démo publique.',
+    );
+  } else {
+    // --if-empty : rien si la base contient déjà un utilisateur ; jamais d'effacement.
+    run('npx tsx prisma/seed.ts --if-empty', { DATABASE_URL: directUrl });
+  }
 }

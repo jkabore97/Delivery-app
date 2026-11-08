@@ -1,8 +1,8 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { requestOtpSchema, verifyOtpSchema, type AuthResponse, type OtpRequestResponse } from '@yaar/shared';
+import { DEMO_OTP_CODE, requestOtpSchema, verifyOtpSchema, type AuthResponse, type OtpRequestResponse } from '@yaar/shared';
 import type { AppContext } from '../context';
-import { signAccessToken } from '../lib/auth';
+import { isBackOffice, signAccessToken } from '../lib/auth';
 import { AppError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validation';
@@ -11,10 +11,19 @@ import { toUserDto } from '../services/serializers';
 
 const MAX_OTP_PER_HOUR = 5;
 const MAX_OTP_ATTEMPTS = 5;
-export const DEV_BYPASS_CODE = '123456';
+/** Code universel (développement avec OTP_DEV_BYPASS, ou démonstration hors comptes de console). */
+export const DEV_BYPASS_CODE = DEMO_OTP_CODE;
+const INVALID_OR_EXPIRED = 'Code invalide ou expiré. Demandez un nouveau code.';
 
 function hashCode(secret: string, phone: string, code: string): string {
   return createHash('sha256').update(`${secret}:${phone}:${code}`).digest('hex');
+}
+
+/** Comparaison à temps constant de deux codes (empreintes de même longueur). */
+function sameCode(given: string, expected: string): boolean {
+  const a = createHash('sha256').update(given).digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
 }
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -53,34 +62,45 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     return { sent: true, expiresInSeconds: config.otpTtlSeconds };
   });
 
+  /**
+   * Vérifie le dernier code demandé pour ce numéro : l'essai est réservé atomiquement AVANT la comparaison
+   * (5 essais par code, même en parallèle), puis le code est consommé (usage unique).
+   * `alternateCode` : code d'accès démo des comptes de console, accepté à la place du code envoyé
+   * (avec le même compteur d'essais : il faut d'abord demander un code).
+   */
+  async function consumeOtp(phone: string, code: string, now: Date, alternateCode?: string): Promise<void> {
+    const otp = await prisma.otpCode.findFirst({
+      where: { phone, consumedAt: null, expiresAt: { gt: now } },
+      // Dernier code demandé ; à la même milliseconde, l'identifiant (cuid, croissant) départage.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    if (!otp) throw new AppError(400, 'OTP_INVALID', INVALID_OR_EXPIRED);
+    const reserved = await prisma.otpCode.updateMany({
+      where: { id: otp.id, consumedAt: null, attempts: { lt: MAX_OTP_ATTEMPTS } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count === 0) throw new AppError(400, 'OTP_INVALID', INVALID_OR_EXPIRED);
+    const expected = Buffer.from(otp.codeHash, 'hex');
+    const given = Buffer.from(hashCode(config.jwtSecret, phone, code), 'hex');
+    const matchesSent = timingSafeEqual(expected, given);
+    const matchesAlternate = alternateCode !== undefined && sameCode(code, alternateCode);
+    if (!matchesSent && !matchesAlternate) throw new AppError(400, 'OTP_INVALID', 'Code incorrect');
+    // Usage unique, y compris en cas de requêtes simultanées avec le bon code.
+    const consumed = await prisma.otpCode.updateMany({ where: { id: otp.id, consumedAt: null }, data: { consumedAt: now } });
+    if (consumed.count === 0) throw new AppError(400, 'OTP_INVALID', INVALID_OR_EXPIRED);
+  }
+
   app.post('/auth/otp/verify', async (req): Promise<AuthResponse> => {
     verifyLimiter.hit(req.ip);
     const input = parse(verifyOtpSchema, req.body);
     const now = clock.now();
-    const bypass = config.otpDevBypass && input.code === DEV_BYPASS_CODE;
-    if (!bypass) {
-      const otp = await prisma.otpCode.findFirst({
-        where: { phone: input.phone, consumedAt: null, expiresAt: { gt: now } },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (!otp) throw new AppError(400, 'OTP_INVALID', 'Code invalide ou expiré. Demandez un nouveau code.');
-      // Réservation atomique de l'essai AVANT la comparaison : des requêtes parallèles ne dépassent pas 5 essais.
-      const reserved = await prisma.otpCode.updateMany({
-        where: { id: otp.id, consumedAt: null, attempts: { lt: MAX_OTP_ATTEMPTS } },
-        data: { attempts: { increment: 1 } },
-      });
-      if (reserved.count === 0)
-        throw new AppError(400, 'OTP_INVALID', 'Code invalide ou expiré. Demandez un nouveau code.');
-      const expected = Buffer.from(otp.codeHash, 'hex');
-      const given = Buffer.from(hashCode(config.jwtSecret, input.phone, input.code), 'hex');
-      if (!timingSafeEqual(expected, given)) throw new AppError(400, 'OTP_INVALID', 'Code incorrect');
-      // Usage unique, y compris en cas de requêtes simultanées avec le bon code.
-      const consumed = await prisma.otpCode.updateMany({ where: { id: otp.id, consumedAt: null }, data: { consumedAt: now } });
-      if (consumed.count === 0)
-        throw new AppError(400, 'OTP_INVALID', 'Code invalide ou expiré. Demandez un nouveau code.');
-    }
-
     let user = await prisma.user.findUnique({ where: { phone: input.phone } });
+    // Démonstration publique : le code 123456 n'ouvre jamais un compte de console existant (accès aux pièces
+    // KYC) ; ces comptes utilisent DEMO_STAFF_CODE. Une inscription ne crée jamais un compte de console.
+    const staffInDemo = config.demoMode && user !== null && isBackOffice(user.role);
+    const bypass = config.otpDevBypass && !staffInDemo && sameCode(input.code, DEV_BYPASS_CODE);
+    if (!bypass) await consumeOtp(input.phone, input.code, now, staffInDemo ? config.demoStaffCode : undefined);
+
     let isNewUser = false;
     if (!user) {
       user = await prisma.user.create({

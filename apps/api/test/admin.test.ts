@@ -166,9 +166,17 @@ describe('utilisateurs, livreurs, caisse, incidents', () => {
     const inc = d.json<IncidentDto>();
     const list = (await call(t.app, 'GET', '/controller/incidents?type=DISPUTE&status=OPEN', staff.accessToken)).json<Paginated<IncidentDto>>();
     expect(list.items.map((i) => i.id)).toEqual([inc.id]);
+    // Plusieurs statuts en une requête (console en mode poll : alertes ouvertes et en cours).
+    const second = (await call(t.app, 'POST', `/orders/${o.id}/dispute`, client.accessToken, { description: 'Retard' })).json<IncidentDto>();
+    await call(t.app, 'PATCH', `/controller/incidents/${second.id}`, staff.accessToken, { status: 'IN_PROGRESS' });
+    const both = (await call(t.app, 'GET', '/controller/incidents?status=OPEN,IN_PROGRESS', staff.accessToken)).json<Paginated<IncidentDto>>();
+    expect(both.items.map((i) => i.id).sort()).toEqual([inc.id, second.id].sort());
+    expect((await call(t.app, 'GET', '/controller/incidents?status=OPEN,FERME', staff.accessToken)).statusCode).toBe(400);
     const res = await call(t.app, 'PATCH', `/controller/incidents/${inc.id}`, staff.accessToken, { status: 'RESOLVED', resolutionNote: 'Remboursé' });
     expect(res.json<IncidentDto>()).toMatchObject({ status: 'RESOLVED', resolutionNote: 'Remboursé', resolvedBy: { id: staff.user.id } });
     expect(t.ctx.realtime.emitted.some((e) => e.event === 'incident.updated')).toBe(true);
+    const stillOpen = (await call(t.app, 'GET', '/controller/incidents?status=OPEN,IN_PROGRESS', staff.accessToken)).json<Paginated<IncidentDto>>();
+    expect(stillOpen.items.map((i) => i.id)).toEqual([second.id]);
   });
 
   it('vendeur : refus d’une commande et statistiques du jour', async () => {

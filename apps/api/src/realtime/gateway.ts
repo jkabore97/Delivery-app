@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import type { PrismaClient } from '@prisma/client';
 import type { ClientToServerEvents, ServerToClientEvents, SubscribeAck } from '@yaar/shared';
 import { authenticateToken, isBackOffice, type AuthUser } from '../lib/auth';
+import { corsOriginOption, type CorsOrigins } from '../lib/cors';
 import { AppError } from '../lib/errors';
 import { rooms, type IoServer, type RealtimeHub } from './hub';
 
@@ -28,10 +29,10 @@ async function canJoinOrder(prisma: PrismaClient, user: AuthUser, orderId: strin
  */
 export function createSocketServer(
   httpServer: HttpServer,
-  deps: { prisma: PrismaClient; jwtSecret: string; hub: RealtimeHub; corsOrigins: string[] | '*' },
+  deps: { prisma: PrismaClient; jwtSecret: string; hub: RealtimeHub; corsOrigins: CorsOrigins },
 ): IoServer {
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
-    cors: { origin: deps.corsOrigins === '*' ? true : deps.corsOrigins },
+    cors: { origin: corsOriginOption(deps.corsOrigins) },
   });
 
   io.use(async (socket, next) => {

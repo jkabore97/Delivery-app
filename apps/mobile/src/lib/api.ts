@@ -66,7 +66,7 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   DRIVER_BUSY: 'Vous avez une course en cours : terminez-la d’abord.',
   DRIVER_NOT_APPROVED: 'Votre dossier doit être validé par Yaar avant de passer en ligne.',
   UNSUPPORTED_FILE: 'Fichier non reconnu : envoyez une photo JPEG, PNG ou WebP (ou un PDF pour les documents).',
-  PAYLOAD_TOO_LARGE: 'Fichier trop lourd (5 Mo maximum) : reprenez la photo en plus petit.',
+  PAYLOAD_TOO_LARGE: 'Fichier trop lourd (3 Mo maximum) : reprenez la photo en plus petit.',
   STORE_NOT_APPROVED: 'Cette boutique n’est pas encore validée par Yaar.',
   ORDER_NOT_ACTIVE: 'La course est terminée : la discussion est fermée.',
   DELIVERY_CODE_LOCKED: 'Trop de codes incorrects : appelez le support Yaar pour débloquer la livraison.',
@@ -165,9 +165,12 @@ export function createApiClient(opts: ApiClientOptions) {
       }
     }
     if (!res.ok) {
+      // 413 sans corps JSON : requête refusée par l'hébergeur avant l'API (Vercel : 4,5 Mo maximum).
       const err = isApiErrorBody(json)
         ? new ApiError(res.status, json.error.code, json.error.message, json.error.details)
-        : new ApiError(res.status, 'HTTP_ERROR', `Erreur du serveur (${res.status}).`);
+        : res.status === 413
+          ? new ApiError(413, 'PAYLOAD_TOO_LARGE', ERROR_MESSAGES.PAYLOAD_TOO_LARGE!)
+          : new ApiError(res.status, 'HTTP_ERROR', `Erreur du serveur (${res.status}).`);
       if (auth && (res.status === 401 || err.code === 'ACCOUNT_SUSPENDED')) opts.onAuthError?.(err);
       throw err;
     }

@@ -53,3 +53,13 @@ export const DOCUMENTS_WITH_EXPIRY: readonly DocumentType[] = [DocumentType.ASSU
 export const DEFAULT_DRIVER_STALE_MINUTES = 10;
 /** Longueur maximale d'un message client ↔ livreur. */
 export const ORDER_MESSAGE_MAX_LENGTH = 500;
+
+/** Code OTP accepté en mode démonstration (GET /config → demoMode) pour les clients, vendeurs et livreurs. */
+export const DEMO_OTP_CODE = '123456';
+
+/**
+ * Avertissement affiché partout où l'on saisit des données en mode démonstration (écrans de connexion,
+ * dépôt des pièces KYC) : la démo est publique.
+ */
+export const DEMO_DATA_WARNING =
+  'Démonstration publique : n’utilisez pas de vraies pièces d’identité ni de vraies données personnelles.';

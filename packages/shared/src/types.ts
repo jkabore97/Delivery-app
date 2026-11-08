@@ -572,7 +572,11 @@ export interface PublicConfigDto {
   realtime: RealtimeMode;
   /** Intervalle de rafraîchissement conseillé en mode poll (ms). */
   pollIntervalMs: number;
-  /** Mode démonstration : afficher « Mode démo : code 123456 » sur l'écran de connexion. */
+  /**
+   * Mode démonstration : code 123456 pour les clients, vendeurs et livreurs (« Mode démo » sur l'écran de
+   * connexion de l'application) ; les comptes de console utilisent le code d'accès démo fourni par Yaar
+   * (jamais exposé par l'API). Afficher aussi `DEMO_DATA_WARNING`.
+   */
   demoMode: boolean;
   otpChannel: OtpChannel;
 }

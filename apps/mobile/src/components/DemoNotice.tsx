@@ -1,13 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { DEMO_DATA_WARNING } from '@yaar/shared';
 import { DEMO_ACCOUNTS, DEMO_OTP_CODE } from '../lib/publicConfig';
 import { formatPhone } from '../lib/phone';
 import { colors, radius, spacing } from '../theme';
 
-/** Écran de connexion en mode démo (GET /config → demoMode) : code 123456 et comptes de démonstration. */
+/**
+ * Écran de connexion en mode démo (GET /config → demoMode) : code 123456, avertissement « démonstration
+ * publique » et comptes de démonstration.
+ */
 export function DemoNotice({ onPick }: { onPick: (phone: string) => void }) {
   return (
     <View style={styles.box} accessibilityRole="summary" testID="demo-notice">
       <Text style={styles.title}>Mode démo : utilisez le code {DEMO_OTP_CODE}</Text>
+      <DemoDataWarning />
       <Text style={styles.sub}>Comptes de démonstration (touchez pour remplir) :</Text>
       {DEMO_ACCOUNTS.map((a) => (
         <Pressable
@@ -28,6 +33,15 @@ export function DemoNotice({ onPick }: { onPick: (phone: string) => void }) {
   );
 }
 
+/** « Démonstration publique : n'utilisez pas de vraies pièces d'identité… » (connexion, pièces KYC). */
+export function DemoDataWarning() {
+  return (
+    <Text style={styles.warning} testID="demo-data-warning">
+      ⚠️ {DEMO_DATA_WARNING}
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   box: {
     backgroundColor: '#FDF0E1',
@@ -38,6 +52,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: { fontWeight: '800', color: '#9A4F00', fontSize: 15 },
+  warning: { color: '#9A1C1C', fontWeight: '700', fontSize: 13 },
   sub: { color: colors.textMuted, fontSize: 13 },
   account: {
     flexDirection: 'row',

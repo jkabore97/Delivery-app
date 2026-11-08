@@ -42,6 +42,7 @@ export function useDriverLocationTracking(opts: DriverTrackingOptions): DriverTr
   const { online, onDelivery } = opts;
   const [state, setState] = useState<Omit<DriverTrackingState, 'paused'>>({ active: false, position: null, error: null });
   const [appState, setAppState] = useState<AppStateStatus>(() => (AppState.currentState as AppStateStatus | null) ?? 'active');
+  const appStateRef = useRef(appState);
   /** Mis à true au retour au premier plan : la position suivante est envoyée sans attendre la cadence. */
   const forceNextRef = useRef(false);
   const optsRef = useRef(opts);
@@ -52,6 +53,7 @@ export function useDriverLocationTracking(opts: DriverTrackingOptions): DriverTr
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') forceNextRef.current = true;
+      appStateRef.current = next;
       setAppState(next);
     });
     return () => sub.remove();
@@ -90,6 +92,9 @@ export function useDriverLocationTracking(opts: DriverTrackingOptions): DriverTr
           const now = clock();
           const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
           setState({ active: true, position: { ...pos, at: now }, error: null });
+          // Arrière-plan (onglet masqué sur le web, où le navigateur peut continuer à fournir des positions) :
+          // aucun envoi, comme sur Android/iOS où le suivi s'arrête hors premier plan. Reprise au retour.
+          if (appStateRef.current === 'background') return;
           const movedMeters = lastSentPos ? haversineKm(lastSentPos, pos) * 1000 : 0;
           if (sending) return;
           const forced = forceNextRef.current;

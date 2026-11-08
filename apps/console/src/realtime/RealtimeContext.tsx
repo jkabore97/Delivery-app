@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, RealtimeMode, ServerToClientEvents } from '@yaar/shared';
-import { POLL_MS } from '../config';
+import { idlePauseMs as defaultIdlePauseMs, POLL_MS } from '../config';
 import { useAppConfig } from './AppConfigContext';
+import { IdleMonitor } from './idle';
 import { documentVisibility, PollScheduler, type PollTask, type VisibilitySource } from './pollScheduler';
 
 export type ConsoleSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -31,6 +32,10 @@ interface RealtimeValue {
   scheduler: PollScheduler | null;
   /** Intervalle minimal conseillé par l'API (GET /config). */
   pollIntervalMs: number;
+  /** Mode poll : rafraîchissements suspendus après une longue inactivité (bandeau « Actualisation en pause »). */
+  idlePaused: boolean;
+  /** Reprend immédiatement les rafraîchissements suspendus par l'inactivité. */
+  resume: () => void;
 }
 
 const RealtimeContext = createContext<RealtimeValue>({
@@ -39,6 +44,8 @@ const RealtimeContext = createContext<RealtimeValue>({
   mode: null,
   scheduler: null,
   pollIntervalMs: 4000,
+  idlePaused: false,
+  resume: () => undefined,
 });
 
 function busFromSocket(socket: ConsoleSocket): RealtimeBus {
@@ -78,6 +85,8 @@ export interface RealtimeProviderProps {
   onAuthError?: (code: (typeof SOCKET_AUTH_ERRORS)[number]) => void;
   /** Pour les tests : source de visibilité de l'onglet (mode poll). */
   visibility?: VisibilitySource;
+  /** Mode poll : délai d'inactivité avant la pause des rafraîchissements (défaut : 15 min). */
+  idlePauseMs?: number;
 }
 
 interface SocketState {
@@ -85,7 +94,15 @@ interface SocketState {
   connected: boolean;
 }
 
-export function RealtimeProvider({ url, token, children, busOverride, onAuthError, visibility }: RealtimeProviderProps) {
+export function RealtimeProvider({
+  url,
+  token,
+  children,
+  busOverride,
+  onAuthError,
+  visibility,
+  idlePauseMs,
+}: RealtimeProviderProps) {
   const onAuthErrorRef = useRef(onAuthError);
   onAuthErrorRef.current = onAuthError;
   const { config } = useAppConfig();
@@ -93,17 +110,28 @@ export function RealtimeProvider({ url, token, children, busOverride, onAuthErro
   const pollIntervalMs = config?.pollIntervalMs ?? 4000;
   const [socketState, setValue] = useState<SocketState>({ bus: busOverride ?? null, connected: Boolean(busOverride) });
   const [scheduler, setScheduler] = useState<PollScheduler | null>(null);
+  const [idlePaused, setIdlePaused] = useState(false);
+  const idleRef = useRef<IdleMonitor | null>(null);
 
-  // Mode poll : aucun socket ; un planificateur suspendu quand l'onglet est masqué.
+  // Mode poll : aucun socket ; un planificateur suspendu quand l'onglet est masqué, et après une longue
+  // inactivité (toute interaction le relance aussitôt, avec un rafraîchissement immédiat).
   useEffect(() => {
     if (mode !== 'poll' || !token) return undefined;
     const s = new PollScheduler(visibility ?? documentVisibility());
+    const idle = new IdleMonitor(idlePauseMs ?? defaultIdlePauseMs(), (isIdle) => {
+      s.setPaused(isIdle);
+      setIdlePaused(isIdle);
+    });
+    idleRef.current = idle;
     setScheduler(s);
     return () => {
+      idle.dispose();
+      idleRef.current = null;
       s.dispose();
       setScheduler(null);
+      setIdlePaused(false);
     };
-  }, [mode, token, visibility]);
+  }, [mode, token, visibility, idlePauseMs]);
 
   useEffect(() => {
     if (busOverride || !token || mode !== 'socket') return undefined;
@@ -127,12 +155,13 @@ export function RealtimeProvider({ url, token, children, busOverride, onAuthErro
     };
   }, [url, token, busOverride, mode]);
 
+  const resume = useCallback(() => idleRef.current?.activity(), []);
   const value = useMemo<RealtimeValue>(
     () =>
       mode === 'poll'
-        ? { bus: null, connected: true, mode, scheduler, pollIntervalMs }
-        : { ...socketState, mode, scheduler: null, pollIntervalMs },
-    [mode, scheduler, pollIntervalMs, socketState],
+        ? { bus: null, connected: true, mode, scheduler, pollIntervalMs, idlePaused, resume }
+        : { ...socketState, mode, scheduler: null, pollIntervalMs, idlePaused: false, resume },
+    [mode, scheduler, pollIntervalMs, socketState, idlePaused, resume],
   );
 
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;

@@ -6,7 +6,9 @@ import { ZodError } from 'zod';
 import { loadConfig, type AppConfig } from './config';
 import type { AppContext } from './context';
 import { systemClock, type Clock } from './lib/clock';
+import { corsOriginOption } from './lib/cors';
 import { AppError } from './lib/errors';
+import { formatMegabytes } from './lib/files';
 import { CashPaymentProvider, MobileMoneyProvider, PaymentRegistry } from './providers/payment';
 import { ConsolePushProvider, Notifier, type PushProvider } from './providers/push';
 import { ConsoleSmsProvider, type SmsProvider } from './providers/sms';
@@ -57,8 +59,11 @@ export const WORK_TRIGGER_ROUTES = new Set([
   'GET /controller/dashboard',
 ]);
 
-/** Taille max d'une requête JSON : une pièce de 5 Mo encodée en base64 + marge. */
-const BODY_LIMIT = 8 * 1024 * 1024;
+/**
+ * Préflights CORS mis en cache 2 h par le navigateur (maximum de Chrome) : sans cela, chaque requête
+ * authentifiée d'un écran qui interroge l'API (mode poll) coûte une requête OPTIONS de plus.
+ */
+export const CORS_MAX_AGE_SECONDS = 7200;
 
 function errorBody(code: ApiErrorBody['error']['code'], message: string, details?: Record<string, string[]>): ApiErrorBody {
   return { error: details ? { code, message, details } : { code, message } };
@@ -70,7 +75,8 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   const clock = opts.clock ?? systemClock;
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
-    bodyLimit: BODY_LIMIT,
+    // Un fichier de maxUploadBytes encodé en base64 + marge (Vercel : 4,25 Mo, sous sa limite de 4,5 Mo).
+    bodyLimit: config.bodyLimitBytes,
     // Désactivé par défaut : sinon X-Forwarded-For (IP journalisées dans l'audit) serait falsifiable.
     trustProxy: config.trustProxy,
   });
@@ -93,7 +99,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     },
     notifier,
   );
-  const orders = new OrderService(prisma, clock, realtime, dispatch, payments, storage, notifier);
+  const orders = new OrderService(prisma, clock, realtime, dispatch, payments, storage, notifier, config.maxUploadBytes);
   dispatch.onAssigned = (orderId) => orders.notify(orderId);
   const sms =
     opts.sms ??
@@ -110,7 +116,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
 
   if (config.demoMode) {
     app.log.warn(
-      '⚠⚠⚠ DEMO_MODE=true : le code OTP 123456 est accepté pour TOUS les numéros (y compris en production) et le seed de démonstration est autorisé. Ne jamais utiliser avec de vrais utilisateurs. ⚠⚠⚠',
+      '⚠⚠⚠ DEMO_MODE=true : le code OTP 123456 est accepté pour les clients, vendeurs, livreurs et nouveaux comptes (y compris en production), DEMO_STAFF_CODE pour les comptes de console, et le seed de démonstration est autorisé. Ne jamais utiliser avec de vrais utilisateurs. ⚠⚠⚠',
     );
   } else if (config.otpDevBypass) {
     app.log.warn('OTP_DEV_BYPASS actif : le code 123456 est accepté (développement uniquement)');
@@ -129,8 +135,9 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   });
 
   await app.register(cors, {
-    origin: config.corsOrigins === '*' ? true : config.corsOrigins,
+    origin: corsOriginOption(config.corsOrigins),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    maxAge: CORS_MAX_AGE_SECONDS,
   });
 
   app.setErrorHandler((err: FastifyError | Error, req, reply) => {
@@ -149,7 +156,14 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     }
     const fe = err as FastifyError;
     if (fe.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
-      return reply.status(413).send(errorBody('PAYLOAD_TOO_LARGE', 'Requête trop volumineuse'));
+      return reply
+        .status(413)
+        .send(
+          errorBody(
+            'PAYLOAD_TOO_LARGE',
+            `Requête trop volumineuse : envoyez un fichier de ${formatMegabytes(config.maxUploadBytes)} Mo maximum.`,
+          ),
+        );
     }
     if (fe.statusCode && fe.statusCode >= 400 && fe.statusCode < 500) {
       return reply.status(fe.statusCode).send(errorBody('VALIDATION_ERROR', fe.message));

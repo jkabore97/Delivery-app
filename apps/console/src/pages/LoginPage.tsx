@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
-import { requestOtpSchema } from '@yaar/shared';
+import { DEMO_DATA_WARNING, requestOtpSchema } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { isBackOffice, useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ui';
-import { DEMO_ACCOUNTS, DEMO_OTP_CODE } from '../lib/demo';
+import { DEMO_ACCOUNTS } from '../lib/demo';
 import { formatPhone } from '../lib/format';
 import { useAppConfig } from '../realtime/AppConfigContext';
 
@@ -37,10 +37,11 @@ export function LoginPage() {
       const res = await api.requestOtp(parsed.data.phone);
       setPhone(parsed.data.phone);
       setStep('code');
-      if (demo) setCode(DEMO_OTP_CODE);
+      // Démo publique : les comptes de console n'acceptent pas le code 123456 des applications ; rien n'est
+      // pré-rempli, le code d'accès démo est communiqué par Yaar.
       setInfo(
         demo
-          ? `Mode démo : le code ${DEMO_OTP_CODE} est déjà saisi pour le ${parsed.data.phone}.`
+          ? `Mode démo : saisissez le code d’accès démo fourni par Yaar pour le ${parsed.data.phone}.`
           : `Code envoyé par ${channel} au ${parsed.data.phone}. Valable ${Math.round(res.expiresInSeconds / 60)} min.`,
       );
     } catch (err) {
@@ -82,8 +83,12 @@ export function LoginPage() {
         {logoutReason && step === 'phone' && <div className="alert alert-info">{logoutReason}</div>}
         {demo && step === 'phone' && (
           <div className="demo-notice" role="note" aria-label="Mode démo">
-            <strong>Mode démo : utilisez le code {DEMO_OTP_CODE}</strong>
-            <span className="muted small">Comptes de démonstration (un clic pour remplir) :</span>
+            <strong>Mode démo</strong>
+            <span>
+              Les comptes de démonstration de la console se connectent avec le code d’accès démo fourni par Yaar.
+            </span>
+            <span className="demo-warning">{DEMO_DATA_WARNING}</span>
+            <span className="muted small">Comptes de démonstration (un clic pour remplir le numéro) :</span>
             <ul className="demo-accounts">
               {DEMO_ACCOUNTS.map((a) => (
                 <li key={a.phone}>
@@ -125,13 +130,13 @@ export function LoginPage() {
         ) : (
           <form className="form" onSubmit={verify} noValidate>
             {info && <div className="alert alert-info">{info}</div>}
-            <label htmlFor="code">{demo ? `Code (démo : ${DEMO_OTP_CODE})` : `Code reçu par ${channel}`}</label>
+            <label htmlFor="code">{demo ? 'Code d’accès démo (fourni par Yaar)' : `Code reçu par ${channel}`}</label>
             <input
               id="code"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
-              placeholder="123456"
+              placeholder="6 chiffres"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               autoFocus

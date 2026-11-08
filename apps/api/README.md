@@ -15,7 +15,9 @@ npm run dev -w apps/api              # http://localhost:3000, hot reload
 ```
 
 Log in from any client with a seeded phone number (see `docs/API.md` §12) and the code `123456`
-(`OTP_DEV_BYPASS=true`, or `DEMO_MODE=true` which also works in production). Real OTP codes are printed in the API log by `ConsoleSmsProvider`.
+(`OTP_DEV_BYPASS=true`, or `DEMO_MODE=true` which also works in production). With `DEMO_MODE=true`, existing console
+accounts (`CONTROLLER`, `ADMIN`) do **not** accept `123456`: they use `DEMO_STAFF_CODE` (6 digits, typed after
+"Recevoir le code"; defaults to `123456` in dev/test only). Real OTP codes are printed in the API log by `ConsoleSmsProvider`.
 
 | Script | What it does |
 |---|---|
@@ -27,9 +29,9 @@ Log in from any client with a seeded phone number (see `docs/API.md` §12) and t
 | `npm run db:seed` | wipe + demo data around Ouagadougou |
 | `npm run retention` | 12-month purge: GPS pings, client positions/addresses on finished orders, SOS positions, chat messages; expired OTP codes (also runs daily inside the server, and from `GET /cron/daily` on Vercel) |
 | `npm run db:seed:if-empty` | demo data only if the database has no user yet (never wipes; used by the Vercel build) |
-| `npm run vercel-build` | Vercel build: `prisma generate`, esbuild bundle `dist/vercel.mjs`, `prisma migrate deploy`, seed if `SEED_DEMO=true` |
+| `npm run vercel-build` | Vercel build: `prisma generate`, esbuild bundle `dist/vercel.mjs`; **production deployments only** (`VERCEL_ENV=production`): runtime config check (`scripts/check-config.ts`), `prisma migrate deploy`, demo seed if `SEED_DEMO=true` and `DEMO_MODE=true` |
 | `npm run build:bundle` | the same without database steps (local check of the bundle) |
-| `npm run smoke:vercel` | starts the bundled Vercel handler as an HTTP server (production + poll + db storage + demo) against `DATABASE_URL` and checks `/health`, `/config`, OTP login, `/me`, `/driver/offers`, `/cron/daily` |
+| `npm run smoke:vercel` | starts the bundled Vercel handler as an HTTP server (`VERCEL=1`, production, poll, db storage, demo with a test `DEMO_STAFF_CODE`) against `DATABASE_URL` and checks `/health`, `/config`, CORS (cached preflight, preview pattern), OTP login (`123456` for client/driver, refused for a controller, staff code accepted), `/me`, `/driver/offers`, upload limits (`413` JSON), `/cron/daily`, and the CORS headers of the start-up failure response |
 
 ## Local PostgreSQL used during development
 
@@ -78,7 +80,9 @@ SMS with a `MemorySmsProvider`, files go to a temporary encrypted directory.
 | `kyc.test.ts` | driver profile + documents, incomplete/expired file refused, approval, document view audit log, rejection/resubmission, suspension |
 | `realtime.test.ts` | Socket.IO JWT auth, `order.subscribe` access control, `order.updated`, `driver.location`, `sos`, room eviction of a reassigned driver, sockets closed on suspension |
 | `security.test.ts` | 20 parallel wrong delivery codes (5 evaluated, then 423), parallel wrong OTPs, per-IP rate limit, magic-byte check, console reset/force-deliver/cancel after pickup, busy driver suspension refused, offer without client addresses, seller view after delivery, retention of order/SOS positions, consent, stale drivers, no duplicate offers |
-| `pollMode.test.ts` | `REALTIME_MODE=poll`: no Socket.IO, `GET /config`, `runDueWork` (30 s offer timeout → next driver, throttling, shared lease between two instances), lazy trigger by polling requests, live position + ETA by REST, partial unique indexes on open offers, `updatedSince`, `/cron/daily` + `CRON_SECRET`, production/Vercel config rules, `DEMO_MODE`, WhatsApp OTP placeholder (503) |
+| `pollMode.test.ts` | `REALTIME_MODE=poll`: no Socket.IO, `GET /config`, `runDueWork` (30 s offer timeout → next driver, throttling, shared lease between two instances, lease row created by an atomic upsert and recreated after a `TRUNCATE`), `kick()` budget + `waitUntil` (`@vercel/functions`, no-op outside Vercel), lazy trigger by polling requests, live position + ETA by REST, partial unique indexes on open offers, `updatedSince` (2 s overlap, status filter ignored, oldest change first), `/cron/daily` + `CRON_SECRET`, production/Vercel config rules, WhatsApp OTP placeholder (503) |
+| `demo.test.ts` | `DEMO_MODE` as in production: `123456` refused for existing `CONTROLLER`/`ADMIN`, `DEMO_STAFF_CODE` accepted after a code request (same atomic 5-attempt counter, single use), `123456` for clients/sellers/drivers and sign-ups, `/config` never reveals the staff code, config refusals (`OTP_PROVIDER≠console`, missing/123456/malformed staff code in production or on Vercel) |
+| `cors.test.ts` | `CORS_ORIGINS` exact origins and one-label wildcard patterns, production refusals (`*`, whole-label `*`), `Access-Control-Max-Age: 7200` on preflights, CORS on error responses, Vercel start-up failure response (500 JSON + CORS, preflight accepted), Vercel upload caps (3 MB decoded, 4.25 MB body → `413 PAYLOAD_TOO_LARGE`) |
 | `storage.test.ts` | `STORAGE_DRIVER=db`: encrypted bytes in `StoredFile`, read/replace/delete, wrong key, invalid keys, KYC upload + audited console view, proof photo + audited view |
 | `admin.test.ts` | pricing update (audited, used by quotes), store approval/suspension and public view, product photos, users list/suspend/unsuspend, reinstate, concurrent cash deposits, disputes → incidents, seller reject + stats, CSV exports, push notifications, chat, ETA, French zod messages |
 
@@ -91,7 +95,8 @@ src/vercel.ts                Vercel entry point (bundled to dist/vercel.mjs, imp
 src/app.ts                   buildApp(): dependency wiring, error format, routes (used by tests)
 src/config.ts                environment variables (validated with zod)
 src/context.ts               AppContext injected in routes/services
-src/lib/                     auth (JWT, guards), errors, zod parsing helper, injectable clock, per-IP rate limiter, file checks
+src/lib/                     auth (JWT, guards), errors, zod parsing helper, injectable clock, per-IP rate limiter, file checks,
+                             CORS origins (exact + one-label `*` patterns)
 src/providers/               SmsProvider/OtpProvider (console; WhatsApp placeholder), PushProvider + Notifier, StorageProvider (local disk or Postgres, AES-256-GCM), PaymentProvider (cash; mobile money stub)
 src/realtime/                Socket.IO gateway (auth, rooms) and RealtimeHub (typed emitters)
 src/services/                OrderService, DispatchService, status transitions, serializers (privacy rules), audit
@@ -99,7 +104,7 @@ src/routes/                  auth, me, stores+seller, orders, driver, controller
 src/services/work.ts         runDueWork(): dispatch cycle without a long-running process (poll mode), lease in JobLease
 src/routes/system.ts         GET /config, GET /cron/daily
 src/jobs/                    retention job
-api/index.js, vercel.json    Vercel function and project configuration; scripts/ = build and smoke test
+api/index.js, vercel.json    Vercel function and project configuration; scripts/ = build, runtime config check, smoke test
 ```
 
 Design notes:
@@ -112,8 +117,11 @@ Design notes:
   Offer creation is serialised in-process and `tick()` is single-flight; across instances, partial unique
   indexes (one `OFFERED` offer per order and per driver) make duplicates impossible.
 - `REALTIME_MODE=poll` (Vercel): no Socket.IO, no interval. `BackgroundWork.runDueWork()` takes a lease row
-  (`JobLease`, conditional update) so that one instance runs `dispatch.tick()` at most every `WORK_THROTTLE_MS`;
-  it is triggered by polling requests (`WORK_TRIGGER_ROUTES` in `app.ts`) and by `GET /cron/daily`.
+  (`JobLease`, one atomic `INSERT … ON CONFLICT DO UPDATE … WHERE` that creates the row on first use and only
+  updates it when due: no failing insert) so that one instance runs `dispatch.tick()` at most every `WORK_THROTTLE_MS`;
+  it is triggered by polling requests (`WORK_TRIGGER_ROUTES` in `app.ts`) and by `GET /cron/daily`. A request waits
+  for it at most `WORK_BUDGET_MS`; past that, the cycle is handed to `waitUntil` (`@vercel/functions`, a no-op
+  outside Vercel) so the function is not frozen with the cycle half done and the lease held.
   The in-memory `/auth/*` per-IP rate limits stay per instance.
 - Anti-fraud counters (delivery code, OTP) reserve the attempt with a conditional `UPDATE … WHERE attempts < 5`
   before comparing, so parallel requests cannot bypass the limit. Cash deposits use a conditional decrement.
@@ -153,12 +161,14 @@ sit next to `fra1`). The integration adds `DATABASE_URL` (pooled) and `DATABASE_
 | `STORAGE_ENCRYPTION_KEY` | generate: `openssl rand -hex 32` (never change it afterwards: stored files would become unreadable) |
 | `REALTIME_MODE` | `poll` |
 | `STORAGE_DRIVER` | `db` |
-| `DEMO_MODE` | `true` (code `123456` accepted, shown by the apps; set `false` before real users) |
-| `SEED_DEMO` | `true` (demo accounts created on the first build only, when the database has no user) |
+| `DEMO_MODE` | `true` for the public demo (code `123456` for clients, sellers, drivers and sign-ups, shown by the mobile app; set `false` before real users). Requires `OTP_PROVIDER=console` |
+| `DEMO_STAFF_CODE` | **required with `DEMO_MODE=true`** (in every environment that has it, Preview included): 6 digits, not `123456`, e.g. `node -e "console.log(require('crypto').randomInt(1e5,1e6))"`. Login code of the console accounts (controller, admin: they see KYC documents), typed after "Recevoir le code" (5 attempts per requested code). Mark it *Sensitive*; give it to partners separately, never in a public message. Without it the production build fails at the config check |
+| `SEED_DEMO` | `true` (demo accounts created on the first production build only, when the database has no user; skipped with a warning if `DEMO_MODE` is not `true`) |
 | `CRON_SECRET` | generate: `openssl rand -hex 32` (Vercel Cron sends it as `Authorization: Bearer …`) |
-| `CORS_ORIGINS` | console and mobile-web URLs, comma-separated, e.g. `https://yaar-console.vercel.app,https://yaar-mobile.vercel.app` (`*` is refused in production) |
+| `CORS_ORIGINS` | console and mobile-web URLs, comma-separated: `https://yaar-console.vercel.app,https://yaar-livraison.vercel.app,https://yaar-app-mu.vercel.app`. Optional preview pattern, `*` = part of ONE hostname label: `https://yaar-console-*-wendtoin-jairus-kabore-s-projects.vercel.app`. `*` alone and whole-label patterns such as `https://*.vercel.app` are refused in production |
 | `TRUST_PROXY` | `true` (client IPs from `X-Forwarded-For`, set by Vercel) |
-| `OTP_PROVIDER` | optional, `console` (default; codes in the function logs). `whatsapp` is a placeholder that refuses with 503 |
+| `OTP_PROVIDER` | optional, `console` (default; codes in the function logs). `whatsapp` is a placeholder that refuses with 503 (and is refused at start-up with `DEMO_MODE=true`) |
+| `ALLOW_PREVIEW_DB_MIGRATIONS` | leave unset. Preview deployments never run migrations or the seed (they share the production database variables); `true` forces them, only with a separate preview database |
 
 Do **not** set `NODE_ENV`: on Vercel (`VERCEL=1`) the API defaults to `production`, and `NODE_ENV=production` at
 install time would skip the devDependencies needed by the build (Prisma CLI, esbuild, tsx). `VERCEL=1` also makes
@@ -166,9 +176,14 @@ install time would skip the devDependencies needed by the build (Prisma CLI, esb
 `POLL_INTERVAL_MS` (4000), `WORK_THROTTLE_MS` (4000), `WORK_BUDGET_MS` (1500), `LOG_LEVEL`.
 
 What the build does (`scripts/vercel-build.mjs`): `prisma generate` (engines `native` + `rhel-openssl-3.0.x`),
-esbuild bundle of `src/vercel.ts` with the TypeScript source of `@yaar/shared` inlined (npm packages stay external
-and are traced by Vercel from `node_modules`), `prisma migrate deploy` on `DATABASE_URL_UNPOOLED`, then, if
-`SEED_DEMO=true`, `prisma/seed.ts --if-empty` (advisory lock, skipped as soon as one user exists, never wipes).
+esbuild bundle of `src/vercel.ts` with the TypeScript source of `@yaar/shared` inlined (npm packages, including
+`@vercel/functions`, stay external and are traced by Vercel from `node_modules`). Then **only when
+`VERCEL_ENV=production`** (or `ALLOW_PREVIEW_DB_MIGRATIONS=true`; otherwise the log says the database steps are
+skipped): `scripts/check-config.ts` validates the runtime configuration with the same rules as the API start-up
+(an invalid configuration fails the build, so the previous deployment stays online), `prisma migrate deploy` on
+`DATABASE_URL_UNPOOLED`, then, if `SEED_DEMO=true` **and** `DEMO_MODE=true`, `prisma/seed.ts --if-empty`
+(advisory lock, skipped as soon as one user exists, never wipes; `SEED_DEMO=true` without `DEMO_MODE=true` only
+logs a warning).
 
 Clients: read `GET /config` at start-up and switch to polling (`docs/API.md`, "Mode polling (Vercel)").
 
@@ -178,9 +193,18 @@ npm run build:bundle -w apps/api     # dist/vercel.mjs
 npm run smoke:vercel -w apps/api     # bundled handler as an HTTP server against DATABASE_URL (yaar_dev)
 ```
 
-Limits to know: request bodies max 4.5 MB on Vercel (keep uploads under ~3.3 MB before base64); functions are
-frozen between requests, so offer timeouts are applied when someone polls (see `docs/API.md`); per-IP `/auth/*`
-limits are per instance; files live in Postgres (fine for Lot 1 volumes, move to object storage later).
+Limits to know: request bodies max 4.5 MB on Vercel, so on Vercel the API caps uploaded files at **3 MB decoded**
+(`config.maxUploadBytes`; body limit 4.25 MB = 3 MB in base64 + margin) and answers `413 PAYLOAD_TOO_LARGE` in its
+JSON format (the mobile app checks the encoded size before sending); functions are frozen between requests, so offer
+timeouts are applied when someone polls (see `docs/API.md`); per-IP `/auth/*` limits are per instance; files live in
+Postgres (fine for Lot 1 volumes, move to object storage later). If the API cannot start (invalid configuration,
+database unreachable), every request gets `500 INTERNAL_ERROR` with the CORS headers of the allowed origins (the
+browser apps can show it) and the cause is in the function logs.
+
+Quota (Hobby: 1 M function invocations and 4 h of active CPU per month): every request, `OPTIONS` preflights
+included, is an invocation. Preflights are cached 2 h by browsers (`Access-Control-Max-Age: 7200`); an idle console
+on the live map makes about 0.32 request/s and stops polling after 15 min without interaction; the mobile app polls
+only while the screen that needs it is visible (an online driver keeps polling offers every `POLL_INTERVAL_MS`).
 If the runtime logs show `prepared statement "s0" already exists` (pooled connection), append
 `&pgbouncer=true` to `DATABASE_URL`; on a cold Neon compute, `&connect_timeout=15` avoids a first-request timeout.
 
@@ -192,6 +216,7 @@ origin (`*` is refused in production), `TRUST_PROXY` set when behind a reverse p
 the proxy's). A real `SmsProvider` (local operator or aggregator) and a real `PushProvider` (Expo Push / FCM)
 must be plugged in `src/app.ts` before going live (OTP: `OTP_PROVIDER=whatsapp` selects the placeholder
 `WhatsAppOtpProvider` in `src/providers/whatsapp.ts`, whose comment lists what a WhatsApp Business Cloud API
-integration needs). `DEMO_MODE=true` re-enables the `123456` code and the demo seed in production and logs a loud
-warning at start-up. The seed refuses to run with `NODE_ENV=production` unless
+integration needs). `DEMO_MODE=true` re-enables the `123456` code (not for existing console accounts, which use
+`DEMO_STAFF_CODE`) and the demo seed in production and logs a loud warning at start-up; it is refused with
+`OTP_PROVIDER≠console`, and in production or on Vercel without a valid `DEMO_STAFF_CODE`. The seed refuses to run with `NODE_ENV=production` unless
 `SEED_FORCE=true` (`db:seed:if-empty` needs `DEMO_MODE=true` instead and never wipes), and deletes the storage files of previous runs (`kyc/`, `proofs/`, `products/`).

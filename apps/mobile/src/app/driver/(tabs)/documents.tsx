@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
-import { LABELS } from '@yaar/shared';
+import { DEMO_DATA_WARNING, LABELS } from '@yaar/shared';
 import { Badge, Banner, Button, Card, Field, KeyValue, Loading, Muted, ProgressBar, Row, Screen, Subtitle, Title } from '../../../components/ui';
 import { errorMessage } from '../../../lib/api';
 import { formatDateTime } from '../../../lib/format';
 import { documentChecklist, kycProgress, parseExpiryDate, type DocumentChecklistItem } from '../../../lib/kyc';
 import { capturePhoto, type PhotoSource } from '../../../lib/photo';
 import { useApi } from '../../../state/auth';
+import { useAppConfig } from '../../../state/config';
 import { useDriver } from '../../../state/driver';
 import { colors, radius } from '../../../theme';
 
@@ -28,6 +29,7 @@ const HINTS: Partial<Record<DocumentChecklistItem['type'], string>> = {
 /** Pièces justificatives du livreur (KYC). Les fichiers sont chiffrés et vus uniquement par les contrôleurs. */
 export default function DriverDocuments() {
   const { profile } = useDriver();
+  const { config } = useAppConfig();
   if (profile === undefined) return <Loading />;
   if (profile === null) return <Redirect href="/driver/onboarding" />;
 
@@ -38,6 +40,8 @@ export default function DriverDocuments() {
   return (
     <Screen>
       <Title>Mes documents</Title>
+      {/* Démo publique : aucune vraie pièce d'identité ne doit être déposée. */}
+      {config?.demoMode ? <Banner message={`⚠️ ${DEMO_DATA_WARNING}`} tone="orange" /> : null}
       <Card>
         <KeyValue label={`Dossier : ${LABELS.driverStatus[profile.status]}`} value={`${done} / ${total}`} strong />
         <ProgressBar value={total ? done / total : 0} color={colors.blue} />

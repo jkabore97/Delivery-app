@@ -1,4 +1,4 @@
-import type { PublicConfigDto } from '@yaar/shared';
+import { DEMO_OTP_CODE, type PublicConfigDto } from '@yaar/shared';
 
 /**
  * Configuration publique de l'API (GET /config, docs/API.md §1.8), lue au démarrage avant la connexion.
@@ -50,7 +50,11 @@ export async function fetchPublicConfig(
 
 /** Intervalles de rafraîchissement en mode poll (docs/API.md, « Mode polling (Vercel) »). */
 export const POLL_MS = {
-  /** Livreur en ligne, sans course : GET /driver/offers (= pollIntervalMs). */
+  /**
+   * Livreur en ligne, sans course : GET /driver/offers (= pollIntervalMs). Jamais suspendu pour inactivité
+   * (le livreur doit recevoir les offres, 30 s pour répondre) ; seulement quand l'application est en
+   * arrière-plan / l'onglet masqué (le système ne laisse pas tourner l'application de toute façon).
+   */
   driverOffers: 0,
   driverProfile: 30_000,
   driverCurrentOrder: 10_000,
@@ -61,8 +65,11 @@ export const POLL_MS = {
   sellerOrders: 7_000,
 } as const;
 
-/** Code OTP accepté pour tous les numéros quand l'API tourne avec DEMO_MODE=true. */
-export const DEMO_OTP_CODE = '123456';
+/**
+ * Code OTP accepté quand l'API tourne avec DEMO_MODE=true, pour les comptes client, vendeur et livreur
+ * (et toute nouvelle inscription). Les comptes de console utilisent un code d'accès démo distinct.
+ */
+export { DEMO_OTP_CODE };
 
 /** Comptes créés par apps/api/prisma/seed.ts (docs/API.md §12). */
 export const DEMO_ACCOUNTS: ReadonlyArray<{ phone: string; label: string; role: string }> = [

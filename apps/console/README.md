@@ -21,7 +21,11 @@ npm run dev:api                                  # API sur :3000
 npm run dev -w apps/console                      # console sur http://localhost:5173
 ```
 
-Connexion : numéro `70 00 00 02` (contrôleur Salif K.) ou `70 00 00 01` (administrateur), code `123456`.
+Connexion : numéro `70 00 00 02` (contrôleur Salif K.) ou `70 00 00 01` (administrateur), code `123456`
+(API de développement avec `OTP_DEV_BYPASS=true`). Avec une API en mode démo (`DEMO_MODE=true`, ex. la démo
+publique sur Vercel), ces comptes utilisent le **code d'accès démo fourni par Yaar** (`DEMO_STAFF_CODE` de l'API),
+jamais `123456` : l'écran de connexion le dit, ne pré-remplit que le numéro et affiche l'avertissement
+« Démonstration publique : n’utilisez pas de vraies pièces d’identité ni de vraies données personnelles. ».
 Seuls les comptes `CONTROLLER` et `ADMIN` sont acceptés ; les autres rôles sont refusés côté console.
 
 | Script (`-w apps/console`) | Rôle |
@@ -67,6 +71,19 @@ Une connexion Socket.IO authentifiée par le JWT (`auth: { token }`) rejoint la 
 - **reconnexion** : à chaque reconnexion du socket, carte, commandes en attente, dossiers KYC, alertes, indicateurs et caisse
   sont rechargés en REST (les événements manqués ne sont pas rejoués, docs/API.md §9.3) ;
 - `connect_error` avec `UNAUTHENTICATED` ou `ACCOUNT_SUSPENDED` coupe le socket et renvoie à l'écran de connexion.
+
+## Mode poll (API sur Vercel)
+
+Quand `GET /config` répond `realtime: "poll"`, aucun socket n'est ouvert : chaque écran recharge ses données en REST
+(docs/API.md, « Mode polling (Vercel) »), jamais plus vite que `pollIntervalMs`, et plus du tout quand l'onglet est
+masqué. Rythmes (`src/config.ts`, `POLL_MS`) : carte et file d'attente 10 s, alertes 15 s (une seule requête
+`status=OPEN,IN_PROGRESS` partagée par les toasts SOS de l'en-tête et le panneau de la carte, `IncidentsProvider`),
+indicateurs 30 s, boutiques à valider 60 s, fiche de course 10 s ; la file KYC de la carte n'est rechargée que
+quand sa pastille change. Une console inactive sur la carte coûte ≈ 0,32 requête/s (quota Vercel Hobby : 1 M
+d'appels par mois). Après **15 min sans interaction** (souris, clavier, toucher, changement d'onglet), plus aucune
+requête et un bandeau « Actualisation en pause (inactivité) — cliquez pour reprendre » ; toute interaction relance
+aussitôt un rafraîchissement (`src/realtime/idle.ts`). Tests de bout en bout uniquement : `window.__YAAR_IDLE_PAUSE_MS__`
+(injecté avant le chargement de la page) raccourcit ce délai.
 
 ## Confidentialité et audit
 

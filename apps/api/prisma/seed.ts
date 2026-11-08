@@ -356,7 +356,8 @@ async function seed(): Promise<void> {
   });
 
   console.info('Base de démonstration créée.');
-  console.info('Connexion (OTP 123456 si OTP_DEV_BYPASS=true ou DEMO_MODE=true) :');
+  console.info('Connexion (OTP 123456 si OTP_DEV_BYPASS=true ou DEMO_MODE=true ; avec DEMO_MODE=true, les comptes');
+  console.info('de console utilisent DEMO_STAFF_CODE, après « Recevoir le code ») :');
   console.info(`  Admin       ${admin.phone}`);
   console.info(`  Contrôleur  ${controller.phone}`);
   console.info('  Vendeurs    +22671000001 (Le Verdoyant), +22671000002, +22671000003, +22671000004, +22671000009 (boutique à valider)');

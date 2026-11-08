@@ -82,8 +82,18 @@ export type AddressInput = z.input<typeof addressSchema>;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
 export const uploadMimeTypeSchema = z.enum(ALLOWED_MIME);
 export type UploadMimeType = z.infer<typeof uploadMimeTypeSchema>;
-/** Taille maximale d'un fichier envoyé (après décodage base64). */
+/** Taille maximale d'un fichier envoyé (après décodage base64), API auto-hébergée. */
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+/**
+ * Plafond sur Vercel (et dans l'application mobile, quel que soit le serveur) : le corps d'une requête
+ * Vercel est limité à 4,5 Mo ; 3 Mo une fois encodés en base64 font 4 Mo, ce qui laisse de la marge.
+ */
+export const VERCEL_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+
+/** Longueur de l'encodage base64 (avec remplissage) d'un contenu de `bytes` octets. */
+export function base64Length(bytes: number): number {
+  return Math.ceil(bytes / 3) * 4;
+}
 
 /** Fichier envoyé en JSON, encodé en base64 (sans préfixe `data:`). */
 export const fileUploadSchema = z.object({
@@ -405,7 +415,12 @@ export const userListQuerySchema = paginationQuerySchema.extend({
 });
 
 export const incidentListQuerySchema = paginationQuerySchema.extend({
-  status: incidentStatusSchema.optional(),
+  /** Un statut ou une liste séparée par des virgules (ex. `OPEN,IN_PROGRESS`). */
+  status: z
+    .string()
+    .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
+    .pipe(z.array(incidentStatusSchema))
+    .optional(),
   type: incidentTypeSchema.optional(),
 });
 

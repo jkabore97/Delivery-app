@@ -3,6 +3,7 @@
  * Règles (docs/API.md, « Mode polling (Vercel) ») :
  * - chaque tâche est relancée toutes les `intervalMs` tant que l'onglet est visible ;
  * - onglet masqué : plus aucune requête ; de nouveau visible : un rafraîchissement immédiat ;
+ * - en pause (inactivité, cf. IdleMonitor) : plus aucune requête ; à la reprise : un rafraîchissement immédiat ;
  * - erreur réseau (tâche rejetée ou qui renvoie `false`) : intervalle doublé, au plus 30 s.
  */
 
@@ -39,6 +40,7 @@ export function documentVisibility(doc: Document = document): VisibilitySource {
 export class PollScheduler {
   private readonly entries = new Set<Entry>();
   private visible: boolean;
+  private paused = false;
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -70,6 +72,24 @@ export class PollScheduler {
     return this.visible;
   }
 
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Suspend (inactivité) ou reprend toutes les tâches ; la reprise relance immédiatement chaque tâche. */
+  setPaused(paused: boolean): void {
+    if (paused === this.paused) return;
+    this.paused = paused;
+    for (const e of this.entries) {
+      if (e.timer) clearTimeout(e.timer);
+      e.timer = null;
+      if (!paused && this.visible) {
+        e.delayMs = e.intervalMs;
+        void this.run(e);
+      }
+    }
+  }
+
   dispose(): void {
     this.unsubscribe();
     for (const e of this.entries) {
@@ -85,15 +105,15 @@ export class PollScheduler {
     for (const e of this.entries) {
       if (e.timer) clearTimeout(e.timer);
       e.timer = null;
-      // Retour au premier plan : rattrapage immédiat, puis rythme normal.
-      if (visible) void this.run(e);
+      // Retour au premier plan : rattrapage immédiat, puis rythme normal (sauf pause d'inactivité).
+      if (visible && !this.paused) void this.run(e);
     }
   }
 
   private schedule(e: Entry): void {
     if (e.timer) clearTimeout(e.timer);
     e.timer = null;
-    if (!this.visible || e.removed) return;
+    if (!this.visible || this.paused || e.removed) return;
     e.timer = setTimeout(() => {
       e.timer = null;
       void this.run(e);

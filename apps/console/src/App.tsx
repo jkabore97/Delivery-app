@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { Layout } from './components/Layout';
 import { DashboardProvider } from './hooks/DashboardContext';
+import { IncidentsProvider } from './hooks/IncidentsContext';
 import { RealtimeProvider, type RealtimeBus } from './realtime/RealtimeContext';
 import { AuditPage } from './pages/AuditPage';
 import { CashPage } from './pages/CashPage';
@@ -32,7 +33,9 @@ function Protected({ children, socketUrl, busOverride }: { children: ReactNode; 
         )
       }
     >
-      <DashboardProvider>{children}</DashboardProvider>
+      <DashboardProvider>
+        <IncidentsProvider>{children}</IncidentsProvider>
+      </DashboardProvider>
     </RealtimeProvider>
   );
 }

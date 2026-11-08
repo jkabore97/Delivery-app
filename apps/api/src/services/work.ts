@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
+import { waitUntil as vercelWaitUntil } from '@vercel/functions';
 import type { Clock } from '../lib/clock';
 import type { DispatchService, TickResult } from './dispatch';
 
@@ -18,12 +19,22 @@ export type DueWorkResult =
 export const DISPATCH_JOB = 'dispatch';
 
 /**
+ * Prolonge la fonction jusqu'à la fin d'une promesse lancée pendant la requête : `waitUntil` de
+ * @vercel/functions sur Vercel (sinon l'instance peut être gelée dès la réponse envoyée, cycle à moitié
+ * fait et bail tenu) ; sans effet ailleurs (pas de contexte de requête Vercel : développement, tests).
+ */
+export type KeepAlive = (promise: Promise<unknown>) => void;
+export const vercelKeepAlive: KeepAlive = (promise) => {
+  vercelWaitUntil(promise);
+};
+
+/**
  * Tâches de fond sans processus permanent (mode poll / Vercel) : expiration des offres (30 s),
  * relance des commandes en attente, mise hors ligne des livreurs silencieux.
  *
- * `runDueWork()` est sûr entre plusieurs instances : un bail en base (`JobLease`, pris par une mise à
- * jour conditionnelle) garantit qu'une seule instance exécute le cycle à la fois et au plus une fois
- * par `throttleMs`. Les opérations du cycle restent elles-mêmes idempotentes (mises à jour
+ * `runDueWork()` est sûr entre plusieurs instances : un bail en base (`JobLease`, pris par un
+ * INSERT … ON CONFLICT DO UPDATE … WHERE conditionnel) garantit qu'une seule instance exécute le cycle
+ * à la fois et au plus une fois par `throttleMs`. Les opérations du cycle restent elles-mêmes idempotentes (mises à jour
  * conditionnelles, index uniques partiels sur les offres ouvertes).
  * Il est déclenché paresseusement par les requêtes utiles (`kick()`) et par le cron quotidien.
  * En mode socket (serveur persistant), `server.ts` garde l'appel périodique de `dispatch.tick()`.
@@ -38,28 +49,29 @@ export class BackgroundWork {
     private readonly dispatch: DispatchService,
     private readonly cfg: WorkConfig,
     private readonly onError: (err: unknown) => void = () => {},
+    private readonly keepAlive: KeepAlive = vercelKeepAlive,
   ) {}
 
-  /** Prend le bail `name` s'il est libre et que le dernier cycle date d'au moins `throttleMs`. */
+  /**
+   * Prend le bail `name` s'il est libre et que le dernier cycle date d'au moins `throttleMs`, en une seule
+   * requête atomique : la ligne est créée au premier appel (base vide, après un TRUNCATE…), sinon mise à
+   * jour seulement si elle est due. Aucune ligne renvoyée = cycle tenu par une autre instance ou trop récent
+   * (pas d'erreur d'unicité, donc pas de « ERROR » dans les journaux PostgreSQL).
+   * Les dates sont écrites comme Prisma les écrit (TIMESTAMP(3) sans fuseau, en UTC).
+   */
   private async claim(name: string, now: Date): Promise<boolean> {
-    const lockedUntil = new Date(now.getTime() + this.cfg.leaseMs);
-    const r = await this.prisma.jobLease.updateMany({
-      where: {
-        name,
-        lockedUntil: { lte: now },
-        lastStartedAt: { lte: new Date(now.getTime() - this.cfg.throttleMs) },
-      },
-      data: { lastStartedAt: now, lockedUntil },
-    });
-    if (r.count === 1) return true;
-    try {
-      await this.prisma.jobLease.create({ data: { name, lastStartedAt: now, lockedUntil } });
-      return true;
-    } catch (err) {
-      // Le bail existe déjà (tenu par une autre instance ou cycle trop récent).
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return false;
-      throw err;
-    }
+    const at = now.toISOString();
+    const lockedUntil = new Date(now.getTime() + this.cfg.leaseMs).toISOString();
+    const dueBefore = new Date(now.getTime() - this.cfg.throttleMs).toISOString();
+    const rows = await this.prisma.$queryRaw<Array<{ name: string }>>`
+      INSERT INTO "JobLease" ("name", "lastStartedAt", "lockedUntil")
+      VALUES (${name}, CAST(${at} AS TIMESTAMP(3)), CAST(${lockedUntil} AS TIMESTAMP(3)))
+      ON CONFLICT ("name") DO UPDATE
+        SET "lastStartedAt" = EXCLUDED."lastStartedAt", "lockedUntil" = EXCLUDED."lockedUntil"
+        WHERE "JobLease"."lockedUntil" <= CAST(${at} AS TIMESTAMP(3))
+          AND "JobLease"."lastStartedAt" <= CAST(${dueBefore} AS TIMESTAMP(3))
+      RETURNING "name"`;
+    return rows.length === 1;
   }
 
   private async release(name: string, startedAt: Date): Promise<void> {
@@ -90,7 +102,9 @@ export class BackgroundWork {
 
   /**
    * Déclenchement paresseux par une requête : sans requête en base si le dernier essai de cette
-   * instance est trop récent ; sinon lance `runDueWork()` et l'attend au plus `budgetMs`.
+   * instance est trop récent ; sinon lance `runDueWork()` et l'attend au plus `budgetMs`. Au-delà, la
+   * requête répond sans attendre et le cycle continue en arrière-plan, maintenu en vie par `keepAlive`
+   * (`waitUntil` sur Vercel).
    */
   async kick(): Promise<void> {
     const now = this.clock.now().getTime();
@@ -100,12 +114,20 @@ export class BackgroundWork {
       this.onError(err);
       return null;
     });
-    if (this.cfg.budgetMs <= 0) return;
+    if (this.cfg.budgetMs <= 0) {
+      this.keepAlive(run);
+      return;
+    }
     let timer: NodeJS.Timeout | undefined;
+    let budgetExpired = false;
     const budget = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, this.cfg.budgetMs);
+      timer = setTimeout(() => {
+        budgetExpired = true;
+        resolve();
+      }, this.cfg.budgetMs);
     });
     await Promise.race([run, budget]);
     clearTimeout(timer);
+    if (budgetExpired) this.keepAlive(run);
   }
 }
