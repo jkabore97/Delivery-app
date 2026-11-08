@@ -185,8 +185,29 @@ export interface OrderDriverDto {
   vehicleType: VehicleType;
   plate: string | null;
   ratingAvg: number | null;
-  /** Dernière position connue (uniquement pendant ASSIGNED / PICKED_UP). */
-  lastLocation: { lat: number; lng: number; at: IsoDateString } | null;
+  /**
+   * Dernière position connue (uniquement pendant ASSIGNED / PICKED_UP). `heading` : cap en degrés (0 = nord,
+   * sens horaire), envoyé par le téléphone ou calculé depuis les deux dernières positions ; null si inconnu.
+   */
+  lastLocation: { lat: number; lng: number; at: IsoDateString; heading?: number | null } | null;
+}
+
+/**
+ * Itinéraire routier de l'étape en cours d'une course, calculé par l'API (service de calcul d'itinéraire,
+ * ex. OSRM) et mis en cache ; ligne droite de secours si le service ne répond pas.
+ */
+export interface RouteDto {
+  /** Étape en cours : vers le point de retrait (ASSIGNED) ou vers le client (PICKED_UP). */
+  target: 'PICKUP' | 'DROPOFF';
+  /** Tracé [lat, lng] depuis la position du livreur au moment du calcul jusqu'à la cible (≤ 300 points). */
+  points: Array<[number, number]>;
+  /** Longueur du tracé complet, en mètres. */
+  distanceM: number;
+  /** Durée estimée du tracé complet, en secondes (déjà ajustée au type de véhicule). */
+  durationS: number;
+  /** osrm = itinéraire routier réel ; straight = ligne droite (service indisponible). */
+  source: 'osrm' | 'straight';
+  computedAt: IsoDateString;
 }
 
 export interface OrderStoreDto {
@@ -254,6 +275,19 @@ export interface OrderDto {
    * la livraison), calculée depuis la dernière position du livreur. Client, vendeur et console.
    */
   etaMinutes?: number | null;
+  /**
+   * Itinéraire de l'étape en cours (ASSIGNED : vers le retrait ; PICKED_UP : vers le client). Visible par le
+   * client de la commande, le livreur affecté et la console, uniquement pendant ASSIGNED / PICKED_UP ; null sinon.
+   */
+  route?: RouteDto | null;
+  /** Livraison d'entreprise : qui paie les frais (SENDER = l'entreprise au retrait, RECIPIENT = le destinataire). */
+  feePaidBy?: 'SENDER' | 'RECIPIENT' | null;
+  /** Livraison d'entreprise : valeur de la marchandise à encaisser auprès du destinataire (reversée à l'entreprise). */
+  cashToCollect?: number | null;
+  /** Livraison d'entreprise : le destinataire est une entreprise. */
+  recipientIsBusiness?: boolean;
+  /** Lien public de suivi envoyé au destinataire (entreprise demandeuse et console uniquement ; null sinon). */
+  trackingUrl?: string | null;
   /** Historique des statuts : présent sur GET /orders/:id uniquement. */
   events?: OrderEventDto[];
 }
@@ -398,6 +432,8 @@ export interface MapDriverDto {
   lng: number;
   lastLocationAt: IsoDateString | null;
   activeOrderId: string | null;
+  /** Cap en degrés (0 = nord) ; null si inconnu. */
+  heading?: number | null;
 }
 
 export interface MapOrderDto {
@@ -410,6 +446,8 @@ export interface MapOrderDto {
   dropoff: { lat: number; lng: number; address: string };
   driverId: string | null;
   createdAt: IsoDateString;
+  /** Itinéraire en cache de l'étape en cours (ASSIGNED / PICKED_UP), sans nouveau calcul ; null sinon. */
+  route?: RouteDto | null;
 }
 
 export interface MapStoreDto {
@@ -593,4 +631,47 @@ export interface CronDailyResultDto {
   };
   dispatch: { ran: boolean; expired: number; offered: number; staleOffline: number };
   ranAt: IsoDateString;
+}
+
+/* ------------------------------------------------------------------ */
+/* Suivi public du destinataire (sans compte)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Page publique de suivi d'une livraison d'entreprise pour le destinataire, sans compte : GET /track/:token
+ * (jeton aléatoire non devinable contenu dans le lien envoyé au destinataire). Le lien expire 24 h après la
+ * livraison ou l'annulation (404 ensuite).
+ */
+export interface TrackingDto {
+  number: number;
+  status: OrderStatus;
+  vehicleType: VehicleType;
+  /** Entreprise expéditrice. */
+  sender: { name: string; phone: string | null };
+  recipientName: string | null;
+  packageDescription: string | null;
+  pickup: { lat: number; lng: number; address: string } | null;
+  dropoff: { lat: number; lng: number; address: string; landmark: string | null };
+  /** Montant à payer au livreur à la réception (marchandise + frais si le destinataire les paie) ; 0 = rien. */
+  amountToPay: number;
+  /** Livreur : uniquement pendant ASSIGNED / PICKED_UP ; null sinon. */
+  driver: {
+    firstName: string | null;
+    vehicleType: VehicleType;
+    plate: string | null;
+    phone: string | null;
+    ratingAvg: number | null;
+    lastLocation: { lat: number; lng: number; at: IsoDateString; heading?: number | null } | null;
+  } | null;
+  /** Itinéraire de l'étape en cours (ASSIGNED / PICKED_UP) ; null sinon. */
+  route: RouteDto | null;
+  etaMinutes: number | null;
+  /** Code à donner au livreur à la réception ; null après la livraison ou l'annulation. */
+  deliveryCode: string | null;
+  createdAt: IsoDateString;
+  assignedAt: IsoDateString | null;
+  pickedUpAt: IsoDateString | null;
+  deliveredAt: IsoDateString | null;
+  cancelledAt: IsoDateString | null;
+  updatedAt: IsoDateString;
 }

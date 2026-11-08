@@ -283,6 +283,45 @@ export const createOrderSchema = orderBase
   .superRefine(refineOrderShape);
 export type CreateOrderInput = z.input<typeof createOrderSchema>;
 
+/* ------------------------------------------------------------------ */
+/* Livraisons demandées par une entreprise (modèle B2B)                */
+/* ------------------------------------------------------------------ */
+
+/** Qui paie les frais de livraison (en espèces pour l'instant) : l'entreprise au retrait, ou le destinataire. */
+export const feePayerSchema = z.enum(['SENDER', 'RECIPIENT']);
+export type FeePayer = z.infer<typeof feePayerSchema>;
+
+/**
+ * Demande de livraison créée par une entreprise (compte SELLER, boutique validée) vers un destinataire,
+ * particulier ou entreprise (POST /business/deliveries). Le destinataire n'a pas de compte : il reçoit un lien
+ * de suivi. Le retrait se fait par défaut à l'adresse de l'entreprise.
+ */
+export const createDeliverySchema = z.object({
+  /** Point de retrait ; absent = adresse de l'entreprise. */
+  pickup: addressSchema.optional(),
+  /** Point de livraison (épingle sur la carte + repère). */
+  dropoff: addressSchema,
+  recipientName: z.string().trim().min(1).max(80),
+  recipientPhone: phoneSchema,
+  /** Le destinataire est une entreprise (affichage seulement). */
+  recipientIsBusiness: z.boolean().default(false),
+  /** Ce qui est livré (« 2 cartons », « documents »…). */
+  packageDescription: z.string().trim().min(1).max(200),
+  vehicleType: vehicleTypeSchema,
+  feePaidBy: feePayerSchema.default('SENDER'),
+  /** Valeur de la marchandise à encaisser auprès du destinataire puis à reverser à l'entreprise (FCFA, 0 = rien). */
+  cashToCollect: z.number().int().min(0).max(2_000_000).default(0),
+  notes: z.string().trim().max(300).optional(),
+});
+export type CreateDeliveryInput = z.input<typeof createDeliverySchema>;
+
+/** Devis d'une livraison d'entreprise (POST /business/deliveries/quote) : prix par type de véhicule. */
+export const deliveryQuoteSchema = z.object({
+  pickup: addressSchema.optional(),
+  dropoff: addressSchema,
+});
+export type DeliveryQuoteInput = z.input<typeof deliveryQuoteSchema>;
+
 export const cancelOrderSchema = z.object({ reason: z.string().trim().max(300).optional() });
 export const acceptOrderSchema = z.object({ prepTimeMinutes: z.number().int().min(1).max(180).optional() });
 export const rejectOrderSchema = z.object({ reason: z.string().trim().min(1).max(300) });
