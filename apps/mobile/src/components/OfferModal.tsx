@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import type { OfferDto } from '@yaar/shared';
+import { LABELS, type OfferDto } from '@yaar/shared';
 import { useCountdown } from '../hooks/useCountdown';
 import { errorMessage, isApiError } from '../lib/api';
 import { formatCountdown } from '../lib/countdown';
@@ -10,9 +10,13 @@ import { formatFcfa, formatFcfaShort, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
 import { colors, radius, spacing, MAX_APP_WIDTH } from '../theme';
-import { Banner, Button, Dot, KeyValue, Muted, ProgressBar, Row, Subtitle } from './ui';
+import { Banner, Button, Dot, Muted, ProgressBar, Row, Subtitle } from './ui';
+import { VEHICLE_EMOJI } from './VehicleOptions';
 
-/** Nouvelle course : compte à rebours de 30 s, Accepter / Refuser (maquette « Nouvelle course 🔔 »). */
+/**
+ * Nouvelle course : compte à rebours de 30 s, entreprise du retrait, zones (pas d'adresse du destinataire avant
+ * acceptation), véhicule, espèces à encaisser et gain ; Accepter / Refuser.
+ */
 export function OfferModal() {
   const { offers, profile, currentOrder } = useDriver();
   const offer = profile?.isOnline && !currentOrder ? (offers[0] ?? null) : null;
@@ -80,10 +84,17 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
         </View>
       </Row>
       <ProgressBar value={secs / total} color={secs <= 10 ? colors.red : colors.blue} />
+      <View style={styles.vehicle} testID="offer-vehicle">
+        <Text style={styles.vehicleText}>
+          {VEHICLE_EMOJI[offer.vehicleType]} {LABELS.vehicleType[offer.vehicleType]} · {formatKm(offer.distanceKm)} de course
+        </Text>
+      </View>
       <Row style={{ alignItems: 'flex-start' }}>
         <Dot color={colors.orange} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.addr}>Récupérer : {places.pickupTitle}</Text>
+          <Text style={styles.addr}>
+            {offer.pickup.name ? `Récupérer chez ${places.pickupTitle}` : `Récupérer : ${places.pickupTitle}`}
+          </Text>
           <Muted>
             {[
               offer.pickup.distanceFromDriverKm !== null ? `à ${formatKm(offer.pickup.distanceFromDriverKm)} de vous` : null,
@@ -99,15 +110,19 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
         <Dot color={colors.green} />
         <View style={{ flex: 1 }}>
           <Text style={styles.addr}>Livrer : {places.dropoffZone}</Text>
-          <Muted>
-            {formatKm(offer.distanceKm)} · Espèces à encaisser : {formatFcfaShort(offer.cashToCollect)}
-          </Muted>
+          <Muted>Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.</Muted>
         </View>
       </Row>
-      <Muted>Zone approximative : l’adresse exacte du client s’affiche une fois la course acceptée.</Muted>
-      <View style={styles.gain}>
-        <KeyValue label="Votre gain" value={formatFcfa(offer.driverEarning)} valueColor={colors.green} strong />
-      </View>
+      <Row gap={spacing.sm}>
+        <View style={[styles.money, { backgroundColor: colors.orangeLight }]} testID="offer-cash">
+          <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
+          <Text style={[styles.moneyValue, { color: '#9A4F00' }]}>{formatFcfaShort(offer.cashToCollect)}</Text>
+        </View>
+        <View style={[styles.money, { backgroundColor: colors.greenLight }]} testID="offer-earning">
+          <Text style={styles.moneyLabel}>Votre gain</Text>
+          <Text style={[styles.moneyValue, { color: colors.green }]}>{formatFcfa(offer.driverEarning)}</Text>
+        </View>
+      </Row>
       {error ? <Banner message={error} /> : null}
       <Row>
         <Button
@@ -149,5 +164,9 @@ const styles = StyleSheet.create({
   timer: { backgroundColor: colors.blueLight, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 4 },
   timerText: { color: colors.blue, fontWeight: '800', fontSize: 16 },
   addr: { fontSize: 15, fontWeight: '700', color: colors.text },
-  gain: { backgroundColor: colors.greenLight, borderRadius: radius.md, padding: spacing.md },
+  vehicle: { alignSelf: 'flex-start', backgroundColor: colors.blueLight, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
+  vehicleText: { color: colors.blue, fontWeight: '800', fontSize: 13 },
+  money: { flex: 1, borderRadius: radius.md, padding: spacing.md, gap: 2 },
+  moneyLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
+  moneyValue: { fontSize: 18, fontWeight: '900' },
 });

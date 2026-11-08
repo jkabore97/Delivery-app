@@ -44,7 +44,7 @@ const config: ExpoConfig = {
     lang: 'fr',
     themeColor: '#0B7A4B',
     backgroundColor: '#FFFFFF',
-    description: 'Yaar Livraison : commandez repas et colis à Ouagadougou, paiement à la livraison.',
+    description: 'Yaar Livraison : livraisons à la demande pour les entreprises de Ouagadougou, suivies en direct par vos clients.',
   },
   plugins: [
     'expo-router',
@@ -53,7 +53,7 @@ const config: ExpoConfig = {
       'expo-location',
       {
         locationWhenInUsePermission:
-          'Yaar Livraison utilise votre position pour placer l’adresse de livraison et, pour les livreurs, uniquement pendant qu’ils sont en ligne.',
+          'Yaar Livraison utilise votre position pour placer l’adresse de votre entreprise et, pour les livreurs, uniquement pendant qu’ils sont en ligne.',
         isAndroidBackgroundLocationEnabled: false,
         isIosBackgroundLocationEnabled: false,
       },

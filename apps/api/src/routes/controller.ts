@@ -43,7 +43,10 @@ import { sendFile } from '../lib/files';
 import { iso, isoOrNull, startOfDayUtc } from '../lib/time';
 import { pageArgs, paginated, parse } from '../lib/validation';
 import { AuditAction, writeAudit } from '../services/audit';
+import type { BusinessBalanceDto } from '../services/deliveries';
+import { headingForDto } from '../services/heading';
 import { ratingStats } from '../services/ratings';
+import { currentRoute, toRouteDto } from '../services/routes';
 import {
   incidentInclude,
   kycState,
@@ -161,6 +164,7 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
         lng: d.lastLng!,
         lastLocationAt: isoOrNull(d.lastLocationAt),
         activeOrderId: activeByDriver.get(d.userId) ?? null,
+        heading: headingForDto(d.lastHeading),
       })),
       orders: orders.map((o) => ({
         id: o.id,
@@ -172,6 +176,11 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
         dropoff: { lat: o.dropoffLat, lng: o.dropoffLng, address: o.dropoffAddress },
         driverId: o.driverId,
         createdAt: iso(o.createdAt),
+        // Itinéraire en cache uniquement (aucun appel au service d'itinéraire depuis la carte).
+        route: (() => {
+          const r = currentRoute(o);
+          return r ? toRouteDto(r) : null;
+        })(),
       })),
       stores: stores.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng, isOpen: s.isOpen })),
       openSos: sos.map(toIncidentDto),
@@ -355,6 +364,7 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
           lastLat: null,
           lastLng: null,
           lastLocationAt: null,
+          lastHeading: null,
         },
       });
       await writeAudit(tx, {
@@ -416,7 +426,7 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
       if (suspend && target.role === 'DRIVER')
         await tx.driverProfile.updateMany({
           where: { userId: id },
-          data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null },
+          data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null, lastHeading: null },
         });
       await writeAudit(tx, {
         actorId: actor.id,
@@ -610,6 +620,12 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
     };
   });
 
+  /**
+   * Livraisons d'entreprise : marchandise encaissée par les livreurs pour le compte de chaque entreprise (montant
+   * dû, `owedToBusiness` des livraisons livrées). Pas encore de reversement enregistré (cf. docs/API.md).
+   */
+  app.get('/controller/cash/businesses', opts, async (): Promise<BusinessBalanceDto[]> => ctx.deliveries.balances());
+
   app.get('/controller/cash/ledger', opts, async (req): Promise<Paginated<CashLedgerEntryDto>> => {
     const q = parse(cashLedgerQuerySchema, req.query);
     const where: Prisma.CashLedgerEntryWhereInput = q.driverId ? { driverId: q.driverId } : {};
@@ -736,11 +752,11 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
     });
     await auditExport(getAuth(req).id, 'orders', q, rows.length, req.ip);
     const csv = toCsv(
-      ['numero', 'date', 'type', 'statut', 'vehicule', 'boutique', 'livreur', 'distance_km', 'articles', 'livraison', 'total', 'commission', 'gain_livreur', 'reversement_vendeur', 'paiement', 'especes_encaissees', 'livree_le', 'annulee_le'],
+      ['numero', 'date', 'type', 'statut', 'vehicule', 'boutique', 'livreur', 'distance_km', 'articles', 'livraison', 'total', 'commission', 'gain_livreur', 'reversement_vendeur', 'paiement', 'especes_encaissees', 'livree_le', 'annulee_le', 'frais_payes_par', 'marchandise_a_encaisser', 'du_entreprise'],
       rows.map((o) => [
         o.number, iso(o.createdAt), o.type, o.status, o.vehicleType, o.store?.name ?? '', o.driver?.name ?? '', o.distanceKm,
         o.itemsTotal, o.deliveryFee, o.total, o.commission, o.driverEarning, o.sellerPayout, o.paymentMethod,
-        o.cashCollected, isoOrNull(o.deliveredAt), isoOrNull(o.cancelledAt),
+        o.cashCollected, isoOrNull(o.deliveredAt), isoOrNull(o.cancelledAt), o.feePaidBy ?? '', o.cashToCollect, o.owedToBusiness,
       ]),
     );
     return reply

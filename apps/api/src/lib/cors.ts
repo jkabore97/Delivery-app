@@ -72,3 +72,23 @@ export function isOriginAllowed(origin: string | undefined, origins: CorsOrigins
   if (origins === '*') return true;
   return origins.some((e) => (isCorsPattern(e) ? corsPatternToRegExp(e).test(origin) : e === origin));
 }
+
+/**
+ * Ajoute une origine exacte à la liste (`*` reste `*`) : l'origine de PUBLIC_APP_URL, page de suivi publique des
+ * destinataires, est toujours autorisée.
+ */
+export function withOrigin(origins: CorsOrigins, origin: string | null): CorsOrigins {
+  if (origins === '*' || !origin) return origins;
+  return origins.includes(origin) ? origins : [...origins, origin];
+}
+
+/** Origine (`https://hôte[:port]`) d'une URL publique ; null si l'URL est invalide. */
+export function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.origin : null;
+  } catch {
+    return null;
+  }
+}

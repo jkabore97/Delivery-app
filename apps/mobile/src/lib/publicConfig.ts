@@ -58,23 +58,27 @@ export const POLL_MS = {
   driverOffers: 0,
   driverProfile: 30_000,
   driverCurrentOrder: 10_000,
-  /** Client, commande SEARCHING_DRIVER / ASSIGNED / PICKED_UP (= pollIntervalMs). */
-  clientOrderLive: 0,
-  clientOrderWaiting: 10_000,
-  clientOrders: 30_000,
-  sellerOrders: 7_000,
+  /** Entreprise : suivi d'une livraison SEARCHING_DRIVER / ASSIGNED / PICKED_UP (= pollIntervalMs). */
+  businessDeliveryLive: 0,
+  businessDeliveryWaiting: 10_000,
+  /** Entreprise : liste et carte des livraisons en cours (positions des livreurs comprises). */
+  businessDeliveries: 7_000,
 } as const;
 
 /**
- * Code OTP accepté quand l'API tourne avec DEMO_MODE=true, pour les comptes client, vendeur et livreur
+ * Code OTP accepté quand l'API tourne avec DEMO_MODE=true, pour les comptes entreprise et livreur
  * (et toute nouvelle inscription). Les comptes de console utilisent un code d'accès démo distinct.
  */
 export { DEMO_OTP_CODE };
 
-/** Comptes créés par apps/api/prisma/seed.ts (docs/API.md §12). */
-export const DEMO_ACCOUNTS: ReadonlyArray<{ phone: string; label: string; role: string }> = [
-  { phone: '72000001', label: 'Aminata K.', role: 'Client' },
-  { phone: '71000001', label: 'Le Verdoyant', role: 'Vendeur' },
-  { phone: '73000002', label: 'Karim D. (moto)', role: 'Livreur' },
-  { phone: '73000003', label: 'Fatimata Z. (vélo)', role: 'Livreur' },
+/**
+ * Comptes de démonstration (apps/api/prisma/seed.ts, docs/API.md §12) : entreprises (rôle SELLER) et
+ * livreurs ; `signupRole` présélectionne le profil sur l'écran de connexion.
+ */
+export const DEMO_ACCOUNTS: ReadonlyArray<{ phone: string; label: string; role: string; signupRole: 'SELLER' | 'DRIVER' }> = [
+  { phone: '71000001', label: 'Le Verdoyant (restaurant)', role: 'Entreprise', signupRole: 'SELLER' },
+  { phone: '71000002', label: 'Pharmacie du Progrès', role: 'Entreprise', signupRole: 'SELLER' },
+  { phone: '71000003', label: 'Faso Mode Boutique', role: 'Entreprise', signupRole: 'SELLER' },
+  { phone: '73000002', label: 'Karim D. (moto)', role: 'Livreur', signupRole: 'DRIVER' },
+  { phone: '73000003', label: 'Fatimata Z. (vélo)', role: 'Livreur', signupRole: 'DRIVER' },
 ];

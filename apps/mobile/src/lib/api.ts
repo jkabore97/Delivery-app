@@ -2,8 +2,9 @@ import type {
   ApiErrorBody,
   AuthResponse,
   AvailabilityInput,
-  CreateOrderInput,
+  CreateDeliveryInput,
   DeliverOrderInput,
+  DeliveryQuoteInput,
   DocumentType,
   DocumentUploadInput,
   DriverEarningsDto,
@@ -17,20 +18,14 @@ import type {
   OrderType,
   OtpRequestResponse,
   Paginated,
-  ProductCreateInput,
-  ProductDto,
-  ProductUpdateInput,
-  QuoteInput,
   QuoteResponse,
   RatingDto,
   RatingInput,
-  SavedAddressDto,
-  SellerStatsDto,
   SosInput,
   StoreCreateInput,
-  StoreDetailDto,
   StoreDto,
   StoreUpdateInput,
+  TrackingDto,
   UserDto,
   VerifyOtpInput,
 } from '@yaar/shared';
@@ -67,7 +62,8 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   DRIVER_NOT_APPROVED: 'Votre dossier doit être validé par Yaar avant de passer en ligne.',
   UNSUPPORTED_FILE: 'Fichier non reconnu : envoyez une photo JPEG, PNG ou WebP (ou un PDF pour les documents).',
   PAYLOAD_TOO_LARGE: 'Fichier trop lourd (3 Mo maximum) : reprenez la photo en plus petit.',
-  STORE_NOT_APPROVED: 'Cette boutique n’est pas encore validée par Yaar.',
+  STORE_NOT_APPROVED:
+    'Votre entreprise n’est pas encore validée par Yaar : vous pourrez demander des livraisons dès sa validation.',
   ORDER_NOT_ACTIVE: 'La course est terminée : la discussion est fermée.',
   DELIVERY_CODE_LOCKED: 'Trop de codes incorrects : appelez le support Yaar pour débloquer la livraison.',
   OFFER_EXPIRED: 'Cette course n’est plus disponible.',
@@ -119,11 +115,10 @@ export interface OrderListParams {
   pageSize?: number;
 }
 
-export interface StoreListParams {
-  lat?: number;
-  lng?: number;
-  q?: string;
-  openOnly?: boolean;
+export interface DeliveryListParams {
+  status?: OrderStatus[];
+  /** Mode poll : seulement les livraisons modifiées depuis cette date (le filtre `status` est alors ignoré). */
+  updatedSince?: string;
   page?: number;
   pageSize?: number;
 }
@@ -184,39 +179,18 @@ export function createApiClient(opts: ApiClientOptions) {
     verifyOtp: (input: VerifyOtpInput) => request<AuthResponse>('POST', '/auth/otp/verify', input, false),
     me: () => request<UserDto>('GET', '/me'),
     updateMe: (name: string) => request<UserDto>('PATCH', '/me', { name }),
-    listAddresses: () => request<SavedAddressDto[]>('GET', '/me/addresses'),
-    createAddress: (input: { label: string; lat: number; lng: number; address: string; landmark?: string }) =>
-      request<SavedAddressDto>('POST', '/me/addresses', input),
-    deleteAddress: (id: string) => request<void>('DELETE', `/me/addresses/${encodeURIComponent(id)}`),
 
-    // Boutiques
-    listStores: (p: StoreListParams = {}) =>
-      request<Paginated<StoreDto>>('GET', `/stores${buildQuery({ ...p })}`),
-    getStore: (id: string) => request<StoreDetailDto>('GET', `/stores/${encodeURIComponent(id)}`),
-
-    // Vendeur
+    // Entreprise : profil (boutique validée = profil d'entreprise) et demandes de livraison
     sellerStores: () => request<StoreDto[]>('GET', '/seller/stores'),
     createStore: (input: StoreCreateInput) => request<StoreDto>('POST', '/seller/stores', input),
     updateStore: (id: string, input: StoreUpdateInput) =>
       request<StoreDto>('PATCH', `/seller/stores/${encodeURIComponent(id)}`, input),
-    sellerProducts: (storeId: string) =>
-      request<ProductDto[]>('GET', `/seller/stores/${encodeURIComponent(storeId)}/products`),
-    createProduct: (storeId: string, input: ProductCreateInput) =>
-      request<ProductDto>('POST', `/seller/stores/${encodeURIComponent(storeId)}/products`, input),
-    updateProduct: (id: string, input: ProductUpdateInput) =>
-      request<ProductDto>('PATCH', `/seller/products/${encodeURIComponent(id)}`, input),
-    deleteProduct: (id: string) => request<void>('DELETE', `/seller/products/${encodeURIComponent(id)}`),
-    sellerStats: (storeId: string) =>
-      request<SellerStatsDto>('GET', `/seller/stores/${encodeURIComponent(storeId)}/stats`),
-    acceptOrder: (id: string, prepTimeMinutes?: number) =>
-      request<OrderDto>('POST', `/orders/${encodeURIComponent(id)}/accept`, prepTimeMinutes ? { prepTimeMinutes } : {}),
-    rejectOrder: (id: string, reason: string) =>
-      request<OrderDto>('POST', `/orders/${encodeURIComponent(id)}/reject`, { reason }),
-    markReady: (id: string) => request<OrderDto>('POST', `/orders/${encodeURIComponent(id)}/ready`, {}),
+    quoteDelivery: (input: DeliveryQuoteInput) => request<QuoteResponse>('POST', '/business/deliveries/quote', input),
+    createDelivery: (input: CreateDeliveryInput) => request<OrderDto>('POST', '/business/deliveries', input),
+    listDeliveries: (p: DeliveryListParams = {}) =>
+      request<Paginated<OrderDto>>('GET', `/business/deliveries${buildQuery({ ...p, status: p.status })}`),
 
-    // Commandes
-    quote: (input: QuoteInput) => request<QuoteResponse>('POST', '/orders/quote', input),
-    createOrder: (input: CreateOrderInput) => request<OrderDto>('POST', '/orders', input),
+    // Courses
     listOrders: (p: OrderListParams = {}) =>
       request<Paginated<OrderDto>>('GET', `/orders${buildQuery({ ...p, status: p.status })}`),
     getOrder: (id: string) => request<OrderDto>('GET', `/orders/${encodeURIComponent(id)}`),
@@ -229,6 +203,9 @@ export function createApiClient(opts: ApiClientOptions) {
       request<RatingDto>('POST', `/orders/${encodeURIComponent(id)}/rating`, input),
     disputeOrder: (id: string, description: string) =>
       request<IncidentDto>('POST', `/orders/${encodeURIComponent(id)}/dispute`, { description }),
+
+    // Suivi public du destinataire (sans compte : jamais de jeton envoyé)
+    trackDelivery: (token: string) => request<TrackingDto>('GET', `/track/${encodeURIComponent(token)}`, undefined, false),
 
     // Livreur
     driverProfile: () => request<DriverProfileDto>('GET', '/driver/profile'),

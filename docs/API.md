@@ -16,6 +16,15 @@ Clients should import those types and, ideally, validate forms with the same sch
   the API always returns E.164 `+22670123456`.
 - UI language is French. API error `message`s are French sentences that can be shown to users as-is.
 
+**Product model (owner decision, 8 Nov 2026): business deliveries (B2B, like Uber Direct / DoorDash Drive).**
+The platform is for **businesses** (role `SELLER`, "entreprise") that request a delivery to a **recipient** (a person
+or another business). The recipient has **no account**: they receive a message with a public tracking link and the
+delivery code, pay the driver in cash if needed, and follow the driver on a live map. See
+[Livraisons d'entreprise](#livraisons-dentreprise) and [Suivi public du destinataire](#suivi-public-du-destinataire).
+The former **client ordering flow** (role `CLIENT`, store browsing, products, cart, FOOD orders, `POST /orders/quote`,
+`POST /orders`, seller accept / ready / reject, saved addresses, client ↔ driver chat) is **deprecated**: it still works
+and stays documented below for existing builds, but new screens must not use it; it will be removed in a later version.
+
 ## Contents
 
 1. [Conventions](#1-conventions): auth, errors, pagination, files, empty bodies
@@ -24,10 +33,13 @@ Clients should import those types and, ideally, validate forms with the same sch
 4. [Stores and catalogue](#4-stores-and-catalogue)
 5. [Seller space](#5-seller-space)
 6. [Orders](#6-orders)
+   - [Livraisons d'entreprise](#livraisons-dentreprise): a business requests a delivery to a recipient without an account
+   - [Suivi public du destinataire](#suivi-public-du-destinataire): public tracking page `GET /track/:token`
 7. [Driver space](#7-driver-space)
 8. [Controller console](#8-controller-console)
 9. [Realtime (Socket.IO)](#9-realtime-socketio)
    - [Mode polling (Vercel)](#mode-polling-vercel): no socket, what to poll and how often
+   - [Itinéraires (carte de suivi)](#itinéraires-carte-de-suivi): road routes, driver heading, arrival time
 10. [Visibility and privacy rules](#10-visibility-and-privacy-rules)
 11. [Business rules reference](#11-business-rules-reference)
 12. [Demo accounts (seed)](#12-demo-accounts-seed)
@@ -109,6 +121,7 @@ Every non-2xx response has this body (`ApiErrorBody`):
 | 403 | `DRIVER_NOT_APPROVED` | Driver tries to go online before KYC approval (or while suspended) |
 | 403 | `DRIVER_OFFLINE` | Location ping sent while offline (privacy rule) |
 | 403 | `CONSENT_REQUIRED` | Driver tries to go online without having consented to GPS tracking (§7.2) |
+| 403 | `STORE_NOT_APPROVED` | Business delivery or quote requested by a `SELLER` without a business profile (store) validated by the console |
 | 404 | `NOT_FOUND` | Unknown route or resource, or resource not visible to the caller |
 | 409 | `CONFLICT` | Generic state conflict (duplicate, concurrent update, deposit above balance...) |
 | 409 | `INVALID_TRANSITION` | Order status change not allowed by the state machine |
@@ -126,7 +139,7 @@ Every non-2xx response has this body (`ApiErrorBody`):
 | 415 | `UNSUPPORTED_FILE` | File content (magic bytes) does not match the declared `mimeType` |
 | 423 | `DELIVERY_CODE_LOCKED` | 5 wrong delivery codes: the back office must handle it |
 | 429 | `OTP_RATE_LIMITED` | More than 5 OTP requests for one phone in one hour |
-| 429 | `RATE_LIMITED` | Too many `/auth/*` requests from one IP (default 20 code requests / 60 verifications per 10 min) |
+| 429 | `RATE_LIMITED` | Too many `/auth/*` requests from one IP (default 20 code requests / 60 verifications per 10 min), or too many `GET /track/:token` (default 120 per minute) |
 | 500 | `INTERNAL_ERROR` | Unexpected server error |
 
 ### 1.4 Pagination
@@ -310,6 +323,9 @@ chat message arrives (§6.7). The push `data` always carries `orderId` (and `off
 
 ## 4. Stores and catalogue
 
+> **Deprecated (client ordering flow).** Store browsing, products and photos are only used by the former client
+> ordering flow. In the B2B model a store is the **business profile** of a `SELLER` (§5).
+
 ### `GET /stores` (any role, *paginated*)
 
 Only stores validated by the console (`approvalStatus: "APPROVED"`) are listed. Query: `lat`, `lng` (optional, the client's map position: adds `distanceKm` and sorts open stores first then by distance),
@@ -368,6 +384,11 @@ role, `Authorization` header required, see §1.6) returns the image.
 ---
 
 ## 5. Seller space (`SELLER`)
+
+In the B2B model a `SELLER` account is a **business** ("entreprise"). Its store, validated by the console (§8.5), is
+the business profile: name and phone shown to recipients, default pickup address of its deliveries
+([Livraisons d'entreprise](#livraisons-dentreprise)). Products, stats and the accept / reject / ready actions below
+belong to the **deprecated** client ordering flow.
 
 A seller can own several stores. All routes check ownership (`404` otherwise).
 
@@ -454,6 +475,8 @@ Who triggers what:
 
 ### 6.2 `POST /orders/quote` (`CLIENT`)
 
+> **Deprecated** (client ordering flow): businesses use `POST /business/deliveries/quote`.
+
 Price shown before ordering. Body `QuoteInput`:
 
 ```json
@@ -487,6 +510,8 @@ ignored (the store address is used). `landmark` (repère) is optional (max 200 c
 `404 NOT_FOUND` (store/product), `409 STORE_CLOSED`, `409 PRODUCT_UNAVAILABLE`, `409 PRICING_UNAVAILABLE`.
 
 ### 6.3 `POST /orders` (`CLIENT`)
+
+> **Deprecated** (client ordering flow): businesses use `POST /business/deliveries`.
 
 Body `CreateOrderInput` = `QuoteInput` plus:
 
@@ -535,7 +560,7 @@ Example: `GET /orders/:id` by the client while the driver is on the way:
     "vehicleType": "MOTO",
     "plate": "11 JJ 4521",
     "ratingAvg": 4.9,
-    "lastLocation": { "lat": 12.3602, "lng": -1.5248, "at": "2026-11-06T19:22:16.018Z" }
+    "lastLocation": { "lat": 12.3602, "lng": -1.5248, "at": "2026-11-06T19:22:16.018Z", "heading": 145 }
   },
   "pickup":  { "lat": 12.364,  "lng": -1.556,  "address": "Gounghin, rue de la mairie", "landmark": "Derrière la pharmacie de Gounghin" },
   "dropoff": { "lat": 12.3226, "lng": -1.4977, "address": "Ouaga 2000, avenue Mouammar Kadhafi", "landmark": "Villa 12, portail noir" },
@@ -566,6 +591,15 @@ Example: `GET /orders/:id` by the client while the driver is on the way:
   "myRating": null,
   "canRate": false,
   "etaMinutes": 9,
+  "route": {
+    "target": "DROPOFF",
+    "points": [[12.3602, -1.5248], [12.35271, -1.51893], [12.33102, -1.50411], [12.3226, -1.4977]],
+    "distanceM": 5120, "durationS": 744, "source": "osrm", "computedAt": "2026-11-06T19:21:58.402Z"
+  },
+  "feePaidBy": null,
+  "cashToCollect": null,
+  "recipientIsBusiness": false,
+  "trackingUrl": null,
   "events": [
     { "id": "cmw...", "fromStatus": null, "toStatus": "PENDING", "actorRole": "CLIENT", "note": null, "createdAt": "2026-11-06T18:53:16.018Z" },
     { "id": "cmw...", "fromStatus": "PENDING", "toStatus": "ACCEPTED", "actorRole": "SELLER", "note": "Préparation : 15 min", "createdAt": "2026-11-06T18:57:16.018Z" }
@@ -581,9 +615,21 @@ Field notes:
 - `cashCollected`: set when a cash order is delivered.
 - `events` is only present on `GET /orders/:id` (not in lists).
 - `myRating`/`canRate`: the caller's rating and whether `POST /orders/:id/rating` is allowed.
-- `etaMinutes`: estimated minutes until delivery from the driver's last position (`ASSIGNED`: via the pickup;
-  `PICKED_UP`: straight to the dropoff; road distance ÷ average speed of the vehicle). `null` outside
-  `ASSIGNED`/`PICKED_UP` or without a driver position. Client, seller, assigned driver and back office.
+- `etaMinutes`: estimated minutes until delivery. From the cached road route when there is one (formula in
+  [Itinéraires](#itinéraires-carte-de-suivi)); otherwise from the driver's last position (`ASSIGNED`: via the pickup;
+  `PICKED_UP`: straight to the dropoff; haversine × 1.3 ÷ average speed of the vehicle). `null` outside
+  `ASSIGNED`/`PICKED_UP` or without a driver position. Client, requesting business, seller, assigned driver and back office.
+- `driver.lastLocation.heading`: heading of the driver in degrees (0 = north, clockwise, integer), sent by the phone or
+  computed from the last two positions (§7.2); `null` if unknown. Use it to rotate the vehicle marker.
+- `route` (`RouteDto`): road route of the current leg, see [Itinéraires](#itinéraires-carte-de-suivi). Client, requesting
+  business, assigned driver and back office, only while `ASSIGNED`/`PICKED_UP`; `null` otherwise, for the seller, and
+  **always `null` in lists** (`GET /orders`, `GET /business/deliveries`: payload size). Filled by `GET /orders/:id`,
+  `GET /driver/current-order` and the action responses (accept, assign, pickup).
+- `feePaidBy` (`SENDER` | `RECIPIENT`), `cashToCollect` (FCFA), `recipientIsBusiness`: business deliveries
+  ([Livraisons d'entreprise](#livraisons-dentreprise)); `null`, `null`, `false` for former client orders. Visible to
+  everyone who can see the order (the driver needs them to know what to collect, and when).
+- `trackingUrl`: public tracking link sent to the recipient (`PUBLIC_APP_URL/suivi/<token>`); requesting business and
+  back office only, `null` otherwise. Anyone holding the link sees the tracking page, delivery code included.
 - `updatedAt`: last change of the order row (status, assignment, payment…). It does **not** move when only the
   driver's position changes: poll `GET /orders/:id` for live tracking.
 - Fields hidden by the privacy rules (§10) are `null`, never absent.
@@ -606,16 +652,17 @@ harmless. `total` is the number of changed orders: poll with `pageSize=100`, and
 (rare: more changes than one page) reload your list once without `updatedSince`, then resume from its largest
 `updatedAt`.
 
-`GET /orders/:id` (any role with access) → `OrderDto` with `events`.
+`GET /orders/:id` (any role with access) → `OrderDto` with `events`. Lists never carry `route` (always `null`);
+`GET /orders/:id` does.
 
 ### 6.6 Other order endpoints
 
 | Method & path | Role | Body | Response |
 |---|---|---|---|
-| `POST /orders/:id/cancel` | CLIENT (owner) or back office | `{ "reason": "Erreur d’adresse" }` (optional) | `200 OrderDto` |
+| `POST /orders/:id/cancel` | CLIENT (owner), requesting business (`SELLER`, its business deliveries, before pickup: `SEARCHING_DRIVER`, `ASSIGNED`; the driver on the way is freed) or back office | `{ "reason": "Erreur d’adresse" }` (optional) | `200 OrderDto`; `409 INVALID_TRANSITION` for the business after pickup (contact the console) |
 | `POST /orders/:id/pickup` | assigned DRIVER | | `200 OrderDto` (ASSIGNED → PICKED_UP) |
 | `POST /orders/:id/deliver` | assigned DRIVER | `DeliverOrderInput` | `200 OrderDto` (PICKED_UP → DELIVERED). Wrong code → `400 DELIVERY_CODE_INVALID`; after 5 attempts (counted atomically, parallel requests included) → `423 DELIVERY_CODE_LOCKED`; the console can then reset the counter or validate the delivery (§8.2). |
-| `GET /orders/:id/proof-photo` | client owner, assigned driver, back office (audited) | | `200` binary image, `404` if none |
+| `GET /orders/:id/proof-photo` | client owner, requesting business, assigned driver, back office (audited) | | `200` binary image, `404` if none |
 | `POST /orders/:id/rating` | CLIENT owner (rates the driver) or assigned DRIVER (rates the client) | `{ "score": 5, "comment": "Rapide" }` | `201 RatingDto` |
 | `POST /orders/:id/dispute` | anyone who can see the order | `{ "description": "Colis endommagé" }` (3..1000 chars) | `201 IncidentDto` (type `DISPUTE`) |
 | `GET /orders/:id/messages` | client owner, assigned driver (while `ASSIGNED`/`PICKED_UP`), back office | | `200 OrderMessageDto[]` (oldest first, 200 max) |
@@ -641,6 +688,153 @@ after 5 wrong codes → `423 DELIVERY_CODE_LOCKED`. Delivering a `CASH` order ad
 
 Rating: only when `status = DELIVERED`, once per user per order (`409 ALREADY_RATED`). `RatingDto`:
 `{ id, orderId, fromUserId, toUserId, score (1-5), comment, createdAt }`.
+
+---
+
+## Livraisons d'entreprise
+
+Business deliveries (B2B model): a business (`SELLER` account whose store, validated by the console, is its business
+profile) sends a parcel to a **recipient**, a person or another business, who has **no account**. Types and schemas in
+`@yaar/shared`: `createDeliverySchema` (`CreateDeliveryInput`), `deliveryQuoteSchema` (`DeliveryQuoteInput`), `OrderDto`
+(`feePaidBy`, `cashToCollect`, `recipientIsBusiness`, `trackingUrl`), `TrackingDto`.
+
+| Method & path | Role | Body / query | Response |
+|---|---|---|---|
+| `POST /business/deliveries/quote` | SELLER | `DeliveryQuoteInput` `{ "pickup"?: AddressInput, "dropoff": AddressInput }` | `200 QuoteResponse` (`type: "PARCEL"`, `itemsTotal: 0`, one option per vehicle as in §6.2) |
+| `POST /business/deliveries` | SELLER | `CreateDeliveryInput` | `201 OrderDto` (status `SEARCHING_DRIVER`) ⚙ |
+| `GET /business/deliveries` | SELLER | `status`, `updatedSince`, `page`, `pageSize` (same semantics as `GET /orders`, §6.5) | `200 Paginated<OrderDto>`: the deliveries requested by this business only (not the former food orders of its store) ⚙ |
+| `GET /orders/:id` | SELLER (requesting business) | | `200 OrderDto` with `events` |
+| `POST /orders/:id/cancel` | SELLER (requesting business) | `{ "reason"?: string }` | `200 OrderDto` in `SEARCHING_DRIVER` or `ASSIGNED` (the driver on the way is freed); `409 INVALID_TRANSITION` after pickup |
+| `GET /orders/:id/proof-photo` | SELLER (requesting business) | | binary proof-of-delivery photo |
+
+`/business/deliveries*` need a business profile validated by the console: without any store, or before approval
+(`PENDING` / `SUSPENDED`), `403 STORE_NOT_APPROVED` ("Votre entreprise doit être validée par Yaar avant de demander une
+livraison"). With several stores, the oldest approved one is the business profile.
+
+`CreateDeliveryInput`:
+```json
+{
+  "pickup": { "lat": 12.364, "lng": -1.556, "address": "Entrepôt de Gounghin", "landmark": "Portail rouge" },
+  "dropoff": { "lat": 12.3395, "lng": -1.517, "address": "Patte d'Oie, secteur 15", "landmark": "Derrière la station Total, portail bleu" },
+  "recipientName": "Ali Ouédraogo",
+  "recipientPhone": "76 00 00 00",
+  "recipientIsBusiness": false,
+  "packageDescription": "2 boîtes de médicaments",
+  "vehicleType": "MOTO",
+  "feePaidBy": "SENDER",
+  "cashToCollect": 12000,
+  "notes": "Appeler en arrivant"
+}
+```
+- `pickup` optional: absent = the business (store) address. `dropoff`: map pin + landmark.
+- `recipientName` (1..80), `recipientPhone` (Burkina Faso number, returned E.164) and `packageDescription` (1..200) are
+  required; `recipientIsBusiness` (default `false`) is for display only.
+- `feePaidBy` (default `SENDER`): who pays the delivery fee, in cash. `SENDER` = the business pays the driver at pickup;
+  `RECIPIENT` = the recipient pays it at delivery.
+- `cashToCollect` (integer FCFA, 0..2 000 000, default 0): value of the goods collected from the recipient at delivery
+  and owed to the business (cash on delivery); 0 = nothing to collect.
+
+At creation:
+1. The order is a `PARCEL` linked to the business store (`store`), the business account being the requester (`client`).
+   Price: same rules as §6.2 (`max(minimum, base + perKm × distance)`, distance = haversine × 1.3 from the pickup).
+   Amounts: `deliveryFee`; `itemsTotal` = `sellerPayout` = `cashToCollect` (no commission on the goods: the platform
+   takes its commission on the delivery fee); `total` = `deliveryFee + cashToCollect` = all the cash of the job;
+   `paymentMethod: "CASH"` (mobile money later).
+2. Events `null → PENDING` and `PENDING → SEARCHING_DRIVER` are recorded (no accept / prepare step) and dispatch starts at
+   once (nearest driver with the vehicle type, §7.3). The offer shows the business name and address (a professional
+   place) and only an approximate zone for the recipient.
+3. A 4-digit delivery code and a tracking token (18 random bytes = 144 bits, base64url, unique index) are generated;
+   `trackingUrl` = `${PUBLIC_APP_URL}/suivi/<token>` (default `https://yaar-livraison.vercel.app`). The business **never**
+   gets the delivery code in its `OrderDto` (the code is on the recipient's tracking page).
+4. The recipient gets a message (`RecipientNotifier`; `RECIPIENT_NOTIFIER=console`: written in the API log; `whatsapp`:
+   placeholder, not implemented, the send fails and is logged) in French with the business name, the tracking link, the
+   delivery code and the amount to pay at delivery; a second short message when the driver picks the parcel up. Sending
+   runs in the background (`waitUntil` on Vercel): a failing or slow channel never blocks or fails the request.
+   `DEMO_MODE=true` requires `RECIPIENT_NOTIFIER=console` (no real message from the public demo).
+
+The requesting business then sees, like the client did: the driver (name, phone, vehicle, plate), his live position and
+heading, the road `route` and `etaMinutes` during `ASSIGNED`/`PICKED_UP`; its own addresses and recipient (also after
+delivery); `sellerPayout` (= `cashToCollect`) and `trackingUrl`. Never `deliveryCode`, `commission` or `driverEarning`.
+Another business gets `404`. Push notifications to the business: "Livreur en route" (assigned), "Colis récupéré"
+(picked up), "Livrée", "Livraison annulée".
+
+**Cash (cash only for now)**, recorded in the driver's cash ledger (`cashHeld`, `COLLECTION` entries, §7.4, §8.7):
+
+| `feePaidBy` | At pickup (`POST /orders/:id/pickup`) | At delivery (`POST /orders/:id/deliver`, or console `force-deliver`) |
+|---|---|---|
+| `SENDER` | `deliveryFee` from the business | `cashToCollect` from the recipient (no entry when 0) |
+| `RECIPIENT` | nothing | `cashToCollect + deliveryFee` from the recipient |
+
+At delivery the order gets `cashCollected` = `deliveryFee + cashToCollect` (all the cash of the job) and `owedToBusiness`
+= `cashToCollect`: what the platform owes the business once the driver has deposited the cash. The tracking page shows
+the recipient `amountToPay` = `cashToCollect` + (`deliveryFee` if `RECIPIENT`). If the console cancels after pickup, a fee
+collected at pickup stays in the driver's ledger: settle it with the business by hand (an incident is opened, §8.2).
+
+`GET /controller/cash/businesses` (back office) → `BusinessBalanceDto[]`, highest amount first (type defined in
+`apps/api/src/services/deliveries.ts`, not yet in `@yaar/shared`):
+```json
+[{ "storeId": "cmw…", "storeName": "Kaya Market", "ownerId": "cmw…", "ownerName": "Salimata Traoré", "phone": "+22671000005",
+   "owedTotal": 17000, "deliveries": 2, "lastDeliveredAt": "2026-11-08T14:03:00.000Z" }]
+```
+`owedTotal` = sum of `owedToBusiness` of the business's delivered deliveries. **No payout workflow yet**: paying the
+business back (and marking amounts as paid) is not recorded by the API; the orders CSV export (§8.9) has
+`frais_payes_par`, `marchandise_a_encaisser` and `du_entreprise` columns for the accounting.
+
+Known gaps: no payout workflow; the cash limit is checked before an offer as before (`cashHeld < CASH_LIMIT`), not
+against what the job will collect (a large `cashToCollect` takes the driver above the limit: he is blocked once the job
+is done, until he deposits); no cancellation fee; the WhatsApp channel for recipients is a placeholder; the business
+cannot rate the driver or chat with him (it calls `driver.phone`); pricing still uses haversine × 1.3, not the road route.
+
+---
+
+## Suivi public du destinataire
+
+`GET /track/:token` (**public, no authentication**) → `TrackingDto`: the page the recipient opens from the link
+`${PUBLIC_APP_URL}/suivi/<token>` (mobile web app). Poll it every `pollIntervalMs` (4 s) while the page is visible; it
+triggers the background dispatch cycle like the other polling endpoints (⚙, [Mode polling](#mode-polling-vercel)).
+
+```json
+{
+  "number": 1004,
+  "status": "ASSIGNED",
+  "vehicleType": "CAR",
+  "sender": { "name": "Tech Plus Électronique", "phone": "+22671000004" },
+  "recipientName": "Bureau Faso Conseil",
+  "packageDescription": "Téléphone Tecno Camon (boîte scellée)",
+  "pickup": { "lat": 12.405, "lng": -1.559, "address": "Tampouy, marché" },
+  "dropoff": { "lat": 12.375, "lng": -1.47, "address": "Dassasgho, route de Fada", "landmark": "Immeuble bleu, 2e étage" },
+  "amountToPay": 0,
+  "driver": {
+    "firstName": "Abdoul", "vehicleType": "CAR", "plate": "11 HH 0917", "phone": "+22673000004", "ratingAvg": null,
+    "lastLocation": { "lat": 12.392, "lng": -1.545, "at": "2026-11-08T21:50:00.000Z", "heading": 314 }
+  },
+  "route": { "target": "PICKUP", "points": [[12.392, -1.545], [12.3982, -1.5517], [12.405, -1.559]], "distanceM": 2620, "durationS": 429, "source": "osrm", "computedAt": "2026-11-08T21:50:01.000Z" },
+  "etaMinutes": 49,
+  "deliveryCode": "4729",
+  "createdAt": "2026-11-08T21:40:00.000Z",
+  "assignedAt": "2026-11-08T21:48:00.000Z",
+  "pickedUpAt": null,
+  "deliveredAt": null,
+  "cancelledAt": null,
+  "updatedAt": "2026-11-08T21:48:00.000Z"
+}
+```
+- Constant shape: every field is always present (`null` when hidden). No other personal data: never the recipient's
+  phone, the business account or its internal amounts (commission, earnings, payouts), nothing about other deliveries.
+  `sender` = the business name and its store phone.
+- `driver` (first name only, vehicle, plate, phone, rating, last position and heading), `route` and `etaMinutes`: only
+  while `ASSIGNED`/`PICKED_UP`, `null` otherwise.
+- `amountToPay`: cash to hand to the driver (goods + fee if the recipient pays it); 0 = nothing.
+- `deliveryCode`: until the delivery is delivered or cancelled, then `null`. Anyone holding the link sees it: the link
+  goes to the recipient (the business also gets it as `trackingUrl`, to forward it).
+- `404 NOT_FOUND` ("Lien de suivi introuvable ou expiré") for an unknown or malformed token and **24 h after**
+  `deliveredAt` / `cancelledAt`.
+- Per-IP limit: `TRACK_RATE_LIMIT` requests per minute (default 120 = several tabs polling every 4 s behind one IP;
+  `0` = off; in memory, per instance) → `429 RATE_LIMITED`. The token has 144 random bits: it cannot be guessed.
+- `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. The tracking page should keep the browser default referrer
+  policy (or `no-referrer`) so that map tile servers never get the token in a `Referer`.
+- CORS: the origin of `PUBLIC_APP_URL` is always allowed (in addition to `CORS_ORIGINS`). Like `/config` and `/health`
+  the call needs no `Authorization` header: a poll is a simple request, without preflight.
 
 ---
 
@@ -739,14 +933,23 @@ Body `LocationPingInput`: `{ "lat": 12.3602, "lng": -1.5248, "accuracy": 12, "he
 **Rejected with `403 DRIVER_OFFLINE` when the driver is offline.** Recommended rate: every 5-10 s while on a
 delivery, every 30-60 s while online and idle.
 
+Heading: the API keeps one heading with the last position (erased with it when the driver goes offline, withdraws his
+consent, is suspended or set offline as stale) and exposes it as `heading` (degrees, 0 = north, clockwise, integer) in
+`OrderDto.driver.lastLocation`, `MapDriverDto`, `TrackingDto` and the `driver.location` event. Rule: the phone's
+`heading` when it is sent and `speed`, if sent, shows movement (≥ 1 m/s: a stopped phone's course is meaningless);
+otherwise the bearing from the previous position when the driver moved at least 15 m; otherwise the previous heading
+(a stopped driver's marker does not spin). Send `heading`/`speed` only when the phone has them (omit them rather than
+sending negative values, which are refused). During a job a ping can also trigger a recomputation of the route
+([Itinéraires](#itinéraires-carte-de-suivi)); the `204` never waits for it.
+
 ### 7.3 Offers and deliveries
 
 When a driver is chosen by dispatch he receives the socket event `offer.new` (payload `OfferDto`). He has
 **30 seconds** (`expiresAt`) to accept, otherwise the next driver is asked.
 
 `OfferDto`: before acceptance **no client address** is disclosed (no coordinates, free-text address, landmark,
-recipient or phone). `pickup.address` is the store address for a FOOD order (public business place) or an
-approximate zone for a parcel; `dropoff.address` is always an approximate zone ("Secteur Zogona": nearest known
+recipient or phone). `pickup.address` is the store address for a FOOD order or a business delivery (public business
+place, with `pickup.name`) or an approximate zone for a parcel of the former client flow; `dropoff.address` is always an approximate zone ("Secteur Zogona": nearest known
 Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zone. Exact addresses are in the
 `OrderDto` returned by `accept`.
 ```json
@@ -848,19 +1051,21 @@ All routes below require a back-office token. Actions marked **audited** write a
   "center": { "lat": 12.3714, "lng": -1.5197 },
   "drivers": [
     { "id": "cmw5d3z03001u7d3bcvmuvb8j", "name": "Karim D.", "vehicleType": "MOTO", "isBusy": false,
-      "lat": 12.3985, "lng": -1.519, "lastLocationAt": "2026-11-06T19:22:16.018Z", "activeOrderId": null }
+      "lat": 12.3985, "lng": -1.519, "lastLocationAt": "2026-11-06T19:22:16.018Z", "activeOrderId": null, "heading": 270 }
   ],
   "orders": [
     { "id": "cmw5d3z32004z7d3bvpr2en11", "number": 1005, "type": "PARCEL", "status": "SEARCHING_DRIVER", "vehicleType": "BIKE",
       "pickup": { "lat": 12.3805, "lng": -1.4975, "address": "Zogona, près de l’université" },
       "dropoff": { "lat": 12.405, "lng": -1.559, "address": "Tampouy, marché" },
-      "driverId": null, "createdAt": "2026-11-06T19:17:16.018Z" }
+      "driverId": null, "createdAt": "2026-11-06T19:17:16.018Z", "route": null }
   ],
   "stores": [{ "id": "cmw5d3yyo00047d3btdhgncnv", "name": "Le Verdoyant", "lat": 12.3686, "lng": -1.5275, "isOpen": true }],
   "openSos": [ "IncidentDto, type SOS, not resolved" ]
 }
 ```
-`drivers` = online drivers only (offline drivers have no stored position). `orders` = all active orders.
+`drivers` = online drivers only (offline drivers have no stored position); `heading` = last heading (§7.2), `null` if
+unknown. `orders` = all active orders; `route` = the cached route of the current leg (`ASSIGNED`/`PICKED_UP`, see
+[Itinéraires](#itinéraires-carte-de-suivi)), `null` otherwise: this call never asks the routing service for a route.
 Mockup legend: green = free driver (`isBusy: false`), blue = busy driver, orange = store, red = order waiting
 (`status: SEARCHING_DRIVER`).
 
@@ -960,6 +1165,7 @@ Use `computeDeliveryFee()` from shared to show a live preview ("6 km en moto = 1
 |---|---|---|
 | `GET /controller/cash` | | `CashOverviewDto` |
 | `GET /controller/cash/ledger` | query `driverId`, paginated | `Paginated<CashLedgerEntryDto>` (newest first) |
+| `GET /controller/cash/businesses` | | `BusinessBalanceDto[]`: goods cash collected for each business and owed to it ([Livraisons d'entreprise](#livraisons-dentreprise)) |
 | `POST /controller/drivers/:id/cash-deposits` | `{ "amount": 30000, "note": "Versement agence Zogona" }` | `201 CashLedgerEntryDto` (`type: DEPOSIT`, `amount: -30000`, `balanceAfter`); `409 CONFLICT` if `amount > cashHeld` (checked atomically: concurrent deposits never make the balance negative); **audited** |
 
 `CashOverviewDto`:
@@ -1003,7 +1209,7 @@ Use `computeDeliveryFee()` from shared to show a live preview ("6 km en moto = 1
 
 | Method & path | Query | Response |
 |---|---|---|
-| `GET /controller/exports/orders.csv` | `from`, `to` (ISO dates, optional; `from` inclusive, `to` exclusive) | `text/csv` (`;` separator, UTF-8 with BOM, 10 000 rows max): number, date, type, status, vehicle, store, driver, distance, amounts, commission, driver earning, seller payout, payment, cash collected, delivered/cancelled dates. **No address and no phone.** |
+| `GET /controller/exports/orders.csv` | `from`, `to` (ISO dates, optional; `from` inclusive, `to` exclusive) | `text/csv` (`;` separator, UTF-8 with BOM, 10 000 rows max): number, date, type, status, vehicle, store, driver, distance, amounts, commission, driver earning, seller payout, payment, cash collected, delivered/cancelled dates, who pays the fee, goods to collect, amount owed to the business. **No address and no phone.** |
 | `GET /controller/exports/cash-ledger.csv` | `from`, `to` | `text/csv`: date, driver, phone, type, amount, balance after, order number, note, recorded by |
 
 Every export is **audited** `DATA_EXPORTED` (metadata: period and row count). Download with the
@@ -1072,8 +1278,8 @@ Re-emit `order.subscribe` after every reconnect (rooms are per connection).
 
 | Event | Payload type | Sent to | When |
 |---|---|---|---|
-| `order.updated` | `OrderUpdatedEvent` | `order:<id>`, `user:<clientId>`, `user:<sellerId>`, `user:<driverId>`, `controllers` | any status change (creation, accept, ready, assignment, pickup, delivery, cancel) |
-| `driver.location` | `DriverLocationEvent` | `controllers` always; `order:<orderId>` only when the driver has an active order (ASSIGNED/PICKED_UP) | each accepted `POST /driver/location` |
+| `order.updated` | `OrderUpdatedEvent` | `order:<id>`, `user:<clientId>`, `user:<sellerId>`, `user:<driverId>`, `controllers` | any status change (creation, accept, ready, assignment, pickup, delivery, cancel); also when a new route is cached for the current leg (same `status`, refetch `GET /orders/:id`) |
+| `driver.location` | `DriverLocationEvent` | `controllers` always; `order:<orderId>` only when the driver has an active order (ASSIGNED/PICKED_UP) | each accepted `POST /driver/location`; `heading` = the heading kept by the API (§7.2), not necessarily the raw value sent |
 | `driver.status` | `DriverStatusEvent` | `controllers`, `driver:<id>` | online/offline/busy changes |
 | `offer.new` | `OfferDto` | `driver:<id>` | dispatch offers an order to this driver |
 | `offer.closed` | `OfferClosedEvent` | `driver:<id>` | the offer expired (`EXPIRED`) or was withdrawn (`CANCELLED`: order cancelled, manually assigned, driver went offline) |
@@ -1144,9 +1350,12 @@ connection), `GET /config` returns `realtime: "poll"`. Then:
 | Console, alerts (header SOS toasts + live map panel, one shared request) | `GET /controller/incidents?status=OPEN,IN_PROGRESS&pageSize=50` | 15 s | `sos`, `incident.updated` |
 | Console, incidents screen | `GET /controller/incidents?status=…` | 15 s | `sos`, `incident.updated` |
 | Console, one order | `GET /orders/:id` | 10 s | `order.updated`, `driver.location` |
+| Business, deliveries screen | ⚙ `GET /business/deliveries?updatedSince=<max updatedAt>&pageSize=100` (merge by `id`) or a constant `?status=…` URL | 10 s | `order.updated` |
+| Business, one delivery on the map | ⚙ `GET /orders/:id` | `pollIntervalMs` (4 s) while `SEARCHING_DRIVER`/`ASSIGNED`/`PICKED_UP`, else 30 s | `order.updated`, `driver.location` (`driver.lastLocation` + `heading`, `route`, `etaMinutes`) |
+| Recipient, public tracking page | ⚙ `GET /track/:token` (no auth) | `pollIntervalMs` (4 s) while visible; stop when delivered/cancelled | |
 
-⚙ = also triggers the dispatch cycle (`runDueWork`). `POST /orders`, `POST /orders/:id/ready` and
-`PATCH /driver/availability` trigger it too.
+⚙ = also triggers the dispatch cycle (`runDueWork`). `POST /orders`, `POST /business/deliveries`,
+`POST /orders/:id/ready` and `PATCH /driver/availability` trigger it too.
 
 The reference console idles on the live map at about **0.32 request/s** (map 0.1 + queue 0.1 + alerts 0.067 +
 indicators 0.033 + stores 0.017; the KYC queue is reloaded only when its badge changes). After **15 minutes
@@ -1182,20 +1391,93 @@ retention every 24 h in both modes.
 
 ---
 
+## Itinéraires (carte de suivi)
+
+Road route of the current leg of a job, for Uber Eats–style tracking maps: `RouteDto` in `OrderDto.route`,
+`MapOrderDto.route` and `TrackingDto.route`.
+
+```json
+{ "target": "PICKUP", "points": [[12.38, -1.53], [12.3751, -1.5293], [12.3686, -1.5275]], "distanceM": 1480,
+  "durationS": 371, "source": "osrm", "computedAt": "2026-11-08T21:50:01.000Z" }
+```
+- `target`: `PICKUP` while `ASSIGNED` (driver → pickup), `DROPOFF` while `PICKED_UP` (driver → recipient).
+- `points`: `[lat, lng]` from the driver's position when the route was computed to the target; at most 300 points
+  (Douglas–Peucker, starting at 5 m of tolerance, first and last points kept; 5 decimals). To draw what is left, project
+  `driver.lastLocation` on the line and draw from there.
+- `distanceM`, `durationS`: the whole line; the duration is already adjusted to the vehicle (below).
+- `source`: `osrm` = real road route; `straight` = straight line (routing service unavailable or disabled): draw it
+  dashed, the ETA is rougher.
+
+**Who sees it.** `OrderDto.route`: the client of the order (former flow), the requesting business, the assigned driver
+and the back office, only while `ASSIGNED`/`PICKED_UP` and only when the cached route is for the current leg; `null` for
+the seller of a former food order, for other users, in other statuses and **in lists** (payload size). `GET /controller/map`
+returns the cached route of each active order (`MapOrderDto.route`) and never calls the routing service. The public
+tracking page returns it to the recipient ([Suivi public du destinataire](#suivi-public-du-destinataire)).
+
+**When it is computed** (cached on the order; `updatedAt` does not move):
+- at assignment (offer accepted, console assignment): `PICKUP` route from the driver's last known position (if none is
+  known, at his first position ping); and once per order, the duration pickup → dropoff (used by the ETA);
+- at pickup: `DROPOFF` route from the driver's position if it is less than 2 min old, otherwise from the pickup point;
+- on a location ping (`POST /driver/location`), when the cached route is not for the current leg, or the driver is more
+  than **120 m** from the line, or the route is older than **3 min**; never more than **once per 30 s per order**, across
+  all API instances (conditional `UPDATE` of a per-order attempt timestamp: losing instances do not call the service);
+- any status change erases the cached route (the next leg's is computed right after; a finished job keeps neither a
+  line nor the driver's start position).
+
+The ping response never waits for the routing service (`204` at once; the computation runs in the background, kept alive
+by `waitUntil` on Vercel). Assignment and pickup responses wait for it at most `WORK_BUDGET_MS` (1.5 s), so they
+usually already carry the new route. In socket mode an `order.updated` event announces a newly cached route.
+
+**Arrival time** (`etaMinutes`, also on the tracking page), when a route is cached for the current leg:
+- `remaining = (1 − progress) × durationS`, where `progress` is the share of the line already covered at the point of
+  the line nearest to the driver's last position (when two passes of the line are almost equally near, the earlier one:
+  the estimate is never too optimistic);
+- `PICKED_UP`: `eta = remaining`;
+- `ASSIGNED`: `eta = remaining + 120 s (handover at the pickup) + duration pickup → dropoff` (computed at assignment;
+  straight-line estimate when missing);
+- `etaMinutes = max(1, ceil(eta / 60))`. Without a cached route: the previous estimate (haversine × 1.3 ÷ average speed:
+  bike 12, moto 22, car 20 km/h; via the pickup while `ASSIGNED`).
+
+**Routing providers** (`ROUTING_PROVIDER`):
+- `osrm` (default): `GET ${ROUTING_OSRM_URL}/${profile}/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=polyline`,
+  header `User-Agent: YaarLivraison/0.1 (demo)`, timeout `ROUTING_TIMEOUT_MS` (2 500 ms). Default URL
+  `https://routing.openstreetmap.de` (FOSSGIS servers); profile `routed-bike` for bikes, `routed-car` for motorbikes and
+  cars. The polyline (precision 5) is decoded and simplified by the API. OSRM durations are free-flow (speed limits, no
+  traffic): they are multiplied by **1.25 (bike), 1.6 (moto), 1.9 (car)** to reach the average city speeds of the quotes
+  (≈ 12, 25 and 21 km/h); to recalibrate with the pilot's real delivery times. Failure (timeout, HTTP error, invalid
+  JSON, no route) → straight line (`source: "straight"`) and a warning in the logs (without coordinates), never an error.
+- `straight`: straight line, distance = haversine × 1.3, duration at the average speed of the vehicle (bike 12, moto 22,
+  car 20 km/h). No external call (tests, smoke test, or to send no coordinates to a third party).
+
+**Privacy and legal.** The routing service receives **two coordinates per request and nothing else** (the driver's
+position and the pickup or recipient point; no name, phone, address or identifier). With the default URL these requests
+go to the **FOSSGIS** public servers in **Germany**: a sub-processor (and a transfer outside Burkina Faso) to declare to
+the CIL (law n° 001-2021/AN) along with the hosting. The public FOSSGIS servers are for **demo / pilot use only** (usage
+policy: low volume, no guarantee); production must self-host OSRM or Valhalla (OpenStreetMap extract of Burkina Faso) or
+use a paid routing API (Google Routes, Mapbox Directions) under a data processing agreement.
+`ROUTING_PROVIDER=straight` disables every external call.
+
+---
+
 ## 10. Visibility and privacy rules
 
 Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`); clients must not try to work around them.
 
-| Field of `OrderDto` | Client (owner) | Seller (store owner) | Driver (assigned) | Back office |
-|---|---|---|---|---|
-| `deliveryCode` | yes, until delivered/cancelled | no | **no** | **no** |
-| `pickup`, `dropoff`, `notes`, `recipientName` | yes | while the order is active (not after delivery/cancellation) | only while `ASSIGNED`/`PICKED_UP` | yes |
-| `client.phone`, `recipientPhone` | yes | while the order is active | only while `ASSIGNED`/`PICKED_UP` | yes |
-| `driver.phone` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | own | yes |
-| `driver.lastLocation` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | no | while `ASSIGNED`/`PICKED_UP` |
-| `commission` | no | no | no | yes |
-| `driverEarning` | no | no | yes | yes |
-| `sellerPayout` | no | yes | no | yes |
+| Field of `OrderDto` | Client (owner, former flow) | Business (requester) | Seller (store owner, former flow) | Driver (assigned) | Back office |
+|---|---|---|---|---|---|
+| `deliveryCode` | yes, until delivered/cancelled | **no** | no | **no** | **no** |
+| `pickup`, `dropoff`, `notes`, `recipientName` | yes | yes | while the order is active (not after delivery/cancellation) | only while `ASSIGNED`/`PICKED_UP` | yes |
+| `client.phone`, `recipientPhone` | yes | yes | while the order is active | only while `ASSIGNED`/`PICKED_UP` | yes |
+| `driver.phone` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | own | yes |
+| `driver.lastLocation` (with `heading`), `etaMinutes` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | no position (ETA yes) | while `ASSIGNED`/`PICKED_UP` |
+| `route` (not in lists) | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | **no** | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` |
+| `trackingUrl` | n/a | yes | no | no | yes |
+| `commission` | no | no | no | no | yes |
+| `driverEarning` | no | no | no | yes | yes |
+| `sellerPayout` | no | yes (= `cashToCollect`) | yes | no | yes |
+
+For a business delivery the requester is also the owner of the store: the "Business (requester)" column applies. The
+recipient (no account) sees only the public tracking page ([Suivi public du destinataire](#suivi-public-du-destinataire)).
 
 - A driver never sees an order that is not assigned to him (`404`); an offer shows no client address, only the
   store address (FOOD) and approximate zones (§7.3). After delivery, his history keeps amounts and store name
@@ -1204,7 +1486,12 @@ Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`);
 - GPS tracking requires the driver's recorded consent (§7.2). Location pings are accepted only while online
   (`403 DRIVER_OFFLINE` otherwise); going offline erases the last position; a silent online driver is set
   offline after `DRIVER_STALE_MINUTES`.
-- The client's position is never tracked: it only exists as the order's `dropoff` (or `pickup`).
+- The client's position is never tracked: it only exists as the order's `dropoff` (or `pickup`). Same for recipients
+  of business deliveries: their name, phone and address are entered by the business for that delivery only, shown to
+  the driver during the job, never on the tracking page (no phone), and purged after 12 months like client addresses.
+- Road routes: the routing service receives only two coordinates per request (default: FOSSGIS servers in Germany, a
+  sub-processor to declare to the CIL; `ROUTING_PROVIDER=straight` sends nothing). The cached line and its start
+  position are erased at every status change ([Itinéraires](#itinéraires-carte-de-suivi)).
 - Retention job (`runRetention`, daily, 12 months): deletes driver location pings and chat messages; on
   delivered/cancelled orders older than 12 months, sets the client's coordinates to `0`, replaces the address
   by "Adresse supprimée (conservation 12 mois)" and erases landmark, recipient and notes (`locationPurgedAt` set;
@@ -1233,6 +1520,13 @@ Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`);
 | Stale online driver | set offline after 10 min without position (`DRIVER_STALE_MINUTES`) | `DispatchService.tick` |
 | Location retention | 12 months (pings, order client positions, SOS positions, chat) | `runRetention` |
 | Upload size | 5 MB per file decoded; 3 MB on Vercel (and in the mobile app) | `MAX_UPLOAD_BYTES`, `VERCEL_MAX_UPLOAD_BYTES` |
+| Business delivery cash | `feePaidBy` `SENDER`: fee collected at pickup; `RECIPIENT`: fee collected at delivery; `cashToCollect` collected at delivery, owed to the business (`owedToBusiness`) | `OrderService.pickup` / `completeDelivery` |
+| Business delivery amounts | `itemsTotal` = `sellerPayout` = `cashToCollect`; `total` = `deliveryFee + cashToCollect`; commission on the fee only | `DeliveryService.create` |
+| Tracking link | 144-bit token, `${PUBLIC_APP_URL}/suivi/<token>`, `404` 24 h after delivered/cancelled, 120 requests/min/IP | `TRACK_RATE_LIMIT` |
+| Route recomputation | leg changed, driver > 120 m from the line, or route > 3 min old; ≥ 30 s between attempts per order (all instances) | `services/routes.ts` |
+| ETA from the route | `(1 − progress) × durationS` (+ 120 s handover + pickup → dropoff while `ASSIGNED`), rounded up to the minute | `routeEtaSeconds` |
+| OSRM durations | × 1.25 bike, × 1.6 moto, × 1.9 car (free-flow → city average) | `OSRM_DURATION_FACTOR` |
+| Driver heading | phone heading when speed ≥ 1 m/s (or not sent), else bearing after ≥ 15 m, else unchanged | `services/heading.ts` |
 
 Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Format amounts with
 `formatFcfa(6500)` → `"6 500 FCFA"`.
@@ -1246,22 +1540,25 @@ Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Forma
 instead, after "Recevoir le code". On Vercel, the production build seeds the same accounts once, only when the
 database has no user yet (`SEED_DEMO=true` and `DEMO_MODE=true`, `npm run db:seed:if-empty`, never wipes).
 The demo is public: the seeded KYC documents are blank images, never upload real ID documents.
+The demo follows the B2B model: businesses request deliveries to recipients (fictitious names and numbers, no
+accounts); the seed prints the public tracking links of the active deliveries. Routes of the jobs in progress are
+computed with `ROUTING_PROVIDER` (OSRM by default, straight line if it does not answer).
 
 | Phone | Role | Notes |
 |---|---|---|
 | `+22670000001` | ADMIN | Admin Yaar |
 | `+22670000002` | CONTROLLER | Salif K. |
-| `+22671000001` | SELLER | Le Verdoyant (centre-ville), riz gras, poulet bicyclette, tô, bissap |
-| `+22671000002` | SELLER | Maquis Chez Tanti (Gounghin) |
-| `+22671000003` | SELLER | Saveurs de Zogona |
-| `+22671000004` | SELLER | Alimentation Wend-Panga (Tampouy, closed) |
-| `+22671000009` | SELLER | Grillades de Pissy, **pending approval** (store validation queue) |
-| `+22672000001` | CLIENT | Aminata K. (saved address Patte d'Oie) |
-| `+22672000002` / `+22672000003` | CLIENT | Paul T. / Mariam O. |
-| `+22673000001` | DRIVER | Issouf S., moto, approved, online, on a delivery, 38 500 FCFA held |
+| `+22671000001` | SELLER (business) | Le Verdoyant, restaurant (centre-ville): delivery in progress (Issouf) to Ouaga 2000, recipient pays the meal and the fee |
+| `+22671000002` | SELLER (business) | Pharmacie du Progrès (Gounghin): one delivery waiting for a moto (no driver nearby: manual assignment), one delivered to a clinic (business recipient) |
+| `+22671000003` | SELLER (business) | Faso Mode Boutique (Zogona): one bike delivery searching (offered to Fatimata), 25 000 FCFA to collect |
+| `+22671000004` | SELLER (business) | Tech Plus Électronique (Tampouy): car delivery assigned to Abdoul, 85 000 FCFA to collect for a business recipient |
+| `+22671000005` | SELLER (business) | Kaya Market, online shop (Ouaga 2000): one delivered yesterday (12 000 FCFA owed, dispute open), one cancelled |
+| `+22671000009` | SELLER (business) | Grillades de Pissy, **pending approval** (store validation queue; cannot request deliveries) |
+| `+22672000001` / `+22672000002` / `+22672000003` | CLIENT | Aminata K. / Paul T. / Mariam O.: accounts of the deprecated client flow, no orders |
+| `+22673000001` | DRIVER | Issouf S., moto, approved, online, on a delivery (picked up), 38 500 FCFA held |
 | `+22673000002` | DRIVER | Karim D., moto, approved, online (has an open SOS) |
-| `+22673000003` | DRIVER | Fatimata Z., bike, approved, online |
-| `+22673000004` | DRIVER | Abdoul T., car, approved, online |
+| `+22673000003` | DRIVER | Fatimata Z., bike, approved, online, 9 700 FCFA held |
+| `+22673000004` | DRIVER | Abdoul T., car, approved, online, on a delivery (assigned, on the way to the pickup) |
 | `+22673000005` | DRIVER | Adama N., moto, approved, offline, above the cash limit |
 | `+22673000006` | DRIVER | Ousmane B., moto, PENDING, complete file |
 | `+22673000007` | DRIVER | Rasmané P., bike, PENDING, selfie missing |
@@ -1288,6 +1585,10 @@ Against Annexe 1 of the contract. API side:
 | Refunds | **deferred**: cash only in Lot 1, a dispute is resolved by the back office with a resolution note; no refund ledger |
 | Receipts | **deferred**: the `OrderDto` of a delivered order holds every receipt field; no PDF receipt |
 | Mobile money | reserved (`MOBILE_MONEY` → `400 PAYMENT_METHOD_UNAVAILABLE`, Lot 2) |
+| Business deliveries (B2B model, 8 Nov 2026) | implemented: quote, request, list, cancel before pickup, cash at pickup/delivery, amounts owed per business ([Livraisons d'entreprise](#livraisons-dentreprise)); **deferred**: payouts to businesses, cancellation fees, WhatsApp messages to recipients (placeholder) |
+| Recipient tracking without an account | implemented: public link, live driver position, road route, ETA, delivery code ([Suivi public du destinataire](#suivi-public-du-destinataire)) |
+| Road routes and ETA for the tracking maps | implemented with OSRM (public FOSSGIS servers: demo / pilot only) and a straight-line fallback ([Itinéraires](#itinéraires-carte-de-suivi)) |
+| Client ordering flow (stores, products, cart, FOOD orders) | **deprecated**, still served for existing builds |
 
 Deployment note: several API instances (Vercel) are supported for dispatch: Postgres partial unique indexes
 allow at most one open offer per order and per driver, and the dispatch cycle is guarded by a lease row
@@ -1297,6 +1598,28 @@ allow at most one open offer per order and per driver, and the dispatch cycle is
 ---
 
 ## 14. Changelog
+
+Business deliveries, public tracking and road routes (8 Nov 2026, backward compatible; migration
+`20261108220000_routes_business_deliveries`, nullable or defaulted columns only):
+
+- **Product model**: businesses (`SELLER`) request deliveries to recipients without an account. New
+  `POST /business/deliveries/quote`, `POST /business/deliveries`, `GET /business/deliveries`; `GET /orders/:id`,
+  `POST /orders/:id/cancel` (before pickup) and `GET /orders/:id/proof-photo` work for the requesting business;
+  `403 STORE_NOT_APPROVED` without a validated business profile ([Livraisons d'entreprise](#livraisons-dentreprise)).
+- Cash: fee paid by the business at pickup (`SENDER`) or by the recipient at delivery (`RECIPIENT`), goods
+  (`cashToCollect`) collected at delivery and owed to the business; `GET /controller/cash/businesses`; three new columns
+  in the orders CSV export.
+- Public tracking page `GET /track/:token` (`TrackingDto`, no auth, 24 h after the end, per-IP limit, origin of
+  `PUBLIC_APP_URL` allowed by CORS); messages to recipients through `RecipientNotifier` (`RECIPIENT_NOTIFIER`).
+- `OrderDto.route`, `MapOrderDto.route`: cached road route of the current leg (OSRM, straight-line fallback), recomputed
+  on pings when needed; `etaMinutes` from the route; `heading` in `OrderDto.driver.lastLocation` and `MapDriverDto`
+  (and the effective heading in `driver.location`) ([Itinéraires](#itinéraires-carte-de-suivi)).
+- `OrderDto.feePaidBy`, `cashToCollect`, `recipientIsBusiness`, `trackingUrl`. Lists (`GET /orders`,
+  `GET /business/deliveries`) return `route: null`.
+- **Deprecated**: the client ordering flow (§4, §6.2, §6.3, seller accept/ready, chat); it still works.
+- New environment variables: `ROUTING_PROVIDER`, `ROUTING_OSRM_URL`, `ROUTING_TIMEOUT_MS`, `PUBLIC_APP_URL`,
+  `RECIPIENT_NOTIFIER`, `TRACK_RATE_LIMIT` (see `apps/api/README.md`).
+- Demo seed: B2B data (five businesses, deliveries in every status, recipients without accounts).
 
 Public demo safety and Vercel quota (8 Nov 2026):
 

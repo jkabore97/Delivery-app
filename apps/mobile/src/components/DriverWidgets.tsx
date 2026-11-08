@@ -44,7 +44,7 @@ export function OnlineToggle({ onError }: { onError: (msg: string | null) => voi
 }
 
 /** Bouton SOS : alerte immédiate des contrôleurs avec la position (si disponible). */
-export function SosButton() {
+export function SosButton({ size = 64 }: { size?: number }) {
   const api = useApi();
   const { position, currentOrder } = useDriver();
   const [busy, setBusy] = useState(false);
@@ -77,7 +77,7 @@ export function SosButton() {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="SOS, alerter les contrôleurs"
-      style={[styles.sos, busy && { opacity: 0.6 }]}
+      style={[styles.sos, { width: size, height: size, borderRadius: size / 2 }, busy && { opacity: 0.6 }]}
       onPress={() =>
         void confirmAsync({
           title: 'Envoyer un SOS ?',
@@ -90,7 +90,7 @@ export function SosButton() {
       }
       disabled={busy}
     >
-      <Text style={styles.sosText}>SOS</Text>
+      <Text style={[styles.sosText, size < 56 && { fontSize: 14 }]}>SOS</Text>
     </Pressable>
   );
 }

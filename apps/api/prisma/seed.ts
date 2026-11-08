@@ -1,12 +1,15 @@
 /**
- * Données de démonstration autour de Ouagadougou.
+ * Données de démonstration autour de Ouagadougou (modèle B2B : des entreprises font livrer des colis à des
+ * destinataires sans compte, qui suivent le livreur par un lien public).
  *   npm run db:seed -w apps/api            ATTENTION : vide toutes les tables de la base visée par DATABASE_URL.
  *   npm run db:seed:if-empty -w apps/api   ne fait rien si la base contient déjà un utilisateur ; ne vide jamais
  *                                          (build Vercel avec SEED_DEMO=true).
  * Autorisé avec NODE_ENV=production seulement si DEMO_MODE=true (ou SEED_FORCE=true pour le mode qui vide).
+ * Itinéraires des courses en cours : ROUTING_PROVIDER (osrm par défaut, ligne droite si le service ne répond pas ;
+ * ROUTING_PROVIDER=straight : aucun appel externe).
  */
 import 'dotenv/config';
-import { PrismaClient, type OrderStatus, type VehicleType } from '@prisma/client';
+import { PrismaClient, type FeePayer, type OrderStatus, type VehicleType } from '@prisma/client';
 import {
   DEFAULT_PRICING_RULES,
   computeDeliveryPrice,
@@ -15,7 +18,13 @@ import {
   requiredDocuments,
 } from '@yaar/shared';
 import { loadConfig } from '../src/config';
+import { bearingDeg } from '../src/lib/geo';
+import { createRoutingProvider } from '../src/providers/routing';
 import { createStorage } from '../src/providers/storage';
+import { newTrackingToken } from '../src/services/deliveries';
+import { normalizeHeading } from '../src/services/heading';
+import { generateDeliveryCode } from '../src/services/orders';
+import { trackingUrlFor } from '../src/services/serializers';
 
 const IF_EMPTY = process.argv.includes('--if-empty');
 
@@ -29,6 +38,7 @@ function singleConnectionUrl(url: string): string {
 const config = loadConfig();
 const prisma = new PrismaClient({ datasources: { db: { url: singleConnectionUrl(config.databaseUrl) } } });
 const storage = createStorage(config, prisma);
+const routing = createRoutingProvider(config, (m) => console.warn(m));
 const SEED_LOCK_KEY = 7_242_001;
 
 /** Quartiers (coordonnées approximatives). */
@@ -42,6 +52,8 @@ const Q = {
   pissy: { lat: 12.34, lng: -1.57, address: 'Pissy, secteur 17' },
   dassasgho: { lat: 12.375, lng: -1.47, address: 'Dassasgho, route de Fada' },
   tanghin: { lat: 12.397, lng: -1.517, address: 'Tanghin, bord du barrage' },
+  wemtenga: { lat: 12.3765, lng: -1.4855, address: 'Wemtenga, rue 29.12' },
+  cissin: { lat: 12.3365, lng: -1.5405, address: 'Cissin, près du marché' },
 } as const;
 
 // PNG 1×1 utilisé comme pièce justificative factice.
@@ -99,75 +111,52 @@ async function seed(): Promise<void> {
   const admin = await prisma.user.create({ data: { phone: '+22670000001', name: 'Admin Yaar', role: 'ADMIN' } });
   const controller = await prisma.user.create({ data: { phone: '+22670000002', name: 'Salif K.', role: 'CONTROLLER' } });
 
-  /* ---------------- Vendeurs et menus ---------------- */
-  const sellersSpec = [
+  /* ---------------- Entreprises (comptes SELLER, boutique validée = profil d'entreprise) ---------------- */
+  const businessesSpec = [
     {
       phone: '+22671000001', name: 'Awa Ouédraogo',
-      store: { name: 'Le Verdoyant', ...Q.centre, landmark: 'En face de la BCEAO', description: 'Cuisine burkinabè et grillades', commissionPercent: 10, prepTimeMinutes: 15, openingHours: 'Lun-Dim 10h-23h' },
-      products: [
-        { name: 'Riz gras poulet', category: 'Plats', price: 2500, description: 'Riz gras, cuisse de poulet, légumes' },
-        { name: 'Poulet bicyclette braisé', category: 'Grillades', price: 5000, description: 'Poulet entier braisé, attiéké ou frites' },
-        { name: 'Tô sauce gombo', category: 'Plats', price: 1500, description: 'Tô de maïs, sauce gombo et viande' },
-        { name: 'Bissap 50 cl', category: 'Boissons', price: 500 },
-        { name: 'Jus de gingembre 50 cl', category: 'Boissons', price: 500 },
-      ],
+      store: { name: 'Le Verdoyant', ...Q.centre, landmark: 'En face de la BCEAO', description: 'Restaurant : plats burkinabè et grillades livrés à domicile et au bureau', openingHours: 'Lun-Dim 10h-23h' },
     },
     {
-      phone: '+22671000002', name: 'Moussa Sawadogo',
-      store: { name: 'Maquis Chez Tanti', ...Q.gounghin, landmark: 'Derrière la pharmacie de Gounghin', description: 'Maquis familial', commissionPercent: 10, prepTimeMinutes: 20, openingHours: 'Lun-Sam 11h-22h' },
-      products: [
-        { name: 'Tô sauce feuille', category: 'Plats', price: 1000 },
-        { name: 'Riz sauce arachide', category: 'Plats', price: 1500 },
-        { name: 'Poulet bicyclette (demi)', category: 'Grillades', price: 3000 },
-        { name: 'Bissap glacé 1 L', category: 'Boissons', price: 1000 },
-        { name: 'Dêguê', category: 'Desserts', price: 750, isAvailable: false },
-      ],
+      phone: '+22671000002', name: 'Dr Moussa Sawadogo',
+      store: { name: 'Pharmacie du Progrès', ...Q.gounghin, landmark: 'Derrière la mairie de Gounghin', description: 'Pharmacie : ordonnances et parapharmacie', openingHours: 'Lun-Sam 7h30-22h, garde le dimanche' },
     },
     {
       phone: '+22671000003', name: 'Rasmata Kaboré',
-      store: { name: 'Saveurs de Zogona', ...Q.zogona, landmark: 'À côté du kiosque Orange', description: 'Fast-food et plats du jour', commissionPercent: 12, prepTimeMinutes: 12, openingHours: 'Tous les jours 9h-21h' },
-      products: [
-        { name: 'Riz gras mouton', category: 'Plats', price: 2000 },
-        { name: 'Brochettes de bœuf (x5)', category: 'Grillades', price: 1500 },
-        { name: 'Alloco', category: 'Accompagnements', price: 500 },
-        { name: 'Bissap 50 cl', category: 'Boissons', price: 400 },
-      ],
+      store: { name: 'Faso Mode Boutique', ...Q.zogona, landmark: 'À côté du kiosque Orange', description: 'Vêtements et pagnes Faso Dan Fani', openingHours: 'Lun-Sam 9h-20h' },
     },
     {
       phone: '+22671000004', name: 'Boukary Compaoré',
-      store: { name: 'Alimentation Wend-Panga', ...Q.tampouy, landmark: 'Entrée principale du marché', description: 'Épicerie et produits de première nécessité', commissionPercent: 8, prepTimeMinutes: 10, openingHours: 'Lun-Dim 7h-21h', isOpen: false },
-      products: [
-        { name: 'Sac de riz 5 kg', category: 'Épicerie', price: 3500 },
-        { name: 'Huile 1 L', category: 'Épicerie', price: 1300 },
-        { name: 'Eau minérale 1,5 L (x6)', category: 'Boissons', price: 2400 },
-      ],
+      store: { name: 'Tech Plus Électronique', ...Q.tampouy, landmark: 'Entrée principale du marché', description: 'Téléphones, ordinateurs et accessoires', openingHours: 'Lun-Sam 8h-19h' },
+    },
+    {
+      phone: '+22671000005', name: 'Salimata Traoré',
+      store: { name: 'Kaya Market', ...Q.ouaga2000, landmark: 'Immeuble Kaya, rez-de-chaussée', description: 'Boutique en ligne : commandes WhatsApp et Facebook livrées en ville', openingHours: 'Tous les jours 8h-21h' },
     },
   ];
-  const stores: Record<string, { id: string; ownerId: string; lat: number; lng: number; address: string; landmark: string; commissionPercent: number; products: Array<{ id: string; name: string; price: number }> }> = {};
-  for (const s of sellersSpec) {
-    const owner = await prisma.user.create({ data: { phone: s.phone, name: s.name, role: 'SELLER' } });
-    const { isOpen, ...storeData } = { isOpen: true, ...s.store };
+  type Business = { id: string; name: string; ownerId: string; lat: number; lng: number; address: string; landmark: string };
+  const businesses: Record<string, Business> = {};
+  for (const b of businessesSpec) {
+    const owner = await prisma.user.create({ data: { phone: b.phone, name: b.name, role: 'SELLER' } });
     const store = await prisma.store.create({
-      data: { ...storeData, isOpen, ownerId: owner.id, phone: s.phone, approvalStatus: 'APPROVED', approvedAt: minutesAgo(60 * 24 * 60) },
+      data: { ...b.store, isOpen: true, ownerId: owner.id, phone: b.phone, approvalStatus: 'APPROVED', approvedAt: minutesAgo(60 * 24 * 60) },
     });
-    const products = [];
-    for (const p of s.products) products.push(await prisma.product.create({ data: { ...p, storeId: store.id } }));
-    stores[store.name] = { ...store, products };
+    businesses[store.name] = store;
   }
-  // Une boutique en attente de validation (file « boutiques à valider » de la console).
+  // Une entreprise en attente de validation (file « boutiques à valider » de la console).
   const pendingOwner = await prisma.user.create({ data: { phone: '+22671000009', name: 'Issa Compaoré', role: 'SELLER' } });
-  const pendingStore = await prisma.store.create({
+  await prisma.store.create({
     data: {
       ownerId: pendingOwner.id, name: 'Grillades de Pissy', ...Q.pissy, landmark: 'À côté du marché de Pissy',
       description: 'Brochettes et poulet bicyclette', phone: pendingOwner.phone, isOpen: false, approvalStatus: 'PENDING',
     },
   });
-  await prisma.product.create({ data: { storeId: pendingStore.id, name: 'Poulet bicyclette braisé', category: 'Grillades', price: 4500 } });
 
-  /* ---------------- Clients ---------------- */
+  /* ---------------- Comptes clients (ancien parcours, aucune commande) ---------------- */
+  // Conservés pour les comptes de démonstration existants des applications ; la démo ne repose plus sur eux.
   const aminata = await prisma.user.create({ data: { phone: '+22672000001', name: 'Aminata K.', role: 'CLIENT' } });
-  const paul = await prisma.user.create({ data: { phone: '+22672000002', name: 'Paul T.', role: 'CLIENT' } });
-  const mariam = await prisma.user.create({ data: { phone: '+22672000003', name: 'Mariam O.', role: 'CLIENT' } });
+  await prisma.user.create({ data: { phone: '+22672000002', name: 'Paul T.', role: 'CLIENT' } });
+  await prisma.user.create({ data: { phone: '+22672000003', name: 'Mariam O.', role: 'CLIENT' } });
   await prisma.savedAddress.create({
     data: { userId: aminata.id, label: 'Maison', ...Q.patteDOie, landmark: 'Derrière la station Total, portail bleu' },
   });
@@ -216,154 +205,218 @@ async function seed(): Promise<void> {
     return user;
   }
 
-  const issouf = await createDriver({ phone: '+22673000001', name: 'Issouf S.', vehicleType: 'MOTO', plate: '11 JJ 4521', status: 'APPROVED', online: { lat: 12.3602, lng: -1.5248 }, cashHeld: 38_500 });
+  const issouf = await createDriver({ phone: '+22673000001', name: 'Issouf S.', vehicleType: 'MOTO', plate: '11 JJ 4521', status: 'APPROVED', online: { lat: 12.3602, lng: -1.5248 } });
   const karim = await createDriver({ phone: '+22673000002', name: 'Karim D.', vehicleType: 'MOTO', plate: '11 KM 1187', status: 'APPROVED', online: { lat: 12.3985, lng: -1.5190 } });
-  await createDriver({ phone: '+22673000003', name: 'Fatimata Z.', vehicleType: 'BIKE', status: 'APPROVED', online: { lat: 12.3790, lng: -1.5010 } });
-  await createDriver({ phone: '+22673000004', name: 'Abdoul T.', vehicleType: 'CAR', plate: '11 HH 0917', status: 'APPROVED', online: { lat: 12.3300, lng: -1.5000 } });
+  const fatimata = await createDriver({ phone: '+22673000003', name: 'Fatimata Z.', vehicleType: 'BIKE', status: 'APPROVED', online: { lat: 12.3790, lng: -1.5010 } });
+  const abdoul = await createDriver({ phone: '+22673000004', name: 'Abdoul T.', vehicleType: 'CAR', plate: '11 HH 0917', status: 'APPROVED', online: { lat: 12.3920, lng: -1.5450 } });
   await createDriver({ phone: '+22673000005', name: 'Adama N.', vehicleType: 'MOTO', plate: '11 LL 3090', status: 'APPROVED', cashHeld: 52_000 });
   await createDriver({ phone: '+22673000006', name: 'Ousmane B.', vehicleType: 'MOTO', plate: '11 KM 2280', status: 'PENDING' });
   await createDriver({ phone: '+22673000007', name: 'Rasmané P.', vehicleType: 'BIKE', status: 'PENDING', skipDocs: ['SELFIE'] });
 
-  /* ---------------- Commandes ---------------- */
+  /* ---------------- Livraisons d'entreprise ---------------- */
   const rules = new Map(DEFAULT_PRICING_RULES.map((r) => [r.vehicleType, r]));
+  const balances = new Map<string, number>();
+  const tracking: Array<{ label: string; url: string }> = [];
 
-  async function createOrder(spec: {
-    client: { id: string };
-    store?: (typeof stores)[string];
-    items?: Array<[number, number]>; // [index produit, quantité]
-    pickup?: { lat: number; lng: number; address: string; landmark?: string };
+  /** Encaissement en espèces (journal de caisse, solde courant du livreur). */
+  async function collect(driverId: string, orderId: string, amount: number, note: string, at: Date) {
+    const balanceAfter = (balances.get(driverId) ?? 0) + amount;
+    balances.set(driverId, balanceAfter);
+    await prisma.cashLedgerEntry.create({ data: { driverId, type: 'COLLECTION', amount, balanceAfter, orderId, note, createdAt: at } });
+  }
+
+  async function createDelivery(spec: {
+    business: Business;
+    recipient: { name: string; phone: string; isBusiness?: boolean };
     dropoff: { lat: number; lng: number; address: string; landmark?: string };
     vehicleType: VehicleType;
+    packageDescription: string;
+    feePaidBy: FeePayer;
+    cashToCollect: number;
     path: OrderStatus[];
-    driver?: { id: string };
+    driver?: { id: string; lat: number; lng: number };
     createdMinutesAgo: number;
-    parcelDescription?: string;
+    cancelReason?: string;
   }) {
-    const pickup = spec.store
-      ? { lat: spec.store.lat, lng: spec.store.lng, address: spec.store.address, landmark: spec.store.landmark }
-      : { landmark: '', ...spec.pickup! };
+    const b = spec.business;
+    const pickup = { lat: b.lat, lng: b.lng, address: b.address, landmark: b.landmark };
     const distanceKm = roadDistanceKm(pickup, spec.dropoff);
-    const items = (spec.items ?? []).map(([i, q]) => {
-      const p = spec.store!.products[i]!;
-      return { productId: p.id, name: p.name, unitPrice: p.price, quantity: q };
-    });
-    const itemsTotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
     const price = computeDeliveryPrice(rules.get(spec.vehicleType)!, distanceKm);
-    const totals = computeOrderTotals(price, itemsTotal, spec.store?.commissionPercent ?? 0);
+    const totals = computeOrderTotals(price, spec.cashToCollect, 0);
     const status = spec.path[spec.path.length - 1]!;
     const created = minutesAgo(spec.createdMinutesAgo);
     const at = (i: number) => new Date(created.getTime() + i * 4 * 60_000);
-    const idx = (s: OrderStatus) => spec.path.indexOf(s);
-    const tsFor = (s: OrderStatus) => (idx(s) >= 0 ? at(idx(s)) : null);
+    const tsFor = (s: OrderStatus) => (spec.path.includes(s) ? at(spec.path.indexOf(s)) : null);
+    const delivered = status === 'DELIVERED';
+    const token = newTrackingToken();
     const order = await prisma.order.create({
       data: {
-        type: spec.store ? 'FOOD' : 'PARCEL',
+        type: 'PARCEL',
         status,
-        clientId: spec.client.id,
-        storeId: spec.store?.id ?? null,
+        clientId: b.ownerId,
+        storeId: b.id,
         driverId: spec.driver?.id ?? null,
         vehicleType: spec.vehicleType,
         pickupLat: pickup.lat,
         pickupLng: pickup.lng,
         pickupAddress: pickup.address,
-        pickupLandmark: pickup.landmark ?? '',
+        pickupLandmark: pickup.landmark,
         dropoffLat: spec.dropoff.lat,
         dropoffLng: spec.dropoff.lng,
         dropoffAddress: spec.dropoff.address,
         dropoffLandmark: spec.dropoff.landmark ?? '',
-        parcelDescription: spec.parcelDescription ?? null,
+        recipientName: spec.recipient.name,
+        recipientPhone: spec.recipient.phone,
+        recipientIsBusiness: spec.recipient.isBusiness ?? false,
+        parcelDescription: spec.packageDescription,
         distanceKm,
         ...totals,
-        paymentStatus: status === 'DELIVERED' ? 'PAID' : status === 'CANCELLED' ? 'CANCELLED' : 'PENDING',
-        cashCollected: status === 'DELIVERED' ? totals.total : null,
-        deliveryCode: String(1000 + Math.floor(Math.random() * 9000)),
-        prepTimeMinutes: spec.store ? 15 : null,
+        paymentMethod: 'CASH',
+        paymentStatus: delivered ? 'PAID' : status === 'CANCELLED' ? 'CANCELLED' : 'PENDING',
+        cashCollected: delivered ? totals.total : null,
+        feePaidBy: spec.feePaidBy,
+        cashToCollect: spec.cashToCollect,
+        owedToBusiness: delivered ? spec.cashToCollect : null,
+        trackingToken: token,
+        deliveryCode: generateDeliveryCode(),
+        cancelReason: spec.cancelReason ?? null,
         createdAt: created,
-        acceptedAt: tsFor('ACCEPTED'),
-        readyAt: tsFor('READY'),
         searchingSince: tsFor('SEARCHING_DRIVER'),
         assignedAt: tsFor('ASSIGNED'),
         pickedUpAt: tsFor('PICKED_UP'),
         deliveredAt: tsFor('DELIVERED'),
-        items: { create: items },
+        cancelledAt: tsFor('CANCELLED'),
       },
     });
     let prev: OrderStatus | null = null;
     for (let i = 0; i < spec.path.length; i++) {
       const s = spec.path[i]!;
-      await prisma.orderEvent.create({ data: { orderId: order.id, fromStatus: prev, toStatus: s, createdAt: at(i) } });
+      await prisma.orderEvent.create({
+        data: { orderId: order.id, fromStatus: prev, toStatus: s, actorId: i === 0 ? b.ownerId : null, actorRole: i === 0 ? 'SELLER' : null, createdAt: at(i) },
+      });
       prev = s;
     }
+    // Espèces : frais payés par l'entreprise au retrait (SENDER), marchandise (+ frais si RECIPIENT) à la livraison.
+    if (spec.driver && spec.path.includes('PICKED_UP') && spec.feePaidBy === 'SENDER')
+      await collect(spec.driver.id, order.id, totals.deliveryFee, `Frais de livraison payés par l’expéditeur, livraison #${order.number}`, tsFor('PICKED_UP')!);
+    if (spec.driver && delivered) {
+      const atDelivery = spec.cashToCollect + (spec.feePaidBy === 'RECIPIENT' ? totals.deliveryFee : 0);
+      if (atDelivery > 0) await collect(spec.driver.id, order.id, atDelivery, `Encaissement à la livraison #${order.number}`, tsFor('DELIVERED')!);
+    }
+    // Course en cours : itinéraire de l'étape en cours (et durée retrait → livraison), cap du livreur.
+    if (spec.driver && (status === 'ASSIGNED' || status === 'PICKED_UP')) {
+      const from = { lat: spec.driver.lat, lng: spec.driver.lng };
+      const target = status === 'ASSIGNED' ? pickup : spec.dropoff;
+      const route = await routing.route(from, { lat: target.lat, lng: target.lng }, spec.vehicleType);
+      const leg = status === 'ASSIGNED' ? await routing.route(pickup, spec.dropoff, spec.vehicleType) : null;
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          routeTarget: status === 'ASSIGNED' ? 'PICKUP' : 'DROPOFF',
+          routePoints: route.points,
+          routeDistanceM: route.distanceM,
+          routeDurationS: route.durationS,
+          routeSource: route.source,
+          routeComputedAt: now,
+          routeOriginLat: from.lat,
+          routeOriginLng: from.lng,
+          routeAttemptAt: now,
+          deliveryLegDurationS: leg?.durationS ?? null,
+        },
+      });
+      await prisma.driverProfile.update({
+        where: { userId: spec.driver.id },
+        data: { isBusy: true, lastHeading: normalizeHeading(bearingDeg(from, target)) },
+      });
+    }
+    if (status !== 'DELIVERED' && status !== 'CANCELLED')
+      tracking.push({ label: `#${order.number} ${b.name} → ${spec.recipient.name} (${status})`, url: trackingUrlFor(config.publicAppUrl, token) });
     return order;
   }
 
-  const FULL: OrderStatus[] = ['PENDING', 'ACCEPTED', 'READY', 'SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'];
+  const B = (name: string) => businesses[name]!;
+  const ISSOUF = { id: issouf.id, lat: 12.3602, lng: -1.5248 };
+  const FATIMATA = { id: fatimata.id, lat: 12.379, lng: -1.501 };
+  const ABDOUL = { id: abdoul.id, lat: 12.392, lng: -1.545 };
+  const DONE: OrderStatus[] = ['PENDING', 'SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'];
 
-  // Livrée hier (encaissement espèces par Issouf).
-  const delivered = await createOrder({
-    client: aminata, store: stores['Le Verdoyant']!, items: [[0, 2], [3, 1]],
-    dropoff: { ...Q.patteDOie, landmark: 'Derrière la station Total, portail bleu' },
-    vehicleType: 'MOTO', path: FULL, driver: issouf, createdMinutesAgo: 60 * 20,
-  });
-  await prisma.cashLedgerEntry.create({
-    data: { driverId: issouf.id, type: 'COLLECTION', amount: delivered.total, balanceAfter: 38_500, orderId: delivered.id, note: `Encaissement commande #${delivered.number}`, createdAt: delivered.deliveredAt! },
-  });
-  await prisma.rating.create({ data: { orderId: delivered.id, fromUserId: aminata.id, toUserId: issouf.id, score: 5, comment: 'Rapide et poli' } });
+  // Solde d'espèces d'Issouf avant la démonstration (38 500 FCFA détenus au total, cf. docs/API.md §12).
+  const ISSOUF_OPENING = 38_500 - 12_000 - computeDeliveryPrice(rules.get('MOTO')!, roadDistanceKm(Q.ouaga2000, Q.patteDOie)).deliveryFee;
+  balances.set(issouf.id, ISSOUF_OPENING);
 
-  // Nouvelle commande en attente du vendeur.
-  await createOrder({
-    client: aminata, store: stores['Le Verdoyant']!, items: [[0, 2], [3, 1]],
+  // Livrée hier par Issouf : frais payés par l'entreprise au retrait, marchandise encaissée pour elle.
+  const delivered = await createDelivery({
+    business: B('Kaya Market'), recipient: { name: 'Bintou Zongo', phone: '+22676100001' },
     dropoff: { ...Q.patteDOie, landmark: 'Derrière la station Total, portail bleu' },
-    vehicleType: 'MOTO', path: ['PENDING'], createdMinutesAgo: 1,
+    vehicleType: 'MOTO', packageDescription: 'Robe en wax et sac à main', feePaidBy: 'SENDER', cashToCollect: 12_000,
+    path: DONE, driver: ISSOUF, createdMinutesAgo: 60 * 20,
   });
-  // En préparation.
-  await createOrder({
-    client: paul, store: stores['Le Verdoyant']!, items: [[1, 1]],
-    dropoff: { ...Q.zogona, landmark: 'Cité universitaire, pavillon B' },
-    vehicleType: 'MOTO', path: ['PENDING', 'ACCEPTED'], createdMinutesAgo: 8,
+  // Livrée ce matin à une entreprise (clinique) par Fatimata : frais et médicaments payés par le destinataire.
+  const deliveredToday = await createDelivery({
+    business: B('Pharmacie du Progrès'), recipient: { name: 'Clinique Les Genêts', phone: '+22625360000', isBusiness: true },
+    dropoff: { ...Q.cissin, landmark: 'Portail vert, accueil' },
+    vehicleType: 'BIKE', packageDescription: 'Médicaments (commande de la clinique)', feePaidBy: 'RECIPIENT', cashToCollect: 8_500,
+    path: DONE, driver: FATIMATA, createdMinutesAgo: 60 * 3,
   });
-  // En livraison par Issouf (Ouaga 2000).
-  await createOrder({
-    client: mariam, store: stores['Maquis Chez Tanti']!, items: [[0, 3]],
+  // En livraison par Issouf (Ouaga 2000) : le destinataire paie le repas et les frais.
+  await createDelivery({
+    business: B('Le Verdoyant'), recipient: { name: 'Mariam Ouédraogo', phone: '+22676100003' },
     dropoff: { ...Q.ouaga2000, landmark: 'Villa 12, portail noir' },
-    vehicleType: 'MOTO', path: ['PENDING', 'ACCEPTED', 'READY', 'SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP'], driver: issouf, createdMinutesAgo: 30,
+    vehicleType: 'MOTO', packageDescription: 'Repas : riz gras poulet × 3', feePaidBy: 'RECIPIENT', cashToCollect: 7_500,
+    path: ['PENDING', 'SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP'], driver: ISSOUF, createdMinutesAgo: 25,
   });
-  await prisma.driverProfile.update({ where: { userId: issouf.id }, data: { isBusy: true } });
-  // Colis en recherche de livreur : Zogona -> Tampouy (vélo).
-  await createOrder({
-    client: paul, pickup: { ...Q.zogona, landmark: 'Boutique Faso Dan Fani' },
-    dropoff: { ...Q.tampouy, landmark: 'Près de la mosquée' },
-    vehicleType: 'BIKE', path: ['PENDING', 'SEARCHING_DRIVER'], createdMinutesAgo: 6, parcelDescription: 'Enveloppe de documents',
+  // Abdoul (voiture) va chercher un téléphone chez Tech Plus pour une entreprise de Dassasgho.
+  await createDelivery({
+    business: B('Tech Plus Électronique'), recipient: { name: 'Bureau Faso Conseil', phone: '+22625370000', isBusiness: true },
+    dropoff: { ...Q.dassasgho, landmark: 'Immeuble bleu, 2e étage' },
+    vehicleType: 'CAR', packageDescription: 'Téléphone Tecno Camon (boîte scellée)', feePaidBy: 'SENDER', cashToCollect: 85_000,
+    path: ['PENDING', 'SEARCHING_DRIVER', 'ASSIGNED'], driver: ABDOUL, createdMinutesAgo: 10,
   });
-  // Colis voiture Dassasgho -> Pissy en recherche.
-  await createOrder({
-    client: mariam, pickup: { ...Q.dassasgho, landmark: 'Quincaillerie du rond-point' },
+  // En recherche de livreur : vélo près de Fatimata (offre au prochain cycle) et moto sans livreur proche (console).
+  await createDelivery({
+    business: B('Faso Mode Boutique'), recipient: { name: 'Awa Kaboré', phone: '+22676100004' },
+    dropoff: { ...Q.wemtenga, landmark: 'Face à l’école Wend-Konta' },
+    vehicleType: 'BIKE', packageDescription: '2 pagnes Faso Dan Fani', feePaidBy: 'SENDER', cashToCollect: 25_000,
+    path: ['PENDING', 'SEARCHING_DRIVER'], createdMinutesAgo: 2,
+  });
+  await createDelivery({
+    business: B('Pharmacie du Progrès'), recipient: { name: 'Paul Tiendrébéogo', phone: '+22676100005' },
     dropoff: { ...Q.pissy, landmark: 'Face à l’école primaire' },
-    vehicleType: 'CAR', path: ['PENDING', 'SEARCHING_DRIVER'], createdMinutesAgo: 3, parcelDescription: 'Carton de vaisselle (fragile)',
+    vehicleType: 'MOTO', packageDescription: 'Médicaments (ordonnance)', feePaidBy: 'SENDER', cashToCollect: 0,
+    path: ['PENDING', 'SEARCHING_DRIVER'], createdMinutesAgo: 7,
   });
-  // Annulée.
-  await createOrder({
-    client: aminata, store: stores['Saveurs de Zogona']!, items: [[0, 1]],
-    dropoff: { ...Q.tanghin }, vehicleType: 'BIKE', path: ['PENDING', 'CANCELLED'], createdMinutesAgo: 90,
+  // Annulée par l'entreprise avant le retrait.
+  await createDelivery({
+    business: B('Kaya Market'), recipient: { name: 'Issa Ouédraogo', phone: '+22676100006' },
+    dropoff: { ...Q.tanghin }, vehicleType: 'MOTO', packageDescription: 'Paire de baskets', feePaidBy: 'RECIPIENT', cashToCollect: 18_000,
+    path: ['PENDING', 'SEARCHING_DRIVER', 'CANCELLED'], createdMinutesAgo: 90, cancelReason: 'Annulée par l’entreprise : destinataire injoignable',
   });
+
+  // Soldes d'espèces des livreurs = dernier solde du journal.
+  for (const [driverId, cashHeld] of balances) await prisma.driverProfile.update({ where: { userId: driverId }, data: { cashHeld } });
+  await prisma.rating.create({ data: { orderId: delivered.id, fromUserId: B('Kaya Market').ownerId, toUserId: issouf.id, score: 5, comment: 'Rapide et poli' } });
+  await prisma.rating.create({ data: { orderId: deliveredToday.id, fromUserId: B('Pharmacie du Progrès').ownerId, toUserId: fatimata.id, score: 5 } });
 
   /* ---------------- Incidents ---------------- */
   await prisma.incident.create({
-    data: { type: 'DISPUTE', reporterId: aminata.id, orderId: delivered.id, description: 'Colis endommagé à la livraison' },
+    data: { type: 'DISPUTE', reporterId: B('Kaya Market').ownerId, orderId: delivered.id, description: 'Colis endommagé à la livraison' },
   });
   await prisma.incident.create({
     data: { type: 'SOS', reporterId: karim.id, lat: 12.3985, lng: -1.519, description: 'Crevaison, besoin d’assistance' },
   });
 
-  console.info('Base de démonstration créée.');
+  console.info('Base de démonstration créée (modèle B2B : livraisons demandées par des entreprises).');
   console.info('Connexion (OTP 123456 si OTP_DEV_BYPASS=true ou DEMO_MODE=true ; avec DEMO_MODE=true, les comptes');
   console.info('de console utilisent DEMO_STAFF_CODE, après « Recevoir le code ») :');
-  console.info(`  Admin       ${admin.phone}`);
-  console.info(`  Contrôleur  ${controller.phone}`);
-  console.info('  Vendeurs    +22671000001 (Le Verdoyant), +22671000002, +22671000003, +22671000004, +22671000009 (boutique à valider)');
-  console.info('  Clients     +22672000001 (Aminata), +22672000002, +22672000003');
-  console.info('  Livreurs    +22673000001 (moto, en course), +22673000002 (moto), +22673000003 (vélo), +22673000004 (voiture)');
-  console.info('              +22673000005 (au plafond d’espèces), +22673000006 et +22673000007 (dossiers en attente)');
+  console.info(`  Admin        ${admin.phone}`);
+  console.info(`  Contrôleur   ${controller.phone}`);
+  console.info('  Entreprises  ' + businessesSpec.map((b) => `${b.phone} (${b.store.name})`).join(', '));
+  console.info('               +22671000009 (Grillades de Pissy, en attente de validation)');
+  console.info('  Livreurs     +22673000001 (moto, en course), +22673000002 (moto), +22673000003 (vélo), +22673000004 (voiture, en course)');
+  console.info('               +22673000005 (au plafond d’espèces), +22673000006 et +22673000007 (dossiers en attente)');
+  console.info('  Clients      +22672000001, +22672000002, +22672000003 (ancien parcours de commande, sans commande)');
+  console.info('Liens de suivi des destinataires (sans compte) :');
+  for (const l of tracking) console.info(`  ${l.label} : ${l.url}`);
 }
 
 main()

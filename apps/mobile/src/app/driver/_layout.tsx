@@ -18,7 +18,7 @@ export default function DriverLayout() {
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ title: 'Devenir livreur' }} />
-          <Stack.Screen name="order" options={{ title: 'Course en cours' }} />
+          <Stack.Screen name="order" options={{ title: 'Course en cours', headerShown: false }} />
           <Stack.Screen name="deliver" options={{ title: 'Confirmer la livraison' }} />
           <Stack.Screen name="history" options={{ title: 'Mes courses' }} />
         </Stack>

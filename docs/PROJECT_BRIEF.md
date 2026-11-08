@@ -14,6 +14,10 @@ Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagado
   recorded by the API).
 - Hosting and database: **Vercel + Neon, region Frankfurt** (Vercel `fra1`, Neon `aws-eu-central-1`). This is a
   transfer of personal data outside Burkina Faso: CIL formalities to complete before the real launch (§2).
+- **Product model: business deliveries (B2B, like Uber Direct / DoorDash Drive).** Businesses request a delivery to
+  their customer or to another business; the recipient has no account, gets a tracking link and the delivery code,
+  pays cash if needed and follows the driver on a live map with the real road route. The client ordering flow
+  (catalogue, cart) is deprecated (`docs/API.md`, "Livraisons d'entreprise").
 
 ## 1. What the owner must provide before development starts
 
@@ -46,6 +50,8 @@ Signable contracts (French): full version [`Contrat_Plateforme_Livraison_Ouagado
   - Store ID documents encrypted. Only KYC validators can see them, and every view is logged.
   - Set retention periods (proposed in Annexe 3 of the contract).
   - Host the data in Burkina Faso or a country with adequate protection. A transfer abroad may need CIL authorisation, so check this before choosing a cloud region.
+  - Road routes on the tracking maps: the routing service receives two coordinates per request (driver position and pickup or recipient point, nothing else). The demo uses the public OSRM servers of FOSSGIS in **Germany**: a **sub-processor to declare to the CIL** (transfer outside Burkina Faso). These public servers are for demo / pilot use only; production should self-host OSRM or Valhalla or use a paid routing API (Google Routes, Mapbox Directions) under a data processing agreement. `ROUTING_PROVIDER=straight` disables every external call.
+  - Recipients of business deliveries have no account: the business enters their name, phone and address for one delivery and must have their agreement to be contacted (tracking message by WhatsApp or SMS). The public tracking link shows no phone number of the recipient and expires 24 h after the delivery; addresses are purged after 12 months.
 
 **Drivers and employment**
 - Labour code: law n° 028-2008/AN. Social security: **CNSS**.

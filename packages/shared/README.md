@@ -6,7 +6,8 @@ Pure TypeScript shared by the API, the console and the mobile app (no runtime de
 |---|---|
 | `src/enums.ts` | Domain enums as const objects + types (`Role`, `VehicleType`, `OrderStatus`...), `ErrorCode`, French `LABELS` |
 | `src/constants.ts` | `OUAGADOUGOU_CENTER`, dispatch / cash / retention defaults, `requiredDocuments(vehicleType)` |
-| `src/geo.ts` | `haversineKm`, `roadDistanceKm` (haversine × 1.3) |
+| `src/geo.ts` | `haversineKm`, `roadDistanceKm` (haversine × 1.3), `approximateZone` (Ouagadougou neighbourhoods) |
+| `src/map.ts` | Tracking-map geometry: `bearingDeg`, `interpolateLatLng` / `interpolateBearing`, `nearestPointOnPolyline`, `splitPolylineAt` (trim the travelled part of a route), `remainingDistanceM`, `routeProgress`, `boundsOf` / `padBounds` / `regionForBounds`, French texts `formatDistanceFr`, `formatDurationFr`, `formatArrivalFr` (« Arrivée vers 14:32 · dans 12 min ») |
 | `src/pricing.ts` | `computeDeliveryFee`, `computeDeliveryPrice`, `computeOrderTotals`, `roundUpTo` (50 FCFA), `formatFcfa`, `DEFAULT_PRICING_RULES` |
 | `src/orderStatus.ts` | Order state machine: `ORDER_TRANSITIONS`, `canTransition`, `assertTransition`, cancellable / active status lists |
 | `src/schemas.ts` | zod schemas of every request body and query (the API validates with these; reuse them in forms) |
@@ -18,5 +19,5 @@ Imports inside the package are extension-less so every bundler resolves them.
 
 ```bash
 npm run typecheck -w packages/shared
-npm test -w packages/shared        # vitest: pricing, haversine, state machine, schemas
+npm test -w packages/shared        # vitest: pricing, haversine, map geometry, state machine, schemas
 ```

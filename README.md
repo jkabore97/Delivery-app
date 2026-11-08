@@ -1,6 +1,8 @@
 # Yaar Livraison: Ouagadougou
 
-On-demand delivery platform (bike, motorcycle, car) for clients, sellers, drivers and controllers.
+On-demand delivery platform (bike, motorcycle, car) for businesses, drivers and controllers: a business requests a
+delivery to its customer or to another business, and the recipient follows the driver on a live map without an account
+(see "Livraisons d'entreprise" in [docs/API.md](docs/API.md)).
 
 - Project brief and recommendations: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)
 - Signable contract (FR): [docs/contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf](docs/contrat/Contrat_Plateforme_Livraison_Ouagadougou.pdf)
@@ -36,14 +38,15 @@ Three Vercel projects (Hobby plan) built from this repository, plus a Neon Postg
 |---|---|---|
 | API (Fastify, one function, polling instead of sockets) | `apps/api` | https://yaar-api.vercel.app |
 | Controller console (Vite) | `apps/console` | https://yaar-console.vercel.app |
-| Mobile app, web build (Expo web, Leaflet maps) | `apps/mobile` | https://yaar-livraison.vercel.app (alias) and https://yaar-app-mu.vercel.app (`yaar-app.vercel.app` belongs to someone else) |
+| Mobile app, web build (Expo web, MapLibre maps) | `apps/mobile` | https://yaar-livraison.vercel.app (alias) and https://yaar-app-mu.vercel.app (`yaar-app.vercel.app` belongs to someone else) |
 
 Environment variables (names only; values in the Vercel dashboard, never in git):
 
 - API: `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Neon integration), `JWT_SECRET`, `STORAGE_ENCRYPTION_KEY`,
   `CRON_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY`, `REALTIME_MODE`, `STORAGE_DRIVER`, `DEMO_MODE`, `DEMO_STAFF_CODE`,
   `SEED_DEMO`, `OTP_PROVIDER`; optional `POLL_INTERVAL_MS`, `WORK_THROTTLE_MS`, `WORK_BUDGET_MS`, `LOG_LEVEL`,
-  `ALLOW_PREVIEW_DB_MIGRATIONS` (leave unset).
+  `ROUTING_PROVIDER`, `ROUTING_OSRM_URL`, `ROUTING_TIMEOUT_MS`, `PUBLIC_APP_URL`, `RECIPIENT_NOTIFIER`,
+  `TRACK_RATE_LIMIT`, `ALLOW_PREVIEW_DB_MIGRATIONS` (leave unset).
 - Console: `VITE_API_URL`. Mobile web: `EXPO_PUBLIC_API_URL`.
 
 Only production deployments of the API migrate (and, for the demo, seed) the database; preview deployments never
@@ -56,7 +59,11 @@ separate demo access code (`DEMO_STAFF_CODE`) for the console accounts, fictitio
 - [ ] Remove the demo data (demo accounts, orders, KYC files) from the Neon database, or start from a new one.
 - [ ] Configure the WhatsApp OTP provider (`OTP_PROVIDER=whatsapp` + a real provider in
       `apps/api/src/providers/whatsapp.ts`; the provider is not chosen yet).
-- [ ] Set `CORS_ORIGINS` to the final console and web-app domains only.
+- [ ] Set `CORS_ORIGINS` to the final console and web-app domains only, and `PUBLIC_APP_URL` to the final tracking-page domain.
+- [ ] Routing: self-host OSRM/Valhalla or sign a paid routing API (`ROUTING_OSRM_URL`), or `ROUTING_PROVIDER=straight`; the
+      public FOSSGIS servers are for the demo / pilot only.
+- [ ] Plug a real recipient channel (`RECIPIENT_NOTIFIER=whatsapp` placeholder in `apps/api/src/providers/recipients.ts`).
 - [ ] CIL formalities (Burkina Faso, law n° 001-2021/AN): declaration or authorisation, including the transfer of
-      personal data hosted in Frankfurt (Vercel `fra1` + Neon `aws-eu-central-1`), outside Burkina Faso.
+      personal data hosted in Frankfurt (Vercel `fra1` + Neon `aws-eu-central-1`), outside Burkina Faso, and the routing
+      service (default: FOSSGIS servers in Germany, which receive driver/pickup/recipient coordinates).
 - [ ] Legal review of the contracts and texts (terms of use, privacy policy, driver charter) by a local lawyer.

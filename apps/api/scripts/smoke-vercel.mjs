@@ -4,8 +4,10 @@
  * dans les conditions de Vercel (VERCEL=1, NODE_ENV=production, REALTIME_MODE=poll, STORAGE_DRIVER=db,
  * DEMO_MODE=true avec un DEMO_STAFF_CODE de test), puis vérifie /health, /config, CORS (préflight mis en
  * cache, motif de prévisualisation), la connexion OTP (123456 pour les clients et livreurs, refusé pour
- * un contrôleur qui doit utiliser le code d'accès démo), /me, /driver/offers, les limites d'envoi (413 JSON),
- * /cron/daily, et la réponse CORS quand l'API ne peut pas démarrer.
+ * un contrôleur qui doit utiliser le code d'accès démo), /me, /driver/offers, une livraison d'entreprise (devis,
+ * création, lien de suivi public /track/:token avec CORS de PUBLIC_APP_URL, annulation), les limites d'envoi
+ * (413 JSON), /cron/daily, et la réponse CORS quand l'API ne peut pas démarrer.
+ * Itinéraires en ligne droite (ROUTING_PROVIDER=straight) : aucun appel au service OSRM.
  *   npm run build:bundle -w apps/api && npm run smoke:vercel -w apps/api
  * Base : SMOKE_DATABASE_URL, sinon DATABASE_URL (.env), sinon yaar_dev locale (seed de démonstration attendu).
  */
@@ -28,6 +30,8 @@ const CRON_SECRET = 'smoke-cron-secret-0123456789abcdef';
 /** Valeur de test uniquement (jamais celle du projet Vercel). */
 const STAFF_CODE = '482913';
 const CONSOLE_ORIGIN = 'https://console.example.test';
+/** Page publique de suivi des destinataires (hors CORS_ORIGINS : autorisée via PUBLIC_APP_URL). */
+const TRACKING_ORIGIN = 'https://suivi.example.test';
 const PREVIEW_PATTERN = 'https://yaar-console-*-equipe-test.vercel.app';
 const env = {
   DATABASE_URL:
@@ -47,6 +51,9 @@ const env = {
   OTP_PROVIDER: 'console',
   CRON_SECRET,
   LOG_LEVEL: 'warn',
+  ROUTING_PROVIDER: 'straight',
+  RECIPIENT_NOTIFIER: 'console',
+  PUBLIC_APP_URL: TRACKING_ORIGIN,
 };
 Object.assign(process.env, env);
 
@@ -219,6 +226,45 @@ try {
     tooBigBody.status === 413 && tooBigBody.json?.error?.code === 'PAYLOAD_TOO_LARGE',
     tooBigBody.json?.error?.message,
   );
+
+  // Livraison d'entreprise (compte vendeur du seed, boutique validée) puis suivi public du destinataire.
+  const biz = await login('+22671000001', '123456');
+  const bizToken = biz.json?.accessToken;
+  const dropoff = { lat: 12.3395, lng: -1.517, address: "Patte d'Oie, secteur 15", landmark: 'Smoke test' };
+  const quote = await req('POST', '/business/deliveries/quote', { token: bizToken, body: { dropoff } });
+  check(
+    'POST /business/deliveries/quote',
+    quote.status === 200 && quote.json?.options?.length === 3,
+    `${quote.status} ${quote.json?.options?.map((o) => `${o.vehicleType}=${o.deliveryFee}`).join(' ') ?? quote.text}`,
+  );
+  const created = await req('POST', '/business/deliveries', {
+    token: bizToken,
+    body: { dropoff, recipientName: 'Test fumée', recipientPhone: '76 00 00 01', packageDescription: 'Test', vehicleType: 'MOTO', cashToCollect: 1000 },
+  });
+  const trackingUrl = created.json?.trackingUrl ?? '';
+  check(
+    'POST /business/deliveries → SEARCHING_DRIVER, lien de suivi, code masqué',
+    created.status === 201 && created.json?.status === 'SEARCHING_DRIVER' && trackingUrl.startsWith(`${TRACKING_ORIGIN}/suivi/`) && created.json?.deliveryCode === null,
+    `${created.status} ${created.json?.status ?? created.text}`,
+  );
+  const trackToken = trackingUrl.split('/').at(-1);
+  const tracked = await req('GET', `/track/${trackToken}`, { headers: { origin: TRACKING_ORIGIN } });
+  check(
+    'GET /track/:token sans compte (CORS de PUBLIC_APP_URL, no-store, code de livraison)',
+    tracked.status === 200 &&
+      /^\d{4}$/.test(tracked.json?.deliveryCode ?? '') &&
+      tracked.json?.amountToPay === 1000 &&
+      tracked.headers.get('access-control-allow-origin') === TRACKING_ORIGIN &&
+      tracked.headers.get('cache-control') === 'no-store' &&
+      !tracked.text.includes('76000001'),
+    `${tracked.status} ${tracked.headers.get('access-control-allow-origin')}`,
+  );
+  const unknown = await req('GET', '/track/AAAAAAAAAAAAAAAAAAAAAAAA');
+  check('GET /track/:token inconnu → 404 JSON', unknown.status === 404 && unknown.json?.error?.code === 'NOT_FOUND');
+  if (created.json?.id) {
+    const cancelled = await req('POST', `/orders/${created.json.id}/cancel`, { token: bizToken, body: { reason: 'Test de fumée' } });
+    check('POST /orders/:id/cancel par l’entreprise', cancelled.status === 200 && cancelled.json?.status === 'CANCELLED');
+  }
 
   const noSecret = await req('GET', '/cron/daily');
   check('GET /cron/daily sans secret → 401', noSecret.status === 401);

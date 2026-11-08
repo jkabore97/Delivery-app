@@ -15,6 +15,25 @@ const boolString = z
   .enum(['true', 'false', '1', '0'])
   .transform((v) => v === 'true' || v === '1');
 
+/** Application web publique (Expo web) : page de suivi des destinataires `/suivi/<jeton>`. */
+export const DEFAULT_PUBLIC_APP_URL = 'https://yaar-livraison.vercel.app';
+
+/** URL http(s) absolue, sans paramètres ni fragment ; la barre oblique finale est retirée. */
+function httpUrl(name: string) {
+  return z
+    .string()
+    .trim()
+    .refine((v) => {
+      try {
+        const u = new URL(v);
+        return (u.protocol === 'https:' || u.protocol === 'http:') && !u.search && !u.hash && !u.username;
+      } catch {
+        return false;
+      }
+    }, `${name} : URL http(s) absolue attendue (sans paramètres)`)
+    .transform((v) => v.replace(/\/+$/, ''));
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().default(3000),
@@ -68,6 +87,21 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(16, 'CRON_SECRET doit faire au moins 16 caractères').optional(),
   /** Défini à 1 par Vercel sur ses builds et fonctions. */
   VERCEL: z.string().optional(),
+  /**
+   * Itinéraires de la carte de suivi : osrm (service OSRM, par défaut les serveurs publics FOSSGIS) ou straight
+   * (ligne droite, aucun appel externe : tests, smoke test, ou pour ne transmettre aucune coordonnée à un tiers).
+   */
+  ROUTING_PROVIDER: z.enum(['osrm', 'straight']).default('osrm'),
+  /** URL de base du service OSRM (profils routed-car / routed-bike des serveurs FOSSGIS). */
+  ROUTING_OSRM_URL: httpUrl('ROUTING_OSRM_URL').default('https://routing.openstreetmap.de'),
+  /** Délai maximal d'un appel au service d'itinéraire (ms) ; au-delà, ligne droite de secours. */
+  ROUTING_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2500),
+  /** URL publique de l'application web : lien de suivi envoyé aux destinataires (`${PUBLIC_APP_URL}/suivi/<jeton>`). */
+  PUBLIC_APP_URL: httpUrl('PUBLIC_APP_URL').default(DEFAULT_PUBLIC_APP_URL),
+  /** Messages aux destinataires des livraisons d'entreprise : console (logs) ou whatsapp (non implémenté). */
+  RECIPIENT_NOTIFIER: z.enum(['console', 'whatsapp']).default('console'),
+  /** Suivi public GET /track/:token : requêtes par minute et par adresse IP (0 = pas de limite). */
+  TRACK_RATE_LIMIT: z.coerce.number().int().min(0).default(120),
 });
 
 export interface AppConfig {
@@ -107,6 +141,15 @@ export interface AppConfig {
   cronSecret: string | undefined;
   /** Exécution sur Vercel (fonctions éphémères, plusieurs instances, pas de disque persistant). */
   onVercel: boolean;
+  /** Fournisseur d'itinéraires (osrm : service externe ; straight : ligne droite, aucun appel). */
+  routingProvider: 'osrm' | 'straight';
+  routingOsrmUrl: string;
+  routingTimeoutMs: number;
+  /** URL publique de l'application (liens de suivi des destinataires), sans barre oblique finale. */
+  publicAppUrl: string;
+  recipientNotifier: 'console' | 'whatsapp';
+  /** GET /track/:token : requêtes par minute et par IP (0 = illimité). */
+  trackRateLimit: number;
 }
 
 /** Marge du corps JSON autour du fichier encodé (type, date d'expiration, code de livraison…). */
@@ -148,6 +191,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     if (e.DEMO_STAFF_CODE === DEMO_OTP_CODE)
       throw new Error('DEMO_STAFF_CODE ne doit pas être 123456 (code public de la démonstration)');
   }
+  // Démonstration publique : aucun message ne doit partir vers un vrai destinataire.
+  if (e.DEMO_MODE && e.RECIPIENT_NOTIFIER !== 'console') {
+    throw new Error(
+      `DEMO_MODE=true exige RECIPIENT_NOTIFIER=console (actuellement ${e.RECIPIENT_NOTIFIER}) : le mode démonstration ne doit pas écrire à de vrais destinataires`,
+    );
+  }
+  if (isProd && !e.PUBLIC_APP_URL.startsWith('https://'))
+    throw new Error('PUBLIC_APP_URL doit être en https en production (lien de suivi envoyé aux destinataires)');
   const realtimeMode = e.REALTIME_MODE ?? (onVercel ? 'poll' : 'socket');
   const storageDriver = e.STORAGE_DRIVER ?? (onVercel ? 'db' : 'local');
   if (onVercel && realtimeMode === 'socket')
@@ -197,5 +248,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bodyLimitBytes: base64Length(maxUploadBytes) + BODY_MARGIN_BYTES,
     cronSecret: e.CRON_SECRET,
     onVercel,
+    routingProvider: e.ROUTING_PROVIDER,
+    routingOsrmUrl: e.ROUTING_OSRM_URL,
+    routingTimeoutMs: e.ROUTING_TIMEOUT_MS,
+    publicAppUrl: e.PUBLIC_APP_URL,
+    recipientNotifier: e.RECIPIENT_NOTIFIER,
+    trackRateLimit: e.TRACK_RATE_LIMIT,
   };
 }

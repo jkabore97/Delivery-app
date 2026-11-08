@@ -226,7 +226,7 @@ export class DispatchService {
     const ids = stale.map((d) => d.userId);
     await this.prisma.driverProfile.updateMany({
       where: { userId: { in: ids }, isBusy: false },
-      data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null },
+      data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null, lastHeading: null },
     });
     for (const id of ids) {
       await this.withdrawDriverOffers(id);

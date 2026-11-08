@@ -1,53 +1,51 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
-import { OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
-import { colors, radius, spacing } from '../theme';
+import { approximateZone, OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
 import { isPinAtDefault, PIN_NOT_PLACED_MESSAGE } from '../lib/address';
-import { AddressMap, type AddressMapHandle } from './AddressMap';
+import { colors, radius, spacing } from '../theme';
+import { CenterPin } from './map/CenterPin';
+import { PickerMap, type PickerMapHandle } from './map/PickerMap';
 import { Button, Field, Muted } from './ui';
 
-export { regionFor } from '../lib/mapRegion';
+/** « Secteur Zogona » → « Zogona » (bulle de l'épingle). */
+export function zoneName(p: { lat: number; lng: number }): string {
+  return approximateZone(p).replace(/^Secteur\s+/, '');
+}
 
 /**
- * Choix d'une adresse : épingle fixe au centre de la carte (on déplace la carte), adresse en texte libre
- * et point de repère (indispensable à Ouagadougou où beaucoup de rues n'ont pas de nom).
- * La position du client n'est lue qu'à sa demande (« Ma position ») et n'est jamais envoyée en dehors d'une commande.
+ * Choix d'une adresse sur une carte intégrée (profil de l'entreprise) : épingle fixe au centre, adresse en
+ * texte libre et point de repère (indispensables à Ouagadougou). La position n'est lue qu'à la demande.
  */
 export function AddressPicker({
   value,
   onChange,
-  pinColor = colors.green,
+  variant = 'pickup',
   mapHeight = 220,
   addressLabel = 'Adresse',
   testID,
 }: {
   value: AddressDto | null;
   onChange: (a: AddressDto) => void;
-  pinColor?: string;
+  variant?: 'pickup' | 'dropoff';
   mapHeight?: number;
   addressLabel?: string;
   testID?: string;
 }) {
-  const mapRef = useRef<AddressMapHandle>(null);
+  const mapRef = useRef<PickerMapHandle>(null);
+  const [moving, setMoving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
-  const current: AddressDto = value ?? {
-    lat: OUAGADOUGOU_CENTER.lat,
-    lng: OUAGADOUGOU_CENTER.lng,
-    address: '',
-    landmark: '',
-  };
+  const current: AddressDto = value ?? { lat: OUAGADOUGOU_CENTER.lat, lng: OUAGADOUGOU_CENTER.lng, address: '', landmark: '' };
   const currentRef = useRef(current);
   currentRef.current = current;
   const [initialCenter] = useState(() => ({ lat: current.lat, lng: current.lng }));
 
-  // Recentre la carte si l'adresse change de l'extérieur (adresse enregistrée choisie).
+  // Recentre la carte si l'adresse change de l'extérieur (formulaire rechargé).
   const lastCentered = useRef({ lat: current.lat, lng: current.lng });
   useEffect(() => {
     if (!value) return;
-    const moved =
-      Math.abs(value.lat - lastCentered.current.lat) > 1e-5 || Math.abs(value.lng - lastCentered.current.lng) > 1e-5;
+    const moved = Math.abs(value.lat - lastCentered.current.lat) > 1e-5 || Math.abs(value.lng - lastCentered.current.lng) > 1e-5;
     if (moved) {
       lastCentered.current = { lat: value.lat, lng: value.lng };
       mapRef.current?.centerOn(value.lat, value.lng);
@@ -66,10 +64,9 @@ export function AddressPicker({
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const next = { ...currentRef.current, lat: pos.coords.latitude, lng: pos.coords.longitude };
       lastCentered.current = { lat: next.lat, lng: next.lng };
-      mapRef.current?.centerOn(next.lat, next.lng, 0.01);
+      mapRef.current?.centerOn(next.lat, next.lng, 16);
       onChange(next);
     } catch {
-      // Navigateur : refus de l'autorisation, délai dépassé ou page servie hors HTTPS.
       setLocError('Position indisponible : déplacez la carte pour placer l’épingle.');
     } finally {
       setLocating(false);
@@ -79,23 +76,23 @@ export function AddressPicker({
   return (
     <View style={{ gap: spacing.md }} testID={testID}>
       <View style={[styles.mapWrap, { height: mapHeight }]}>
-        <AddressMap
+        <PickerMap
           ref={mapRef}
+          style={StyleSheet.absoluteFill}
           initial={initialCenter}
+          onMoveStart={() => setMoving(true)}
           onCenterChange={(lat, lng) => {
+            setMoving(false);
             lastCentered.current = { lat, lng };
             onChange({ ...currentRef.current, lat, lng });
           }}
         />
-        <View pointerEvents="none" style={styles.pinWrap}>
-          <View style={[styles.pinHead, { backgroundColor: pinColor }]} />
-          <View style={[styles.pinTail, { backgroundColor: pinColor }]} />
-        </View>
+        <CenterPin moving={moving} variant={variant} bubble={isPinAtDefault(current) ? null : { title: zoneName(current) }} />
         <View style={styles.locateBtn}>
           <Button title="📍 Ma position" small variant="outline" onPress={useMyPosition} loading={locating} />
         </View>
       </View>
-      <Muted>Déplacez la carte pour placer l’épingle sur le lieu exact.</Muted>
+      <Muted>Déplacez la carte pour placer l’épingle sur l’entrée exacte.</Muted>
       {locError ? <Text style={{ color: colors.red }}>{locError}</Text> : null}
       {current.address.trim() && isPinAtDefault(current) ? (
         <Text style={{ color: colors.red }} testID={testID ? `${testID}-pin-warning` : undefined}>
@@ -104,14 +101,14 @@ export function AddressPicker({
       ) : null}
       <Field
         label={addressLabel}
-        placeholder="Quartier, rue (ex. Patte d’Oie, secteur 15)"
+        placeholder="Quartier, rue (ex. Zogona, avenue de l’Université)"
         value={current.address}
         onChangeText={(t) => onChange({ ...current, address: t })}
         maxLength={200}
       />
       <Field
         label="Point de repère"
-        placeholder="Ex. derrière la station Total, portail bleu"
+        placeholder="Ex. à côté de la pharmacie, portail bleu"
         value={current.landmark}
         onChangeText={(t) => onChange({ ...current, landmark: t })}
         maxLength={200}
@@ -122,15 +119,5 @@ export function AddressPicker({
 
 const styles = StyleSheet.create({
   mapWrap: { borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#E8ECEF' },
-  pinWrap: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    marginLeft: -11,
-    marginTop: -34,
-    alignItems: 'center',
-  },
-  pinHead: { width: 22, height: 22, borderRadius: 11, borderWidth: 3, borderColor: colors.white },
-  pinTail: { width: 3, height: 12 },
-  locateBtn: { position: 'absolute', right: spacing.sm, bottom: spacing.sm },
+  locateBtn: { position: 'absolute', right: spacing.sm, bottom: spacing.lg + 4 },
 });

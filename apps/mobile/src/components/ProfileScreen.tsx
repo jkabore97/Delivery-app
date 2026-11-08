@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
-import { LABELS } from '@yaar/shared';
 import { errorMessage } from '../lib/api';
 import { formatPhone } from '../lib/phone';
+import { roleLabel } from '../lib/roles';
 import { useAuth } from '../state/auth';
 import { colors } from '../theme';
 import { Banner, Button, Card, Field, Muted, Screen, Subtitle, Title } from './ui';
@@ -9,6 +9,8 @@ import { confirmAsync, notify } from '../lib/dialog';
 
 export interface ProfileScreenProps {
   color: string;
+  /** Contenu affiché avant la carte du compte (profil de l'entreprise). */
+  top?: ReactNode;
   children?: ReactNode;
   /**
    * Appelé avant la déconnexion (ex. livreur : passer hors ligne).
@@ -17,8 +19,8 @@ export interface ProfileScreenProps {
   beforeSignOut?: () => Promise<string | null>;
 }
 
-/** Profil commun aux trois espaces : nom, téléphone, déconnexion. */
-export function ProfileScreen({ color, children, beforeSignOut }: ProfileScreenProps) {
+/** Profil commun aux espaces Entreprise et Livreur : nom, téléphone, déconnexion. */
+export function ProfileScreen({ color, top, children, beforeSignOut }: ProfileScreenProps) {
   const { user, api, setUser, signOut } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
   const [busy, setBusy] = useState(false);
@@ -56,10 +58,11 @@ export function ProfileScreen({ color, children, beforeSignOut }: ProfileScreenP
   return (
     <Screen>
       <Title>Mon profil</Title>
+      {top}
       <Card>
         <Subtitle>{user.name ?? 'Sans nom'}</Subtitle>
         <Muted>
-          {formatPhone(user.phone)} · {LABELS.role[user.role]}
+          {formatPhone(user.phone)} · {roleLabel(user.role)}
         </Muted>
         <Field label="Nom affiché" value={name} onChangeText={setName} maxLength={80} />
         {message ? <Banner message={message.text} tone={message.ok ? 'green' : 'red'} /> : null}

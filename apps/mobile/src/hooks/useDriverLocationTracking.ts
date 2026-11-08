@@ -8,6 +8,8 @@ export interface TrackedPosition {
   lat: number;
   lng: number;
   at: number;
+  /** Cap du téléphone (0 = nord) quand il est connu (en mouvement), sinon null. */
+  heading?: number | null;
 }
 
 export interface DriverTrackingOptions {
@@ -91,7 +93,9 @@ export function useDriverLocationTracking(opts: DriverTrackingOptions): DriverTr
           if (cancelled) return;
           const now = clock();
           const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-          setState({ active: true, position: { ...pos, at: now }, error: null });
+          const h = loc.coords.heading;
+          const heading = typeof h === 'number' && h >= 0 && h <= 360 ? h : null;
+          setState({ active: true, position: { ...pos, at: now, heading }, error: null });
           // Arrière-plan (onglet masqué sur le web, où le navigateur peut continuer à fournir des positions) :
           // aucun envoi, comme sur Android/iOS où le suivi s'arrête hors premier plan. Reprise au retour.
           if (appStateRef.current === 'background') return;

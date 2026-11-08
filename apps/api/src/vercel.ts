@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { buildApp, CORS_MAX_AGE_SECONDS, type BuiltApp } from './app';
-import { isOriginAllowed, parseCorsOrigins, type CorsOrigins } from './lib/cors';
+import { DEFAULT_PUBLIC_APP_URL } from './config';
+import { isOriginAllowed, originOf, parseCorsOrigins, withOrigin, type CorsOrigins } from './lib/cors';
 
 /**
  * Point d'entrée des fonctions Vercel (Node, Fluid compute). Pré-compilé par esbuild dans
@@ -25,13 +26,15 @@ function getApp(): Promise<BuiltApp> {
   return built;
 }
 
-/** CORS_ORIGINS lu directement (la configuration complète peut être justement invalide). */
+/** CORS_ORIGINS (+ origine de PUBLIC_APP_URL) lus directement (la configuration complète peut être justement invalide). */
 function startupCorsOrigins(): CorsOrigins {
+  let origins: CorsOrigins;
   try {
-    return parseCorsOrigins(process.env.CORS_ORIGINS?.trim() || '*');
+    origins = parseCorsOrigins(process.env.CORS_ORIGINS?.trim() || '*');
   } catch {
-    return [];
+    origins = [];
   }
+  return withOrigin(origins, originOf(process.env.PUBLIC_APP_URL?.trim() || DEFAULT_PUBLIC_APP_URL));
 }
 
 /**

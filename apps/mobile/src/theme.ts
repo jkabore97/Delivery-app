@@ -16,7 +16,7 @@ export const colors = {
   white: '#FFFFFF',
 } as const;
 
-/** Couleur principale selon l'espace : vert client, orange vendeur, bleu livreur. */
+/** Couleur principale selon l'espace : orange entreprise, bleu livreur (vert : marque, destinataire). */
 export const roleColor = {
   CLIENT: colors.green,
   SELLER: colors.orange,

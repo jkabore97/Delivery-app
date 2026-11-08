@@ -1,17 +1,45 @@
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type { PrismaClient, VehicleType } from '@prisma/client';
-import { DEFAULT_PRICING_RULES, requiredDocuments, type AuthResponse } from '@yaar/shared';
+import { DEFAULT_PRICING_RULES, requiredDocuments, type AuthResponse, type LatLng } from '@yaar/shared';
 import { buildApp, type BuiltApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { ManualClock } from '../src/lib/clock';
 import { MemoryPushProvider } from '../src/providers/push';
+import { MemoryRecipientNotifier, type RecipientNotifier } from '../src/providers/recipients';
+import { straightRoute, type RouteResult, type RoutingProvider } from '../src/providers/routing';
 import { MemorySmsProvider } from '../src/providers/sms';
+import type { KeepAlive } from '../src/services/work';
 
 export interface TestApp extends BuiltApp {
   clock: ManualClock;
   sms: MemorySmsProvider;
   push: MemoryPushProvider;
+  recipients: MemoryRecipientNotifier;
   prisma: PrismaClient;
+}
+
+/**
+ * Faux service d'itinéraire (aucun réseau) : enregistre les appels ; tracé en ligne droite découpé en
+ * `segments` points (source `osrm` pour distinguer du repli), ou réponse personnalisée ; `gate` retarde la réponse.
+ */
+export class FakeRoutingProvider implements RoutingProvider {
+  readonly name = 'osrm' as const;
+  readonly calls: Array<{ from: LatLng; to: LatLng; vehicleType: VehicleType }> = [];
+  gate: Promise<void> | null = null;
+  respond: ((from: LatLng, to: LatLng, vehicleType: VehicleType) => RouteResult) | null = null;
+  constructor(private readonly segments = 10) {}
+  async route(from: LatLng, to: LatLng, vehicleType: VehicleType): Promise<RouteResult> {
+    this.calls.push({ from, to, vehicleType });
+    if (this.gate) await this.gate;
+    if (this.respond) return this.respond(from, to, vehicleType);
+    const base = straightRoute(from, to, vehicleType);
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i <= this.segments; i++) {
+      const f = i / this.segments;
+      points.push([from.lat + (to.lat - from.lat) * f, from.lng + (to.lng - from.lng) * f]);
+    }
+    return { ...base, points, source: 'osrm' };
+  }
 }
 
 export const T0 = new Date('2026-11-06T10:00:00.000Z');
@@ -28,25 +56,37 @@ export const P = {
 
 /**
  * Application de test. `env` remplace des variables d'environnement (ex. REALTIME_MODE=poll) ;
- * `opts.sms: null` garde le fournisseur OTP choisi par la configuration (OTP_PROVIDER).
+ * `opts.sms: null` garde le fournisseur OTP choisi par la configuration (OTP_PROVIDER), `opts.recipients: null`
+ * celui des messages aux destinataires (RECIPIENT_NOTIFIER).
  */
 export async function createTestApp(
   env: Record<string, string> = {},
-  opts: { clock?: ManualClock; sms?: null } = {},
+  opts: {
+    clock?: ManualClock;
+    sms?: null;
+    routing?: RoutingProvider;
+    /** null : celui de la configuration (RECIPIENT_NOTIFIER) ; défaut : MemoryRecipientNotifier. */
+    recipients?: RecipientNotifier | null;
+    keepAlive?: KeepAlive;
+  } = {},
 ): Promise<TestApp> {
   const clock = opts.clock ?? new ManualClock(T0);
   const sms = new MemorySmsProvider();
   const push = new MemoryPushProvider();
+  const recipients = new MemoryRecipientNotifier();
   const built = await buildApp({
     config: loadConfig({ ...process.env, ...env }),
     clock,
     ...(opts.sms === null ? {} : { sms }),
     push,
+    routing: opts.routing,
+    ...(opts.recipients === null ? {} : { recipients: opts.recipients ?? recipients }),
+    keepAlive: opts.keepAlive,
     logger: false,
   });
   built.ctx.realtime.record(true);
   await built.app.ready();
-  return { ...built, clock, sms, push, prisma: built.ctx.prisma };
+  return { ...built, clock, sms, push, recipients, prisma: built.ctx.prisma };
 }
 
 export async function resetDb(prisma: PrismaClient): Promise<void> {
@@ -151,6 +191,30 @@ export async function createStore(
     productIds.push(r.json<{ id: string }>().id);
   }
   return { seller, storeId, productIds };
+}
+
+/** Entreprise (compte SELLER) avec sa boutique validée (profil d'entreprise) à la position donnée. */
+export async function createBusiness(
+  t: TestApp,
+  at: { lat: number; lng: number } = P.centre,
+  opts: { name?: string; approval?: 'APPROVED' | 'PENDING' | 'SUSPENDED' } = {},
+): Promise<{ business: AuthResponse; storeId: string }> {
+  const business = await login(t.app, 'SELLER', nextPhone(), 'Gérante');
+  const store = await t.prisma.store.create({
+    data: {
+      ownerId: business.user.id,
+      name: opts.name ?? 'Pharmacie du Centre',
+      address: 'Avenue Kwame Nkrumah',
+      landmark: 'Face BCEAO',
+      lat: at.lat,
+      lng: at.lng,
+      phone: '+22625300000',
+      isOpen: true,
+      approvalStatus: opts.approval ?? 'APPROVED',
+      approvedAt: opts.approval && opts.approval !== 'APPROVED' ? null : t.clock.now(),
+    },
+  });
+  return { business, storeId: store.id };
 }
 
 export const PNG_BASE64 =

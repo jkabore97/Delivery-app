@@ -29,6 +29,28 @@ export const vercelKeepAlive: KeepAlive = (promise) => {
 };
 
 /**
+ * Attend `run` au plus `budgetMs` ; au-delà (ou budget nul), la promesse est confiée à `keepAlive`
+ * (`waitUntil` sur Vercel) et l'appelant reprend la main sans attendre.
+ */
+export async function waitWithin(run: Promise<unknown>, budgetMs: number, keepAlive: KeepAlive): Promise<void> {
+  if (budgetMs <= 0) {
+    keepAlive(run);
+    return;
+  }
+  let timer: NodeJS.Timeout | undefined;
+  let budgetExpired = false;
+  const budget = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      budgetExpired = true;
+      resolve();
+    }, budgetMs);
+  });
+  await Promise.race([run, budget]);
+  clearTimeout(timer);
+  if (budgetExpired) keepAlive(run);
+}
+
+/**
  * Tâches de fond sans processus permanent (mode poll / Vercel) : expiration des offres (30 s),
  * relance des commandes en attente, mise hors ligne des livreurs silencieux.
  *
@@ -42,6 +64,8 @@ export const vercelKeepAlive: KeepAlive = (promise) => {
 export class BackgroundWork {
   private lastLocalAttempt = Number.NEGATIVE_INFINITY;
   private inFlight: Promise<DueWorkResult> | null = null;
+  /** Tâches lancées par `defer()` et pas encore terminées (`settled()`). */
+  private readonly pending = new Set<Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -114,20 +138,36 @@ export class BackgroundWork {
       this.onError(err);
       return null;
     });
-    if (this.cfg.budgetMs <= 0) {
-      this.keepAlive(run);
-      return;
-    }
-    let timer: NodeJS.Timeout | undefined;
-    let budgetExpired = false;
-    const budget = new Promise<void>((resolve) => {
-      timer = setTimeout(() => {
-        budgetExpired = true;
-        resolve();
-      }, this.cfg.budgetMs);
-    });
-    await Promise.race([run, budget]);
-    clearTimeout(timer);
-    if (budgetExpired) this.keepAlive(run);
+    await waitWithin(run, this.cfg.budgetMs, this.keepAlive);
+  }
+
+  /**
+   * Tâche de fond déclenchée par une requête (calcul d'itinéraire, message au destinataire…), avec le même
+   * mécanisme que `kick()` : la requête l'attend au plus `budgetMs` (0 = pas du tout), puis la tâche continue
+   * maintenue en vie par `keepAlive` (`waitUntil` sur Vercel). Ne lève jamais : les erreurs vont à `onError`.
+   */
+  async defer(task: () => Promise<unknown>, budgetMs = 0, onError: (err: unknown) => void = this.onError): Promise<void> {
+    const run: Promise<void> = Promise.resolve()
+      .then(task)
+      .then(
+        () => undefined,
+        (err: unknown) => {
+          try {
+            onError(err);
+          } catch {
+            // Journalisation impossible : la tâche de fond ne doit jamais faire échouer la requête.
+          }
+        },
+      )
+      .finally(() => {
+        this.pending.delete(run);
+      });
+    this.pending.add(run);
+    await waitWithin(run, budgetMs, this.keepAlive);
+  }
+
+  /** Attend la fin des tâches lancées par `defer()` (tests, arrêt propre). */
+  async settled(): Promise<void> {
+    while (this.pending.size > 0) await Promise.allSettled([...this.pending]);
   }
 }

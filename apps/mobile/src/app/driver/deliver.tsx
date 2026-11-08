@@ -3,8 +3,10 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View, type TextInputInst
 import { router } from 'expo-router';
 import type { FileUploadInput, OrderDto } from '@yaar/shared';
 import { RatingCard } from '../../components/Rating';
+import { AmountBox } from '../../components/tracking/TrackingParts';
 import { Banner, Button, Card, KeyValue, Muted, ProgressBar, Row, Screen, Subtitle, Title } from '../../components/ui';
 import { errorMessage, isApiError } from '../../lib/api';
+import { amountsToCollect, collectDetail } from '../../lib/delivery';
 import { formatFcfa, formatOrderNumber } from '../../lib/format';
 import { useAsync } from '../../hooks/useAsync';
 import { capturePhoto } from '../../lib/photo';
@@ -14,7 +16,10 @@ import { colors, radius, spacing } from '../../theme';
 
 const CODE_LENGTH = 4;
 
-/** Preuve de livraison : code à 4 chiffres donné par le client + photo facultative. */
+/**
+ * Preuve de livraison : d'abord le montant à encaisser auprès du destinataire (marchandise + frais s'il les
+ * paie), puis le code à 4 chiffres affiché sur sa page de suivi, et une photo facultative.
+ */
 export default function DeliverScreen() {
   const api = useApi();
   const { currentOrder, profile, setCurrentOrder, refreshProfile } = useDriver();
@@ -54,7 +59,7 @@ export default function DeliverScreen() {
         {todayCard}
         {!rated ? (
           <RatingCard
-            title="Notez le client"
+            title={delivered.store ? 'Notez l’entreprise' : 'Notez le client'}
             color={colors.blue}
             onSubmit={async (score, comment) => {
               await api.rateOrder(delivered.id, { score, ...(comment ? { comment } : {}) });
@@ -107,8 +112,11 @@ export default function DeliverScreen() {
     }
   };
 
-  const cashAfter = (profile?.cashHeld ?? 0) + (o.paymentMethod === 'CASH' ? o.total : 0);
+  const amounts = amountsToCollect(o);
+  // Les frais payés par l'entreprise ont été encaissés (et comptés) au retrait.
+  const cashAfter = (profile?.cashHeld ?? 0) + amounts.atDropoff;
   const limit = profile?.cashLimit ?? 0;
+  const recipient = o.recipientName ?? o.client?.name ?? 'Destinataire';
 
   return (
     <Screen
@@ -125,9 +133,22 @@ export default function DeliverScreen() {
       }
     >
       <Muted>
-        Course {formatOrderNumber(o.number)} · {o.recipientName ?? o.client?.name ?? 'Client'}
+        Course {formatOrderNumber(o.number)} · {recipient}
       </Muted>
-      <Subtitle style={{ textAlign: 'center' }}>Demandez le code au client</Subtitle>
+      {amounts.atDropoff > 0 ? (
+        <AmountBox
+          label={`1. Encaissez auprès de ${recipient}`}
+          amount={amounts.atDropoff}
+          detail={collectDetail(amounts)}
+          testID="amount-to-collect"
+        />
+      ) : (
+        <Banner message="Rien à encaisser : la livraison est déjà payée." tone="green" />
+      )}
+      <Subtitle style={{ textAlign: 'center' }}>
+        {amounts.atDropoff > 0 ? '2. ' : ''}Demandez le code au destinataire
+      </Subtitle>
+      <Muted style={{ textAlign: 'center' }}>Il s’affiche sur sa page de suivi (lien reçu par SMS / WhatsApp).</Muted>
       <Pressable onPress={() => inputRef.current?.focus()} accessibilityLabel="Saisir le code de livraison">
         <Row style={{ justifyContent: 'center' }} gap={12}>
           {Array.from({ length: CODE_LENGTH }).map((_, i) => {
@@ -161,11 +182,6 @@ export default function DeliverScreen() {
       </Pressable>
       {photo ? <Button title="Retirer la photo" variant="ghost" small onPress={() => setPhoto(null)} /> : null}
 
-      {o.paymentMethod === 'CASH' ? (
-        <Card highlight={colors.orange}>
-          <KeyValue label="💵 Espèces à encaisser" value={formatFcfa(o.total)} strong />
-        </Card>
-      ) : null}
       {profile ? (
         <Card>
           <KeyValue label="Cash détenu après cette course" value={formatFcfa(cashAfter)} />

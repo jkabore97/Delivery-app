@@ -28,7 +28,8 @@ export async function orderRoutes(app: FastifyInstance, ctx: AppContext): Promis
   const anyUser = guard(prisma, config.jwtSecret);
   const client = guard(prisma, config.jwtSecret, ['CLIENT']);
   const driver = guard(prisma, config.jwtSecret, ['DRIVER']);
-  const clientOrBackOffice = guard(prisma, config.jwtSecret, ['CLIENT', 'CONTROLLER', 'ADMIN']);
+  // Annulation : client (anciennes commandes), entreprise (ses livraisons, avant le retrait) ou console.
+  const canCancel = guard(prisma, config.jwtSecret, ['CLIENT', 'SELLER', 'CONTROLLER', 'ADMIN']);
   const clientOrDriver = guard(prisma, config.jwtSecret, ['CLIENT', 'DRIVER']);
   const messaging = guard(prisma, config.jwtSecret, ['CLIENT', 'DRIVER', 'CONTROLLER', 'ADMIN']);
 
@@ -51,7 +52,7 @@ export async function orderRoutes(app: FastifyInstance, ctx: AppContext): Promis
     return ctx.orders.getDto(id, getAuth(req));
   });
 
-  app.post('/orders/:id/cancel', { preHandler: clientOrBackOffice }, async (req): Promise<OrderDto> => {
+  app.post('/orders/:id/cancel', { preHandler: canCancel }, async (req): Promise<OrderDto> => {
     const { id } = parse(orderParams, req.params);
     const { reason } = parse(cancelOrderSchema, req.body);
     return ctx.orders.cancel(id, getAuth(req), reason, req.ip);

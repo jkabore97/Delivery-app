@@ -1,31 +1,27 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import type { SelfSignupRole } from '@yaar/shared';
 import { errorMessage } from '../lib/api';
 import { formatPhone } from '../lib/phone';
-import { BACK_OFFICE_MESSAGE, homePathForRole, spaceForRole } from '../lib/roles';
+import { blockedAccountMessage, homePathForRole, isSignupRole, SIGNUP_ROLES } from '../lib/roles';
 import { DEMO_OTP_CODE } from '../lib/publicConfig';
 import { useAuth } from '../state/auth';
 import { useAppConfig } from '../state/config';
 import { colors, roleColor } from '../theme';
-import { Banner, Button, Chip, Field, Muted, Row, Screen, SectionTitle, Title } from '../components/ui';
-
-const ROLE_CHOICES: { role: SelfSignupRole; label: string }[] = [
-  { role: 'CLIENT', label: 'Je suis client' },
-  { role: 'SELLER', label: 'Je suis vendeur' },
-  { role: 'DRIVER', label: 'Je suis livreur' },
-];
+import { Banner, Button, Field, Muted, Screen, Title } from '../components/ui';
 
 export default function VerifyScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const params = useLocalSearchParams<{ phone: string; role?: string }>();
+  const phone = params.phone;
+  // Profil choisi sur l'écran précédent ; jamais « client » (pas d'inscription client).
+  const role = isSignupRole(params.role) ? params.role : 'SELLER';
+  const roleInfo = SIGNUP_ROLES.find((r) => r.role === role)!;
   const { api, signIn, signOut } = useAuth();
   const { config } = useAppConfig();
   const demo = config?.demoMode === true;
   const channel = config?.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   // Mode démo : le code 123456 est accepté pour tous les numéros, on le pré-remplit.
   const [code, setCode] = useState(demo ? DEMO_OTP_CODE : '');
-  const [role, setRole] = useState<SelfSignupRole>('CLIENT');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -42,8 +38,10 @@ export default function VerifyScreen() {
     setError(null);
     try {
       const auth = await api.verifyOtp({ phone, code, role, ...(name.trim() ? { name: name.trim() } : {}) });
-      if (!spaceForRole(auth.user.role)) {
-        await signOut(BACK_OFFICE_MESSAGE);
+      const blocked = blockedAccountMessage(auth.user.role);
+      if (blocked) {
+        // Compte client (ancien modèle) ou de console : rien à faire dans l'application.
+        await signOut(blocked);
         router.replace('/login');
         return;
       }
@@ -90,27 +88,26 @@ export default function VerifyScreen() {
       />
       {__DEV__ ? <Muted>Développement : le code 123456 est accepté si l’API a OTP_DEV_BYPASS=true.</Muted> : null}
 
-      <SectionTitle>Première connexion ?</SectionTitle>
-      <Muted>Choisissez votre profil (ignoré si vous avez déjà un compte).</Muted>
-      <Row style={{ flexWrap: 'wrap' }}>
-        {ROLE_CHOICES.map((c) => (
-          <Chip
-            key={c.role}
-            label={c.label}
-            selected={role === c.role}
-            color={roleColor[c.role]}
-            onPress={() => setRole(c.role)}
-          />
-        ))}
-      </Row>
-      <Field label="Votre nom (facultatif)" placeholder="Ex. Aminata K." value={name} onChangeText={setName} maxLength={80} />
+      <View testID="signup-role">
+        <Muted>
+          Première connexion ? Un compte {roleInfo.emoji} {roleInfo.label} sera créé pour ce numéro (ignoré si vous avez déjà un
+          compte).
+        </Muted>
+      </View>
+      <Field
+        label="Votre nom (facultatif)"
+        placeholder={role === 'SELLER' ? 'Ex. Awa Ouédraogo (gérante)' : 'Ex. Issouf Sawadogo'}
+        value={name}
+        onChangeText={setName}
+        maxLength={80}
+      />
 
       {error ? <Banner message={error} /> : null}
       {info ? <Banner message={info} tone="green" /> : null}
-      <Button title="Valider" onPress={submit} loading={busy} disabled={code.length !== 6} />
+      <Button title="Valider" color={roleColor[role]} onPress={submit} loading={busy} disabled={code.length !== 6} />
       <View style={{ alignItems: 'center' }}>
         <Button title="Renvoyer le code" variant="ghost" color={colors.green} onPress={resend} small />
-        <Button title="Changer de numéro" variant="ghost" color={colors.textMuted} onPress={() => router.back()} small />
+        <Button title="Changer de numéro ou de profil" variant="ghost" color={colors.textMuted} onPress={() => router.back()} small />
       </View>
     </Screen>
   );

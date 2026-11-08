@@ -38,12 +38,32 @@ describe('OfferModal', () => {
     expect(r.getByText(/Maquis Le Verdoyant/)).toBeTruthy();
   });
 
-  it('repas : boutique et son adresse, zone de livraison seulement (pas d’adresse client)', async () => {
+  it('entreprise : nom et adresse du retrait, zone de livraison seulement (pas d’adresse du destinataire)', async () => {
     const r = await render(<OfferModal />);
-    expect(r.getByText('Récupérer : Maquis Le Verdoyant')).toBeTruthy();
+    expect(r.getByText('Récupérer chez Maquis Le Verdoyant')).toBeTruthy();
     expect(r.getByText(/Avenue Kwame Nkrumah, centre-ville · Secteur Centre-ville/)).toBeTruthy();
     expect(r.getByText('Livrer : Secteur Patte d’Oie')).toBeTruthy();
-    expect(r.getByText(/adresse exacte du client s’affiche une fois la course acceptée/)).toBeTruthy();
+    expect(r.getByText(/adresse exacte du destinataire s’affiche une fois la course acceptée/)).toBeTruthy();
+  });
+
+  it('livraison d’entreprise (colis) : entreprise, véhicule et montants', async () => {
+    mockDriver.offers = [
+      offer({
+        orderType: 'PARCEL',
+        vehicleType: 'MOTO',
+        pickup: { address: 'Avenue de l’Université, Zogona', name: 'Pharmacie du Campus', distanceFromDriverKm: 1.2, zone: 'Secteur Zogona' },
+        dropoff: { address: 'Secteur Patte d’Oie', zone: 'Secteur Patte d’Oie' },
+        distanceKm: 5.4,
+        cashToCollect: 16500,
+        driverEarning: 1250,
+      }),
+    ];
+    const r = await render(<OfferModal />);
+    expect(r.getByText('Récupérer chez Pharmacie du Campus')).toBeTruthy();
+    expect(r.getByText(/Avenue de l’Université, Zogona · Secteur Zogona/)).toBeTruthy();
+    expect(r.getByTestId('offer-vehicle')).toHaveTextContent(/Moto · 5,4 km de course/);
+    expect(r.getByTestId('offer-cash')).toHaveTextContent(/16 500 F/);
+    expect(r.getByTestId('offer-earning')).toHaveTextContent(/1 250 FCFA/);
   });
 
   it('colis : zones approximatives au retrait et à la livraison', async () => {

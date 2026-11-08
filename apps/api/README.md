@@ -31,7 +31,7 @@ accounts (`CONTROLLER`, `ADMIN`) do **not** accept `123456`: they use `DEMO_STAF
 | `npm run db:seed:if-empty` | demo data only if the database has no user yet (never wipes; used by the Vercel build) |
 | `npm run build:vercel` | Vercel build (not named `vercel-build`, which Vercel would run a second time on its own): `prisma generate`, esbuild bundle `dist/vercel.mjs`; **production deployments only** (`VERCEL_ENV=production`): runtime config check (`scripts/check-config.ts`), `prisma migrate deploy`, demo seed if `SEED_DEMO=true` and `DEMO_MODE=true` |
 | `npm run build:bundle` | the same without database steps (local check of the bundle) |
-| `npm run smoke:vercel` | starts the bundled Vercel handler as an HTTP server (`VERCEL=1`, production, poll, db storage, demo with a test `DEMO_STAFF_CODE`) against `DATABASE_URL` and checks `/health`, `/config`, CORS (cached preflight, preview pattern), OTP login (`123456` for client/driver, refused for a controller, staff code accepted), `/me`, `/driver/offers`, upload limits (`413` JSON), `/cron/daily`, and the CORS headers of the start-up failure response |
+| `npm run smoke:vercel` | starts the bundled Vercel handler as an HTTP server (`VERCEL=1`, production, poll, db storage, demo with a test `DEMO_STAFF_CODE`, `ROUTING_PROVIDER=straight`: no call to OSRM) against `DATABASE_URL` and checks `/health`, `/config`, CORS (cached preflight, preview pattern), OTP login (`123456` for client/driver, refused for a controller, staff code accepted), `/me`, `/driver/offers`, a business delivery (quote, creation, public `/track/:token` with the CORS origin of `PUBLIC_APP_URL`, unknown token `404`, cancellation; needs the seeded business `+22671000001`), upload limits (`413` JSON), `/cron/daily`, and the CORS headers of the start-up failure response |
 
 ## Local PostgreSQL used during development
 
@@ -69,7 +69,10 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/yaar_test?schema
 
 `npm test` applies the migrations to `TEST_DATABASE_URL` (`test/globalSetup.ts`), then runs the files one by
 one (they share the database and truncate it before each test). Time is controlled with a `ManualClock`,
-SMS with a `MemorySmsProvider`, files go to a temporary encrypted directory.
+SMS with a `MemorySmsProvider`, recipient messages with a `MemoryRecipientNotifier`, files go to a temporary encrypted
+directory. **No test touches the network**: `ROUTING_PROVIDER=straight` by default, route tests inject a
+`FakeRoutingProvider`, OSRM tests inject a fake `fetch`, and `test/setupEnv.ts` makes `fetch` refuse any host other than
+`127.0.0.1`/`localhost`.
 
 | File | Covers |
 |---|---|
@@ -85,6 +88,12 @@ SMS with a `MemorySmsProvider`, files go to a temporary encrypted directory.
 | `cors.test.ts` | `CORS_ORIGINS` exact origins and one-label wildcard patterns, production refusals (`*`, whole-label `*`), `Access-Control-Max-Age: 7200` on preflights, CORS on error responses, Vercel start-up failure response (500 JSON + CORS, preflight accepted), Vercel upload caps (3 MB decoded, 4.25 MB body → `413 PAYLOAD_TOO_LARGE`) |
 | `storage.test.ts` | `STORAGE_DRIVER=db`: encrypted bytes in `StoredFile`, read/replace/delete, wrong key, invalid keys, KYC upload + audited console view, proof photo + audited view |
 | `admin.test.ts` | pricing update (audited, used by quotes), store approval/suspension and public view, product photos, users list/suspend/unsuspend, reinstate, concurrent cash deposits, disputes → incidents, seller reject + stats, CSV exports, push notifications, chat, ETA, French zod messages |
+| `geo.test.ts` | polyline decoding (Google reference example, round trip, truncated/invalid input), Douglas–Peucker downsampling to ≤ 300 points (first/last kept), projection on the line and remaining share, U-turn ambiguity, bearings, driver heading rule (phone heading vs computed bearing, stationary, ≥ 15 m) |
+| `routing.test.ts` | OSRM request (profile per vehicle, `lng,lat`, `overview=full&geometries=polyline`, `User-Agent`, no other data), decoding + downsampling + duration factors, straight-line fallback on timeout (also when `fetch` ignores the abort), HTTP 500, invalid JSON, no route, unexpected shape, invalid polyline, network error (warnings without coordinates); straight provider; `ROUTING_*` env and provider choice; no network in tests |
+| `routes.test.ts` | route cache with the injected clock: assignment (pickup leg from the driver + pickup → dropoff duration), pickup (fresh driver position or pickup point), erased on delivery, on-route / off-route (> 120 m) / older than 3 min / wrong leg, 30 s throttle, ping response not waiting for the routing service, two instances = one call (conditional `routeAttemptAt`), `updatedAt` unchanged; visibility (client, driver, console vs seller, other client, before/after, lists); ETA from the route (+ handover + pickup → dropoff) and fallback; heading persisted, exposed and erased offline; `/controller/map` route + heading without calling the provider |
+| `business.test.ts` | business deliveries: approved business profile required (`STORE_NOT_APPROVED`), quote (store or custom pickup), validation, creation straight to `SEARCHING_DRIVER` with events, offer to the nearest driver (business address, zone only), tracking token (144 bits, unique), delivery code never shown to the business, recipient messages (link, code, amount; failing/slow/placeholder channel never blocks), visibility (driver, position, route, ETA; other business `404`), `GET /business/deliveries` (scope, `status`, `updatedSince`), cancel before pickup only, cash ledger (`SENDER` at pickup, `RECIPIENT` at delivery, goods owed to the business), `/controller/cash/businesses`, push, CSV columns |
+| `tracking.test.ts` | `GET /track/:token`: constant shape, no recipient phone or internal amounts, `amountToPay`, driver/route/ETA only while `ASSIGNED`/`PICKED_UP`, code until delivered/cancelled, `404` unknown/malformed/24 h after the end, per-IP limit (`429`), poll mode dispatch trigger, `PUBLIC_APP_URL` link and CORS origin, configuration rules |
+| `seed.test.ts` | `prisma/seed.ts --if-empty` on the empty test database (no network): businesses, B2B deliveries in every status, kept staff/driver phones, cash ledger consistent with `cashHeld`, cached routes of jobs in progress; second run does nothing |
 
 ## Code map
 
@@ -97,11 +106,16 @@ src/config.ts                environment variables (validated with zod)
 src/context.ts               AppContext injected in routes/services
 src/lib/                     auth (JWT, guards), errors, zod parsing helper, injectable clock, per-IP rate limiter, file checks,
                              CORS origins (exact + one-label `*` patterns)
-src/providers/               SmsProvider/OtpProvider (console; WhatsApp placeholder), PushProvider + Notifier, StorageProvider (local disk or Postgres, AES-256-GCM), PaymentProvider (cash; mobile money stub)
+src/providers/               SmsProvider/OtpProvider (console; WhatsApp placeholder), PushProvider + Notifier, StorageProvider (local disk or Postgres, AES-256-GCM), PaymentProvider (cash; mobile money stub),
+                             RoutingProvider (routing.ts: OSRM with straight-line fallback, straight), RecipientNotifier (recipients.ts: console; WhatsApp placeholder)
 src/realtime/                Socket.IO gateway (auth, rooms) and RealtimeHub (typed emitters)
-src/services/                OrderService, DispatchService, status transitions, serializers (privacy rules), audit
-src/routes/                  auth, me, stores+seller, orders, driver, controller
-src/services/work.ts         runDueWork(): dispatch cycle without a long-running process (poll mode), lease in JobLease
+src/services/                OrderService, DispatchService, status transitions, serializers (privacy rules, TrackingDto), audit,
+                             DeliveryService (deliveries.ts: business deliveries, public tracking, amounts owed),
+                             RouteService (routes.ts: cached route per leg, recompute rules, ETA), heading.ts (driver heading)
+src/lib/geo.ts               polyline decoding, Douglas–Peucker, projection on a line, bearings
+src/routes/                  auth, me, stores+seller, orders, driver, controller, business (/business/deliveries), tracking (public /track/:token)
+src/services/work.ts         runDueWork(): dispatch cycle without a long-running process (poll mode), lease in JobLease;
+                             defer(): request-triggered background tasks (routes, recipient messages), budget + waitUntil
 src/routes/system.ts         GET /config, GET /cron/daily
 src/jobs/                    retention job
 api/index.js, vercel.json    Vercel function and project configuration; scripts/ = build, runtime config check, smoke test
@@ -127,6 +141,16 @@ Design notes:
   before comparing, so parallel requests cannot bypass the limit. Cash deposits use a conditional decrement.
 - Back-office recovery of a stuck `PICKED_UP` order: `force-deliver`, `reset-delivery-code`, or cancel (opens
   an incident). A driver on a delivery cannot be suspended.
+- Business deliveries (B2B, `docs/API.md` "Livraisons d'entreprise"): a `PARCEL` order linked to the business store,
+  the business account as `clientId` (requester), straight to `SEARCHING_DRIVER`; `feePaidBy`/`cashToCollect` drive the
+  cash ledger (fee at pickup or at delivery, goods at delivery, `owedToBusiness`); the recipient gets a public tracking
+  link (`trackingToken`, 144 bits) and messages through `RecipientNotifier`, in the background (`work.defer()`).
+- Road routes (`docs/API.md` "Itinéraires (carte de suivi)"): the route of the current leg is cached on the order
+  (`route*` columns) at assignment and pickup and recomputed on pings when the driver is off the line (> 120 m), the
+  route is older than 3 min or the leg changed; at most one attempt per order every 30 s across instances (conditional
+  `UPDATE` of `routeAttemptAt`), written in raw SQL so that `updatedAt` stays the business-change cursor. Computations
+  go through `BackgroundWork.defer()` (same budget + `waitUntil` mechanism as `kick()`): a ping never waits for OSRM.
+  `transitionOrder()` erases the cached route at every status change.
 - KYC documents and proof photos are encrypted at rest when `STORAGE_ENCRYPTION_KEY` is set (mandatory in
   production) and are only served through audited, authenticated endpoints.
 
@@ -168,6 +192,12 @@ sit next to `fra1`). The integration adds `DATABASE_URL` (pooled) and `DATABASE_
 | `CORS_ORIGINS` | console and mobile-web URLs, comma-separated: `https://yaar-console.vercel.app,https://yaar-livraison.vercel.app,https://yaar-app-mu.vercel.app`. Optional preview pattern, `*` = part of ONE hostname label: `https://yaar-console-*-wendtoin-jairus-kabore-s-projects.vercel.app`. `*` alone and whole-label patterns such as `https://*.vercel.app` are refused in production |
 | `TRUST_PROXY` | `true` (client IPs from `X-Forwarded-For`, set by Vercel) |
 | `OTP_PROVIDER` | optional, `console` (default; codes in the function logs). `whatsapp` is a placeholder that refuses with 503 (and is refused at start-up with `DEMO_MODE=true`) |
+| `ROUTING_PROVIDER` | optional, `osrm` (default: road routes from `ROUTING_OSRM_URL`, straight-line fallback) or `straight` (no external call). The default public FOSSGIS servers (Germany) receive two coordinates per request: demo / pilot only, a sub-processor to declare to the CIL |
+| `ROUTING_OSRM_URL` | optional, default `https://routing.openstreetmap.de` (profiles `routed-car`, `routed-bike`). Production: a self-hosted OSRM/Valhalla or a paid routing API |
+| `ROUTING_TIMEOUT_MS` | optional, default `2500` (100..10000) |
+| `PUBLIC_APP_URL` | optional, default `https://yaar-livraison.vercel.app`: recipients' tracking links `${PUBLIC_APP_URL}/suivi/<token>`; https in production; its origin is always allowed by CORS |
+| `RECIPIENT_NOTIFIER` | optional, `console` (default; messages to recipients in the function logs). `whatsapp` is a placeholder (send fails and is logged, the delivery continues); refused with `DEMO_MODE=true` |
+| `TRACK_RATE_LIMIT` | optional, default `120` requests per minute and per IP on `GET /track/:token` (`0` = off) |
 | `ALLOW_PREVIEW_DB_MIGRATIONS` | leave unset. Preview deployments never run migrations or the seed (they share the production database variables); `true` forces them, only with a separate preview database |
 
 Do **not** set `NODE_ENV`: on Vercel (`VERCEL=1`) the API defaults to `production`, and `NODE_ENV=production` at
@@ -210,7 +240,9 @@ If the runtime logs show `prepared statement "s0" already exists` (pooled connec
 
 ## Environment variables
 
-See `.env.example`. In production: `NODE_ENV=production`, a random `JWT_SECRET` (`openssl rand -hex 32`),
+See `.env.example` (routing: `ROUTING_PROVIDER`, `ROUTING_OSRM_URL`, `ROUTING_TIMEOUT_MS`; business deliveries:
+`PUBLIC_APP_URL`, `RECIPIENT_NOTIFIER`, `TRACK_RATE_LIMIT`; all validated at start-up and by `scripts/check-config.ts`).
+In production: `NODE_ENV=production`, a random `JWT_SECRET` (`openssl rand -hex 32`),
 `STORAGE_ENCRYPTION_KEY` (`openssl rand -hex 32`), `OTP_DEV_BYPASS` is ignored, `CORS_ORIGINS` set to the console
 origin (`*` is refused in production), `TRUST_PROXY` set when behind a reverse proxy (otherwise audited IPs are
 the proxy's). A real `SmsProvider` (local operator or aggregator) and a real `PushProvider` (Expo Push / FCM)

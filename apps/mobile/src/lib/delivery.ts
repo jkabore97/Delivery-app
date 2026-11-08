@@ -1,0 +1,304 @@
+import {
+  AVERAGE_SPEED_KMH,
+  createDeliverySchema,
+  distanceM,
+  formatDistanceFr,
+  formatFcfa,
+  formatDurationFr,
+  minutesFromSeconds,
+  normalizePhone,
+  OrderStatus,
+  roadDistanceKm,
+  routeProgress,
+  type AddressDto,
+  type CreateDeliveryInput,
+  type FeePayer,
+  type LatLng,
+  type OrderDto,
+  type QuoteResponse,
+  type VehicleType,
+} from '@yaar/shared';
+import { isPinAtDefault, toAddressInput } from './address';
+
+/* ------------------------------------------------------------------ */
+/* Statuts                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Livraisons en cours de l'entreprise (onglet « Livraisons »). */
+export const BUSINESS_ACTIVE_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.SEARCHING_DRIVER,
+  OrderStatus.ASSIGNED,
+  OrderStatus.PICKED_UP,
+];
+
+/** Historique de l'entreprise. */
+export const BUSINESS_HISTORY_STATUSES: OrderStatus[] = [OrderStatus.DELIVERED, OrderStatus.CANCELLED];
+
+/** L'entreprise peut annuler tant que le colis n'est pas récupéré. */
+export const BUSINESS_CANCELLABLE_STATUSES: readonly OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.SEARCHING_DRIVER,
+  OrderStatus.ASSIGNED,
+];
+
+export function canBusinessCancel(status: OrderStatus): boolean {
+  return BUSINESS_CANCELLABLE_STATUSES.includes(status);
+}
+
+const ACTIVE_RANK: Partial<Record<OrderStatus, number>> = { PENDING: 0, SEARCHING_DRIVER: 0, ASSIGNED: 1, PICKED_UP: 2 };
+
+/** Livraisons en cours : celles qui attendent un livreur d'abord, puis par étape ; les plus récentes en premier. */
+export function sortActiveDeliveries(list: OrderDto[]): OrderDto[] {
+  return [...list].sort((a, b) => {
+    const ra = ACTIVE_RANK[a.status] ?? 9;
+    const rb = ACTIVE_RANK[b.status] ?? 9;
+    if (ra !== rb) return ra - rb;
+    return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  });
+}
+
+/** Libellés de statut côté entreprise. */
+export function businessStatusLabel(status: OrderStatus): { label: string; tone: 'orange' | 'blue' | 'green' | 'grey' | 'red' } {
+  switch (status) {
+    case 'PENDING':
+    case 'ACCEPTED':
+    case 'READY':
+    case 'SEARCHING_DRIVER':
+      return { label: 'RECHERCHE LIVREUR', tone: 'orange' };
+    case 'ASSIGNED':
+      return { label: 'LIVREUR EN ROUTE', tone: 'blue' };
+    case 'PICKED_UP':
+      return { label: 'EN LIVRAISON', tone: 'green' };
+    case 'DELIVERED':
+      return { label: 'LIVRÉE', tone: 'grey' };
+    case 'CANCELLED':
+      return { label: 'ANNULÉE', tone: 'red' };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Montants                                                            */
+/* ------------------------------------------------------------------ */
+
+export const FEE_PAYER_LABELS: Record<FeePayer, { title: string; detail: string }> = {
+  SENDER: { title: 'L’entreprise', detail: 'au retrait du colis' },
+  RECIPIENT: { title: 'Le destinataire', detail: 'à la livraison' },
+};
+
+export interface CollectAmounts {
+  /** Espèces à encaisser auprès de l'entreprise au retrait (frais payés par l'expéditeur). */
+  atPickup: number;
+  /** Espèces à encaisser auprès du destinataire (marchandise + frais s'il les paie). */
+  atDropoff: number;
+  /** Valeur de la marchandise à encaisser (reversée à l'entreprise). */
+  goods: number;
+  fee: number;
+  feePaidBy: FeePayer | null;
+  /** Livraison demandée par une entreprise (modèle B2B). */
+  business: boolean;
+}
+
+/**
+ * Ce que le livreur encaisse et où. Livraison d'entreprise : marchandise (`cashToCollect`) + frais si le
+ * destinataire les paie, à la livraison ; frais au retrait si l'entreprise les paie. Ancienne commande
+ * client : le total, à la livraison (espèces).
+ */
+export function amountsToCollect(
+  o: Pick<OrderDto, 'feePaidBy' | 'cashToCollect' | 'deliveryFee' | 'total' | 'itemsTotal' | 'paymentMethod'>,
+): CollectAmounts {
+  if (o.feePaidBy !== 'SENDER' && o.feePaidBy !== 'RECIPIENT') {
+    const cash = o.paymentMethod === 'CASH' ? o.total : 0;
+    return { atPickup: 0, atDropoff: cash, goods: o.itemsTotal, fee: o.deliveryFee, feePaidBy: null, business: false };
+  }
+  const goods = Math.max(0, o.cashToCollect ?? 0);
+  const fee = o.deliveryFee;
+  return {
+    atPickup: o.feePaidBy === 'SENDER' ? fee : 0,
+    atDropoff: goods + (o.feePaidBy === 'RECIPIENT' ? fee : 0),
+    goods,
+    fee,
+    feePaidBy: o.feePaidBy,
+    business: true,
+  };
+}
+
+/** Détail du montant à encaisser à la livraison : « Marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces. » */
+export function collectDetail(a: CollectAmounts): string | null {
+  if (!a.business) return 'Total de la commande, en espèces.';
+  const parts: string[] = [];
+  if (a.goods > 0) parts.push(`marchandise ${formatFcfa(a.goods)}`);
+  if (a.feePaidBy === 'RECIPIENT') parts.push(`frais de livraison ${formatFcfa(a.fee)}`);
+  if (parts.length === 0) return null;
+  const text = parts.join(' + ');
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}, en espèces.`;
+}
+
+/** Montant que paiera le destinataire pour une demande en préparation. */
+export function recipientPays(fee: number | null, feePaidBy: FeePayer, cashToCollect: number): number {
+  return cashToCollect + (feePaidBy === 'RECIPIENT' ? (fee ?? 0) : 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Nouvelle livraison (formulaire en 3 étapes)                         */
+/* ------------------------------------------------------------------ */
+
+export interface DeliveryForm {
+  dropoff: AddressDto | null;
+  recipientName: string;
+  recipientPhone: string;
+  recipientIsBusiness: boolean;
+  packageDescription: string;
+  vehicleType: VehicleType | null;
+  feePaidBy: FeePayer;
+  /** Saisie libre (« 15 000 ») du montant à encaisser. */
+  cashToCollect: string;
+  notes: string;
+}
+
+export const EMPTY_DELIVERY_FORM: DeliveryForm = {
+  dropoff: null,
+  recipientName: '',
+  recipientPhone: '',
+  recipientIsBusiness: false,
+  packageDescription: '',
+  vehicleType: null,
+  feePaidBy: 'SENDER',
+  cashToCollect: '',
+  notes: '',
+};
+
+/** Distance minimale entre l'entreprise et le destinataire (épingle laissée sur l'entreprise). */
+export const MIN_DELIVERY_DISTANCE_M = 80;
+export const MAX_CASH_TO_COLLECT = 2_000_000;
+
+export type FormErrors = Partial<Record<'dropoff' | 'address' | 'recipientName' | 'recipientPhone' | 'packageDescription' | 'vehicleType' | 'cashToCollect', string>>;
+
+/** « 15 000 », « 15000 F » → 15000 ; vide → 0 ; invalide → null. */
+export function parseAmount(input: string): number | null {
+  const s = input.replace(/[\s  .]/g, '').replace(/F(CFA)?$/i, '');
+  if (s === '') return 0;
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return n <= MAX_CASH_TO_COLLECT ? n : null;
+}
+
+/** Étape 1 : destination (épingle, adresse) et destinataire. */
+export function validateDestination(form: DeliveryForm, pickup: LatLng | null): FormErrors {
+  const e: FormErrors = {};
+  const d = form.dropoff;
+  if (!d || isPinAtDefault(d)) e.dropoff = 'Déplacez la carte pour placer l’épingle sur le lieu de livraison.';
+  else if (pickup && distanceM(pickup, d) < MIN_DELIVERY_DISTANCE_M)
+    e.dropoff = 'L’épingle est sur votre entreprise : placez-la sur le lieu de livraison.';
+  if (!d || !d.address.trim()) e.address = 'Indiquez l’adresse (quartier, rue).';
+  if (!form.recipientName.trim()) e.recipientName = 'Nom du destinataire requis.';
+  if (!normalizePhone(form.recipientPhone)) e.recipientPhone = 'Numéro invalide : 8 chiffres (ex. 70 12 34 56).';
+  return e;
+}
+
+/** Étape 2 : colis, véhicule, paiement. */
+export function validatePackage(form: DeliveryForm, quote: QuoteResponse | null): FormErrors {
+  const e: FormErrors = {};
+  if (!form.packageDescription.trim()) e.packageDescription = 'Décrivez le colis (ex. « 2 cartons », « documents »).';
+  const option = quote?.options.find((o) => o.vehicleType === form.vehicleType);
+  if (!form.vehicleType || !option?.available) e.vehicleType = 'Choisissez un véhicule disponible.';
+  if (parseAmount(form.cashToCollect) === null)
+    e.cashToCollect = `Montant invalide (nombre entier de FCFA, ${MAX_CASH_TO_COLLECT.toLocaleString('fr-FR')} au plus).`;
+  return e;
+}
+
+export function hasErrors(e: FormErrors): boolean {
+  return Object.keys(e).length > 0;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  'dropoff.address': 'Adresse',
+  'dropoff.landmark': 'Point de repère',
+  'dropoff.lat': 'Épingle',
+  'dropoff.lng': 'Épingle',
+  recipientName: 'Nom du destinataire',
+  recipientPhone: 'Téléphone du destinataire',
+  packageDescription: 'Colis',
+  vehicleType: 'Véhicule',
+  cashToCollect: 'Montant à encaisser',
+  notes: 'Instructions',
+};
+
+/**
+ * Corps de POST /business/deliveries, validé avec le schéma partagé (mêmes règles que l'API).
+ * Renvoie le message d'erreur français de la première règle non respectée.
+ */
+export function buildDeliveryInput(form: DeliveryForm): { ok: true; input: CreateDeliveryInput } | { ok: false; error: string } {
+  if (!form.dropoff || !form.vehicleType) return { ok: false, error: 'Destination et véhicule requis.' };
+  const cash = parseAmount(form.cashToCollect);
+  if (cash === null) return { ok: false, error: 'Montant à encaisser invalide.' };
+  const input: CreateDeliveryInput = {
+    dropoff: toAddressInput(form.dropoff),
+    recipientName: form.recipientName.trim(),
+    recipientPhone: form.recipientPhone.trim(),
+    recipientIsBusiness: form.recipientIsBusiness,
+    packageDescription: form.packageDescription.trim(),
+    vehicleType: form.vehicleType,
+    feePaidBy: form.feePaidBy,
+    cashToCollect: cash,
+    ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
+  };
+  const parsed = createDeliverySchema.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue ? (FIELD_LABELS[issue.path.join('.')] ?? 'Demande') : 'Demande';
+    return { ok: false, error: issue ? `${field} : ${issue.message}` : 'Demande invalide.' };
+  }
+  return { ok: true, input: { ...input, recipientPhone: parsed.data.recipientPhone } };
+}
+
+/** Véhicule par défaut : celui déjà choisi s'il reste disponible, sinon la moto, sinon le premier disponible. */
+export function pickVehicle(quote: QuoteResponse, current: VehicleType | null): VehicleType | null {
+  const available = quote.options.filter((o) => o.available).map((o) => o.vehicleType);
+  if (current && available.includes(current)) return current;
+  if (available.includes('MOTO')) return 'MOTO';
+  return available[0] ?? null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Livreur : prochaine étape                                           */
+/* ------------------------------------------------------------------ */
+
+export interface NextStep {
+  /** « Récupérer chez Pharmacie X » / « Livrer à Awa K. ». */
+  title: string;
+  distanceM: number | null;
+  minutes: number | null;
+  /** « Récupérer chez Pharmacie X · 1,2 km · 4 min ». */
+  line: string;
+}
+
+/**
+ * Carte « prochaine étape » du livreur : cible de l'étape (entreprise puis destinataire), distance et durée
+ * restantes, d'après l'itinéraire de l'API rogné à la position du livreur, ou à défaut la distance estimée.
+ */
+export function nextStep(o: OrderDto, me: LatLng | null): NextStep | null {
+  const toPickup = o.status === 'ASSIGNED';
+  if (!toPickup && o.status !== 'PICKED_UP') return null;
+  const target = toPickup ? o.pickup : o.dropoff;
+  const name = toPickup
+    ? (o.store?.name ?? 'l’expéditeur')
+    : (o.recipientName ?? o.client?.name ?? 'le destinataire');
+  const title = toPickup ? `Récupérer chez ${name}` : `Livrer à ${name}`;
+  const routeOk = o.route && o.route.target === (toPickup ? 'PICKUP' : 'DROPOFF') && o.route.points.length >= 2 ? o.route : null;
+  let meters: number | null = null;
+  let minutes: number | null = null;
+  if (routeOk) {
+    const p = routeProgress(routeOk, me);
+    meters = p.remainingM;
+    minutes = minutesFromSeconds(p.remainingS);
+  } else if (me && target) {
+    const km = roadDistanceKm(me, target);
+    meters = km * 1000;
+    minutes = Math.max(1, Math.ceil((km / AVERAGE_SPEED_KMH[o.driver?.vehicleType ?? o.vehicleType]) * 60));
+  }
+  const parts = [title];
+  if (meters !== null) parts.push(formatDistanceFr(meters));
+  if (minutes !== null) parts.push(formatDurationFr(minutes));
+  return { title, distanceM: meters, minutes, line: parts.join(' · ') };
+}

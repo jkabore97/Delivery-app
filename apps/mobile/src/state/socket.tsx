@@ -139,3 +139,17 @@ export function useOrderRoom(orderId: string | null | undefined): void {
     };
   }, [socket, connected, orderId]);
 }
+
+/** Plusieurs salles `order:<id>` (carte d'ensemble de l'entreprise : positions des livreurs en mode socket). */
+export function useOrderRooms(orderIds: readonly string[]): void {
+  const { socket, connected } = useSocket();
+  const key = [...orderIds].sort().join(',');
+  useEffect(() => {
+    if (!socket || !connected || !key) return;
+    const ids = key.split(',');
+    for (const orderId of ids) socket.emit('order.subscribe', { orderId }, () => undefined);
+    return () => {
+      for (const orderId of ids) socket.emit('order.unsubscribe', { orderId });
+    };
+  }, [socket, connected, key]);
+}

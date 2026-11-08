@@ -37,17 +37,37 @@ describe('buildQuery', () => {
 
 describe('createApiClient', () => {
   it('envoie le jeton Bearer et le corps JSON', async () => {
-    const { api, calls } = setup([jsonResponse(200, { id: 'o1' })]);
-    await api.createOrder({
-      type: 'PARCEL',
+    const { api, calls } = setup([jsonResponse(201, { id: 'o1' })]);
+    await api.createDelivery({
+      dropoff: { lat: 12.4, lng: -1.55, address: 'Tampouy', landmark: 'Marché' },
+      recipientName: 'Awa',
+      recipientPhone: '70123456',
+      packageDescription: 'Carton',
       vehicleType: 'MOTO',
-      pickup: { lat: 12.38, lng: -1.49, address: 'Zogona' },
-      dropoff: { lat: 12.4, lng: -1.55, address: 'Tampouy' },
+      feePaidBy: 'RECIPIENT',
+      cashToCollect: 15000,
     });
-    expect(calls[0]?.url).toBe('http://api.test/orders');
+    expect(calls[0]?.url).toBe('http://api.test/business/deliveries');
     expect(calls[0]?.init.method).toBe('POST');
     expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
-    expect(JSON.parse(String(calls[0]?.init.body)).vehicleType).toBe('MOTO');
+    expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ vehicleType: 'MOTO', feePaidBy: 'RECIPIENT', cashToCollect: 15000 });
+  });
+
+  it('devis et liste des livraisons de l’entreprise', async () => {
+    const { api, calls } = setup([jsonResponse(200, { options: [] }), jsonResponse(200, { items: [], total: 0, page: 1, pageSize: 50 })]);
+    await api.quoteDelivery({ dropoff: { lat: 12.4, lng: -1.55, address: 'Tampouy' } });
+    await api.listDeliveries({ status: ['SEARCHING_DRIVER', 'ASSIGNED'], pageSize: 50 });
+    expect(calls[0]?.url).toBe('http://api.test/business/deliveries/quote');
+    expect(calls[1]?.url).toBe('http://api.test/business/deliveries?status=SEARCHING_DRIVER%2CASSIGNED&pageSize=50');
+  });
+
+  it('suivi public : GET /track/:token sans jeton, même avec une session ouverte', async () => {
+    const { api, calls, onAuthError } = setup([jsonResponse(404, { error: { code: 'NOT_FOUND', message: 'Lien de suivi introuvable ou expiré' } })]);
+    const err = await api.trackDelivery('abc_DEF-123').catch((e: unknown) => e);
+    expect(calls[0]?.url).toBe('http://api.test/track/abc_DEF-123');
+    expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(isApiError(err, 'NOT_FOUND')).toBe(true);
+    expect(onAuthError).not.toHaveBeenCalled();
   });
 
   it('n’envoie pas le jeton sur /auth', async () => {
@@ -58,11 +78,11 @@ describe('createApiClient', () => {
 
   it('transforme {error:{code,message}} en ApiError', async () => {
     const { api } = setup([
-      jsonResponse(409, { error: { code: 'STORE_CLOSED', message: 'La boutique est fermée' } }),
+      jsonResponse(409, { error: { code: 'INVALID_TRANSITION', message: 'Le colis est déjà récupéré' } }),
     ]);
-    const err = await api.getStore('s1').catch((e: unknown) => e);
-    expect(isApiError(err, 'STORE_CLOSED')).toBe(true);
-    expect(errorMessage(err)).toBe('La boutique est fermée');
+    const err = await api.cancelOrder('o1').catch((e: unknown) => e);
+    expect(isApiError(err, 'INVALID_TRANSITION')).toBe(true);
+    expect(errorMessage(err)).toBe('Le colis est déjà récupéré');
     expect((err as ApiError).status).toBe(409);
   });
 

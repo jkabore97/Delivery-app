@@ -5,18 +5,26 @@ import { colors, radius, spacing } from '../theme';
 
 export const VEHICLE_EMOJI: Record<VehicleType, string> = { BIKE: '🚲', MOTO: '🏍️', CAR: '🚗' };
 
-/** Choix du véhicule avec le prix de chaque option (maquette « Vélo / Moto / Voiture »). */
+export const VEHICLE_HINT: Record<VehicleType, string> = {
+  BIKE: 'Petits colis, courtes distances',
+  MOTO: 'Le plus rapide en ville',
+  CAR: 'Colis volumineux ou fragiles',
+};
+
+/** Choix du véhicule avec le prix et la durée du devis (liste façon Uber). */
 export function VehicleOptions({
   options,
   selected,
   onSelect,
+  color = colors.green,
 }: {
   options: QuoteOptionDto[];
   selected: VehicleType | null;
   onSelect: (v: VehicleType) => void;
+  color?: string;
 }) {
   return (
-    <View style={styles.row}>
+    <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
       {options.map((o) => {
         const isSel = selected === o.vehicleType;
         return (
@@ -24,14 +32,20 @@ export function VehicleOptions({
             key={o.vehicleType}
             accessibilityRole="radio"
             accessibilityState={{ selected: isSel, disabled: !o.available }}
+            accessibilityLabel={`${LABELS.vehicleType[o.vehicleType]}, ${o.available ? formatFcfaShort(o.deliveryFee) : 'indisponible'}`}
             disabled={!o.available}
             onPress={() => onSelect(o.vehicleType)}
-            style={[styles.card, isSel && styles.selected, !o.available && styles.disabled]}
+            style={[styles.row, isSel && { borderColor: color, backgroundColor: colors.greenLight }, !o.available && styles.disabled]}
+            testID={`vehicle-${o.vehicleType}`}
           >
             <Text style={styles.emoji}>{VEHICLE_EMOJI[o.vehicleType]}</Text>
-            <Text style={styles.label}>{LABELS.vehicleType[o.vehicleType]}</Text>
-            <Text style={styles.price}>{o.available ? formatFcfaShort(o.deliveryFee) : 'Indisponible'}</Text>
-            {o.available ? <Text style={styles.eta}>~{o.estimatedMinutes} min</Text> : null}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>{LABELS.vehicleType[o.vehicleType]}</Text>
+              <Text style={styles.hint} numberOfLines={1}>
+                {o.available ? `~${o.estimatedMinutes} min · ${VEHICLE_HINT[o.vehicleType]}` : 'Indisponible pour le moment'}
+              </Text>
+            </View>
+            <Text style={[styles.price, isSel && { color }]}>{o.available ? formatFcfaShort(o.deliveryFee) : '—'}</Text>
           </Pressable>
         );
       })}
@@ -51,7 +65,7 @@ export function VehiclePicker({
 }) {
   const types: VehicleType[] = ['BIKE', 'MOTO', 'CAR'];
   return (
-    <View style={styles.row}>
+    <View style={styles.pickRow}>
       {types.map((t) => {
         const isSel = selected === t;
         return (
@@ -72,7 +86,18 @@ export function VehiclePicker({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: spacing.sm },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  pickRow: { flexDirection: 'row', gap: spacing.sm },
   card: {
     flex: 1,
     alignItems: 'center',
@@ -83,10 +108,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     gap: 2,
   },
-  selected: { borderColor: colors.green, backgroundColor: colors.greenLight },
   disabled: { opacity: 0.4 },
-  emoji: { fontSize: 24 },
-  label: { fontSize: 15, fontWeight: '700', color: colors.text },
-  price: { fontSize: 13, color: colors.textMuted },
-  eta: { fontSize: 12, color: colors.textMuted },
+  emoji: { fontSize: 26 },
+  label: { fontSize: 16, fontWeight: '800', color: colors.text },
+  hint: { fontSize: 12, color: colors.textMuted },
+  price: { fontSize: 16, fontWeight: '900', color: colors.text },
 });

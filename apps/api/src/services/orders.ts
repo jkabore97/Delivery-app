@@ -1,5 +1,5 @@
 import { randomInt, timingSafeEqual } from 'node:crypto';
-import type { Order, OrderStatus, Prisma, PrismaClient } from '@prisma/client';
+import type { Order, OrderStatus, PricingRule, Prisma, PrismaClient } from '@prisma/client';
 import {
   CLIENT_CANCELLABLE_STATUSES,
   CONTROLLER_CANCELLABLE_STATUSES,
@@ -21,6 +21,7 @@ import {
   type Paginated,
   type IncidentDto,
   type OrderMessageDto,
+  type QuoteOptionDto,
   type RatingDto,
 } from '@yaar/shared';
 import type { z } from 'zod';
@@ -39,6 +40,7 @@ import type { DispatchService } from './dispatch';
 import { ratingStats } from './ratings';
 import {
   incidentInclude,
+  isBusinessDelivery,
   orderDetailInclude,
   orderInclude,
   toIncidentDto,
@@ -63,8 +65,56 @@ interface ResolvedQuote {
 
 const toActor = (u: AuthUser): Actor => ({ id: u.id, role: u.role });
 
+/** Statuts depuis lesquels l'entreprise annule elle-même une livraison (avant le retrait du colis). */
+export const BUSINESS_CANCELLABLE_STATUSES: readonly OrderStatus[] = ['SEARCHING_DRIVER', 'ASSIGNED'];
+
+/** Espèces encaissées au retrait : frais de livraison payés par l'entreprise (SENDER). */
+export function cashAtPickup(o: Pick<Order, 'feePaidBy' | 'deliveryFee' | 'paymentMethod'>): number {
+  return o.paymentMethod === 'CASH' && o.feePaidBy === 'SENDER' ? o.deliveryFee : 0;
+}
+
+/** Espèces encaissées à la livraison d'une livraison d'entreprise : marchandise + frais si le destinataire paie. */
+export function cashAtDelivery(o: Pick<Order, 'feePaidBy' | 'deliveryFee' | 'cashToCollect'>): number {
+  return (o.cashToCollect ?? 0) + (o.feePaidBy === 'RECIPIENT' ? o.deliveryFee : 0);
+}
+
 export function generateDeliveryCode(): string {
   return randomInt(0, 10_000).toString().padStart(4, '0');
+}
+
+/** Options de prix par type de véhicule (devis client et devis d'une livraison d'entreprise). */
+export function quoteOptions(rules: PricingRule[], distanceKm: number, itemsTotal: number): QuoteOptionDto[] {
+  const byType = new Map(rules.map((x) => [x.vehicleType, x]));
+  return VEHICLE_TYPES.map((vt) => {
+    const rule = byType.get(vt);
+    if (!rule) return { vehicleType: vt, available: false, deliveryFee: 0, total: 0, estimatedMinutes: 0 };
+    const price = computeDeliveryPrice(rule, distanceKm);
+    return {
+      vehicleType: vt,
+      available: rule.isActive,
+      deliveryFee: price.deliveryFee,
+      total: itemsTotal + price.deliveryFee,
+      estimatedMinutes: price.estimatedMinutes,
+    };
+  });
+}
+
+/** Notification push à l'entreprise qui a demandé une livraison, à chaque étape. */
+function businessPush(o: { number: number; status: OrderStatus; recipientName: string | null }): PushMessage | null {
+  const n = `#${o.number}`;
+  const to = o.recipientName ? ` à ${o.recipientName}` : '';
+  switch (o.status) {
+    case 'ASSIGNED':
+      return { title: 'Livreur en route', body: `Un livreur vient récupérer la livraison ${n}.` };
+    case 'PICKED_UP':
+      return { title: 'Colis récupéré', body: `La livraison ${n} est en route${to ? ` vers ${o.recipientName}` : ''}.` };
+    case 'DELIVERED':
+      return { title: 'Livrée', body: `La livraison ${n} a été remise${to}.` };
+    case 'CANCELLED':
+      return { title: 'Livraison annulée', body: `La livraison ${n} a été annulée.` };
+    default:
+      return null;
+  }
 }
 
 /** Notification push envoyée au client à chaque changement de statut. */
@@ -93,7 +143,24 @@ function clientPush(o: { number: number; status: OrderStatus }): PushMessage | n
  */
 export const UPDATED_SINCE_OVERLAP_MS = 2000;
 
+export interface OrderServiceOptions {
+  /** Taille maximale d'une photo de preuve décodée (`config.maxUploadBytes`). */
+  maxUploadBytes?: number;
+  /** URL publique de l'application (liens de suivi des destinataires, `config.publicAppUrl`). */
+  publicAppUrl?: string;
+}
+
+/** Portée supplémentaire d'une liste de commandes (GET /business/deliveries : livraisons demandées par l'entreprise). */
+export interface OrderListScope {
+  requesterId?: string;
+}
+
 export class OrderService {
+  /** Après un retrait (PICKED_UP) : itinéraire vers le destinataire, message au destinataire (app.ts). */
+  onPickedUp: (orderId: string) => Promise<void> = async () => {};
+  private readonly maxUploadBytes: number;
+  private readonly publicAppUrl: string | undefined;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly clock: Clock,
@@ -102,9 +169,11 @@ export class OrderService {
     private readonly payments: PaymentRegistry,
     private readonly storage: StorageProvider,
     private readonly notifier: Notifier,
-    /** Taille maximale d'une photo de preuve décodée (`config.maxUploadBytes`). */
-    private readonly maxUploadBytes: number = MAX_UPLOAD_BYTES,
-  ) {}
+    opts: OrderServiceOptions = {},
+  ) {
+    this.maxUploadBytes = opts.maxUploadBytes ?? MAX_UPLOAD_BYTES;
+    this.publicAppUrl = opts.publicAppUrl;
+  }
 
   /* ----------------------------- Devis ----------------------------- */
 
@@ -152,19 +221,7 @@ export class OrderService {
   async quote(input: QuoteInput): Promise<QuoteResponse> {
     const r = await this.resolve(input);
     const rules = await this.prisma.pricingRule.findMany();
-    const byType = new Map(rules.map((x) => [x.vehicleType, x]));
-    const options = VEHICLE_TYPES.map((vt) => {
-      const rule = byType.get(vt);
-      if (!rule) return { vehicleType: vt, available: false, deliveryFee: 0, total: 0, estimatedMinutes: 0 };
-      const price = computeDeliveryPrice(rule, r.distanceKm);
-      return {
-        vehicleType: vt,
-        available: rule.isActive,
-        deliveryFee: price.deliveryFee,
-        total: r.itemsTotal + price.deliveryFee,
-        estimatedMinutes: price.estimatedMinutes,
-      };
-    });
+    const options = quoteOptions(rules, r.distanceKm, r.itemsTotal);
     if (!options.some((o) => o.available))
       throw new AppError(409, 'PRICING_UNAVAILABLE', 'Aucun tarif actif : contactez le support');
     return {
@@ -254,7 +311,8 @@ export class OrderService {
         if (o.clientId === viewer.id) return;
         break;
       case 'SELLER':
-        if (o.store?.ownerId === viewer.id) return;
+        // Boutique du vendeur, ou entreprise qui a demandé la livraison.
+        if (o.store?.ownerId === viewer.id || (isBusinessDelivery(o) && o.clientId === viewer.id)) return;
         break;
       case 'DRIVER':
         if (o.driverId === viewer.id) return;
@@ -268,11 +326,18 @@ export class OrderService {
     if (!o) throw notFound('Commande introuvable');
     this.assertCanView(o, viewer);
     const stats = o.driverId ? await ratingStats(this.prisma, [o.driverId]) : new Map();
-    return toOrderDto(o, viewer, { driverRatingAvg: o.driverId ? (stats.get(o.driverId)?.avg ?? null) : null });
+    return toOrderDto(o, viewer, {
+      driverRatingAvg: o.driverId ? (stats.get(o.driverId)?.avg ?? null) : null,
+      publicAppUrl: this.publicAppUrl,
+    });
   }
 
-  async list(viewer: AuthUser, q: OrderListQuery): Promise<Paginated<OrderDto>> {
+  async list(viewer: AuthUser, q: OrderListQuery, scope: OrderListScope = {}): Promise<Paginated<OrderDto>> {
     const where: Prisma.OrderWhereInput = {};
+    if (scope.requesterId) {
+      where.clientId = scope.requesterId;
+      where.feePaidBy = { not: null };
+    }
     if (q.updatedSince) {
       // Synchronisation incrémentale (mode poll) : TOUTES les commandes de l'appelant modifiées depuis
       // `updatedSince` moins une marge, quel que soit `status` (une commande qui sort de la liste suivie,
@@ -316,7 +381,14 @@ export class OrderService {
     const driverIds = [...new Set(rows.map((r) => r.driverId).filter((x): x is string => !!x))];
     const stats = await ratingStats(this.prisma, driverIds);
     return {
-      items: rows.map((o) => toOrderDto(o, viewer, { driverRatingAvg: o.driverId ? (stats.get(o.driverId)?.avg ?? null) : null })),
+      // Listes : sans tracé (charge utile réduite) ; GET /orders/:id renvoie l'itinéraire.
+      items: rows.map((o) =>
+        toOrderDto(o, viewer, {
+          driverRatingAvg: o.driverId ? (stats.get(o.driverId)?.avg ?? null) : null,
+          publicAppUrl: this.publicAppUrl,
+          includeRoute: false,
+        }),
+      ),
       page: q.page,
       pageSize: q.pageSize,
       total,
@@ -330,18 +402,30 @@ export class OrderService {
   async notify(orderId: string): Promise<void> {
     const o = await this.prisma.order.findUnique({ where: { id: orderId }, include: { store: true } });
     if (!o) return;
-    this.realtime.orderUpdated(
-      { orderId: o.id, clientId: o.clientId, sellerId: o.store?.ownerId ?? null, driverId: o.driverId },
-      { orderId: o.id, number: o.number, status: o.status, driverId: o.driverId, updatedAt: iso(o.updatedAt) },
-    );
-    const forClient = clientPush(o);
+    this.emitOrderUpdated(o);
+    const business = isBusinessDelivery(o);
+    // Livraison d'entreprise : le « client » de la commande est l'entreprise elle-même.
+    const forClient = business ? businessPush(o) : clientPush(o);
     const data = { orderId: o.id, status: o.status };
     if (forClient) void this.notifier.toUser(o.clientId, { ...forClient, data });
-    const sellerId = o.store?.ownerId;
+    const sellerId = business ? null : o.store?.ownerId;
     if (sellerId && o.status === 'PENDING')
       void this.notifier.toUser(sellerId, { title: 'Nouvelle commande', body: `Commande #${o.number} à accepter.`, data });
     if (sellerId && o.status === 'CANCELLED')
       void this.notifier.toUser(sellerId, { title: 'Commande annulée', body: `La commande #${o.number} a été annulée.`, data });
+  }
+
+  /** `order.updated` seul, sans notification push (nouvel itinéraire : les abonnés rechargent la commande). */
+  async emitUpdated(orderId: string): Promise<void> {
+    const o = await this.prisma.order.findUnique({ where: { id: orderId }, include: { store: true } });
+    if (o) this.emitOrderUpdated(o);
+  }
+
+  private emitOrderUpdated(o: Order & { store: { ownerId: string } | null }): void {
+    this.realtime.orderUpdated(
+      { orderId: o.id, clientId: o.clientId, sellerId: o.store?.ownerId ?? null, driverId: o.driverId },
+      { orderId: o.id, number: o.number, status: o.status, driverId: o.driverId, updatedAt: iso(o.updatedAt) },
+    );
   }
 
   /* ----------------------------- Vendeur ----------------------------- */
@@ -399,7 +483,12 @@ export class OrderService {
     const o = await this.prisma.order.findUnique({ where: { id }, include: { store: true } });
     if (!o) throw notFound('Commande introuvable');
     const isController = user.role === 'CONTROLLER' || user.role === 'ADMIN';
-    if (!isController) {
+    const isRequester = user.role === 'SELLER' && isBusinessDelivery(o) && o.clientId === user.id;
+    if (isRequester) {
+      // Entreprise : annulation possible tant que le colis n'est pas récupéré (le livreur en route est libéré).
+      if (!BUSINESS_CANCELLABLE_STATUSES.includes(o.status))
+        throw new AppError(409, 'INVALID_TRANSITION', 'Le colis a déjà été récupéré : contactez le support pour annuler');
+    } else if (!isController) {
       if (user.role !== 'CLIENT' || o.clientId !== user.id) throw notFound('Commande introuvable');
       if (!CLIENT_CANCELLABLE_STATUSES.includes(o.status))
         throw new AppError(409, 'INVALID_TRANSITION', 'La commande ne peut plus être annulée : contactez le support');
@@ -416,7 +505,11 @@ export class OrderService {
         o,
         'CANCELLED',
         toActor(user),
-        { cancelledAt: now, cancelReason: reason ?? (isController ? 'Annulée par le support' : 'Annulée par le client'), paymentStatus: 'CANCELLED' },
+        {
+          cancelledAt: now,
+          cancelReason: reason ?? (isController ? 'Annulée par le support' : isRequester ? 'Annulée par l’entreprise' : 'Annulée par le client'),
+          paymentStatus: 'CANCELLED',
+        },
         reason,
         now,
       );
@@ -469,9 +562,30 @@ export class OrderService {
   async pickup(id: string, driver: AuthUser): Promise<OrderDto> {
     const o = await this.loadForDriver(id, driver);
     const now = this.clock.now();
-    await this.prisma.$transaction((tx) => transitionOrder(tx, o, 'PICKED_UP', toActor(driver), { pickedUpAt: now }, undefined, now));
+    await this.prisma.$transaction(async (tx) => {
+      await transitionOrder(tx, o, 'PICKED_UP', toActor(driver), { pickedUpAt: now }, undefined, now);
+      // Livraison d'entreprise, frais payés par l'expéditeur : encaissés en espèces au retrait.
+      const atPickup = cashAtPickup(o);
+      if (atPickup > 0) await this.collectCash(tx, o, driver.id, atPickup, now, `Frais de livraison payés par l’expéditeur, livraison #${o.number}`);
+    });
     await this.notify(id);
+    await this.onPickedUp(id);
     return this.getDto(id, driver);
+  }
+
+  /** Encaissement en espèces par le livreur : solde détenu + écriture COLLECTION du journal de caisse. */
+  private async collectCash(
+    tx: Prisma.TransactionClient,
+    o: Order,
+    driverId: string,
+    amount: number,
+    now: Date,
+    note: string,
+  ): Promise<void> {
+    const profile = await tx.driverProfile.update({ where: { userId: driverId }, data: { cashHeld: { increment: amount } } });
+    await tx.cashLedgerEntry.create({
+      data: { driverId, type: 'COLLECTION', amount, balanceAfter: profile.cashHeld, orderId: o.id, note, createdAt: now },
+    });
   }
 
   /**
@@ -517,7 +631,12 @@ export class OrderService {
     return this.getDto(id, driver);
   }
 
-  /** Passage DELIVERED + journal de caisse (espèces) + livreur libéré. */
+  /**
+   * Passage DELIVERED + journal de caisse (espèces) + livreur libéré.
+   * Livraison d'entreprise : encaissement à la livraison = marchandise (`cashToCollect`) + frais si le
+   * destinataire les paie (sinon déjà encaissés au retrait) ; `cashCollected` = tout ce que le livreur a encaissé
+   * pour la course ; `owedToBusiness` = marchandise encaissée pour le compte de l'entreprise.
+   */
   private async completeDelivery(
     tx: Prisma.TransactionClient,
     o: Order,
@@ -528,6 +647,8 @@ export class OrderService {
     const driverId = o.driverId;
     if (!driverId) throw conflict('Aucun livreur affecté à cette commande');
     const isCash = o.paymentMethod === 'CASH';
+    const business = isBusinessDelivery(o);
+    const atDelivery = isCash ? (business ? cashAtDelivery(o) : o.total) : 0;
     await transitionOrder(
       tx,
       o,
@@ -538,26 +659,17 @@ export class OrderService {
         proofPhotoKey: opts.proofKey ?? null,
         paymentStatus: 'PAID',
         cashCollected: isCash ? o.total : null,
+        ...(business ? { owedToBusiness: o.cashToCollect ?? 0 } : {}),
       },
       opts.note,
       now,
     );
-    const profile = await tx.driverProfile.update({
-      where: { userId: driverId },
-      data: { isBusy: false, ...(isCash ? { cashHeld: { increment: o.total } } : {}) },
-    });
-    if (isCash) {
-      await tx.cashLedgerEntry.create({
-        data: {
-          driverId,
-          type: 'COLLECTION',
-          amount: o.total,
-          balanceAfter: profile.cashHeld,
-          orderId: o.id,
-          note: `Encaissement commande #${o.number}`,
-          createdAt: now,
-        },
-      });
+    await tx.driverProfile.update({ where: { userId: driverId }, data: { isBusy: false } });
+    if (atDelivery > 0) {
+      const note = business
+        ? `Encaissement à la livraison #${o.number} (marchandise ${o.cashToCollect ?? 0} FCFA${o.feePaidBy === 'RECIPIENT' ? ` + frais ${o.deliveryFee} FCFA` : ''})`
+        : `Encaissement commande #${o.number}`;
+      await this.collectCash(tx, o, driverId, atDelivery, now, note);
     }
   }
 
@@ -669,7 +781,8 @@ export class OrderService {
     const o = await this.prisma.order.findUnique({ where: { id }, include: { store: true } });
     if (!o) throw notFound('Commande introuvable');
     this.assertCanView(o, viewer);
-    if (viewer.role === 'SELLER') throw forbidden();
+    // Vendeur : pas de photo du client ; l'entreprise qui a demandé la livraison voit sa preuve de remise.
+    if (viewer.role === 'SELLER' && !(isBusinessDelivery(o) && o.clientId === viewer.id)) throw forbidden();
     if (!o.proofPhotoKey) throw notFound('Pas de photo de preuve pour cette commande');
     if (viewer.role === 'CONTROLLER' || viewer.role === 'ADMIN') {
       await writeAudit(this.prisma, {

@@ -29,7 +29,8 @@ interface Entry {
 
 /** Premier plan = AppState « active » (react-native-web le dérive de document.visibilityState). */
 export function appStateVisibility(): VisibilitySource {
-  const isActive = (s: AppStateStatus | null | undefined) => (s ?? 'active') === 'active';
+  // État inconnu (null, ou simulé par une fonction dans les tests) : considéré comme au premier plan.
+  const isActive = (s: AppStateStatus | null | undefined) => typeof s !== 'string' || s === 'active';
   return {
     isVisible: () => isActive(AppState.currentState as AppStateStatus | null),
     subscribe(listener) {

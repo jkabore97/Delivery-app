@@ -1,11 +1,11 @@
 import { canOpenStore, formatCommission, storeApprovalNotice } from './storeApproval';
 
 describe('storeApprovalNotice', () => {
-  it('PENDING : bandeau orange, boutique invisible des clients', () => {
+  it('PENDING : bandeau orange, demandes de livraison après validation', () => {
     const n = storeApprovalNotice({ approvalStatus: 'PENDING', approvalNote: null });
     expect(n?.tone).toBe('orange');
-    expect(n?.title).toMatch(/en attente de validation/);
-    expect(n?.message).toMatch(/pas encore visible des clients/);
+    expect(n?.title).toMatch(/Entreprise en attente de validation/);
+    expect(n?.message).toMatch(/demander des livraisons dès sa validation/);
   });
 
   it('SUSPENDED : bandeau rouge avec le motif', () => {

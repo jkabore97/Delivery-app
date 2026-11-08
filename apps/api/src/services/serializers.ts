@@ -16,6 +16,7 @@ import {
   DRIVER_ACTIVE_STATUSES,
   approximateZone,
   haversineKm,
+  isTerminal,
   roadDistanceKm,
   requiredDocuments,
   plateRequired,
@@ -29,12 +30,15 @@ import {
   type PricingRuleDto,
   type ProductDto,
   type StoreDto,
+  type TrackingDto,
   type UserDto,
   type DocumentType,
   type OrderStatus,
 } from '@yaar/shared';
 import type { AuthUser } from '../lib/auth';
 import { iso, isoOrNull } from '../lib/time';
+import { headingForDto } from './heading';
+import { currentRoute, routeEtaSeconds, toRouteDto, type EtaInputs, type RouteColumns } from './routes';
 
 export function toUserDto(u: User): UserDto {
   return {
@@ -117,8 +121,9 @@ function isDriverActive(status: OrderStatus): boolean {
 }
 
 /**
- * Estimation d'arrivée (minutes) depuis la dernière position du livreur : ASSIGNED = trajet jusqu'au
- * retrait puis jusqu'à la livraison ; PICKED_UP = trajet jusqu'à la livraison. null sinon.
+ * Estimation d'arrivée « à vol d'oiseau » (minutes) depuis la dernière position du livreur : ASSIGNED = trajet
+ * jusqu'au retrait puis jusqu'à la livraison ; PICKED_UP = trajet jusqu'à la livraison. null sinon.
+ * Repli quand aucun itinéraire n'est en cache (cf. `estimateEtaFromRoute`).
  */
 export function estimateEtaMinutes(
   o: { status: OrderStatus; pickupLat: number; pickupLng: number; dropoffLat: number; dropoffLng: number; distanceKm: number },
@@ -136,34 +141,79 @@ export function estimateEtaMinutes(
 }
 
 /**
+ * ETA (minutes) : depuis l'itinéraire en cache de l'étape en cours quand il existe (part restante du tracé ×
+ * durée, + remise et retrait → livraison pendant ASSIGNED, cf. `routeEtaSeconds`), sinon l'estimation à vol
+ * d'oiseau. null hors ASSIGNED / PICKED_UP.
+ */
+export function estimateEtaFromRoute(
+  o: RouteColumns & EtaInputs & { distanceKm: number },
+  driver: { vehicleType: keyof typeof AVERAGE_SPEED_KMH; lastLat: number | null; lastLng: number | null } | null,
+): number | null {
+  if (!isDriverActive(o.status)) return null;
+  const route = currentRoute(o);
+  if (!route) return estimateEtaMinutes(o, driver);
+  const pos = driver && driver.lastLat !== null && driver.lastLng !== null ? { lat: driver.lastLat, lng: driver.lastLng } : null;
+  // Secondes arrondies d'abord : pas de minute de plus pour un bruit de calcul flottant (1 320,000001 s).
+  return Math.max(1, Math.ceil(Math.round(routeEtaSeconds(route, o, pos)) / 60));
+}
+
+/** Livraison demandée par une entreprise (modèle B2B), par opposition aux anciennes commandes de clients. */
+export function isBusinessDelivery(o: { feePaidBy: string | null }): boolean {
+  return o.feePaidBy !== null;
+}
+
+/** Lien public de suivi envoyé au destinataire. */
+export function trackingUrlFor(publicAppUrl: string, token: string): string {
+  return `${publicAppUrl}/suivi/${token}`;
+}
+
+/** Montant que le destinataire paie au livreur à la réception : marchandise + frais s'il les paie. */
+export function amountDueFromRecipient(o: { cashToCollect: number | null; feePaidBy: string | null; deliveryFee: number }): number {
+  return (o.cashToCollect ?? 0) + (o.feePaidBy === 'RECIPIENT' ? o.deliveryFee : 0);
+}
+
+export interface OrderDtoOptions {
+  driverRatingAvg?: number | null;
+  /** URL publique de l'application (lien de suivi `trackingUrl`). */
+  publicAppUrl?: string;
+  /** false pour les listes : pas de tracé (charge utile réduite), GET /orders/:id le donne. */
+  includeRoute?: boolean;
+}
+
+/**
  * Sérialise une commande pour l'utilisateur `viewer` en appliquant les règles de visibilité :
- * - code de livraison : client propriétaire uniquement ;
+ * - code de livraison : client propriétaire uniquement (jamais l'entreprise qui demande une livraison) ;
  * - livreur : retrait / livraison / téléphone client seulement s'il est affecté et tant que la
  *   commande n'est pas livrée ;
+ * - entreprise demandeuse (livraison B2B) : ses données (adresses, destinataire), le livreur, sa position,
+ *   l'itinéraire et l'ETA pendant la course, le lien de suivi ;
+ * - itinéraire : client, entreprise demandeuse, livreur affecté et contrôleurs, pendant ASSIGNED / PICKED_UP ;
  * - commission : contrôleurs ; gain livreur : livreur affecté + contrôleurs ; reversement vendeur :
  *   vendeur + contrôleurs.
  */
-export function toOrderDto(
-  o: OrderWithRelations | OrderWithEvents,
-  viewer: AuthUser,
-  opts: { driverRatingAvg?: number | null } = {},
-): OrderDto {
+export function toOrderDto(o: OrderWithRelations | OrderWithEvents, viewer: AuthUser, opts: OrderDtoOptions = {}): OrderDto {
   const role = viewer.role;
   const isController = role === 'CONTROLLER' || role === 'ADMIN';
   const isClient = role === 'CLIENT' && o.clientId === viewer.id;
+  const business = isBusinessDelivery(o);
+  // Entreprise qui a demandé la livraison (elle tient le rôle du client de la commande).
+  const isRequester = business && role === 'SELLER' && o.clientId === viewer.id;
   const isSeller = role === 'SELLER' && o.store?.ownerId === viewer.id;
   const isDriver = role === 'DRIVER' && o.driverId === viewer.id;
   const active = isDriverActive(o.status);
-  const terminal = o.status === 'DELIVERED' || o.status === 'CANCELLED';
+  const terminal = isTerminal(o.status);
 
   const driverSeesDetails = isDriver && active;
   // Vendeur : adresse du client seulement le temps de la commande (pas d'historique des adresses clients).
-  const showAddresses = isController || isClient || (isSeller && !terminal) || driverSeesDetails;
-  const showClientPhone = isController || driverSeesDetails || (isSeller && !terminal);
+  // Entreprise demandeuse : les adresses et le destinataire qu'elle a saisis restent visibles.
+  const showAddresses = isController || isClient || isRequester || (isSeller && !terminal) || driverSeesDetails;
+  const showClientPhone = isController || driverSeesDetails || isRequester || (isSeller && !terminal);
 
   const profile = o.driver?.driverProfile ?? null;
-  const showDriverLive = active && (isClient || isSeller || isController);
-  const showDriverPhone = isController || ((isClient || isSeller) && active);
+  const showDriverLive = active && (isClient || isRequester || isSeller || isController);
+  const showDriverPhone = isController || ((isClient || isRequester || isSeller) && active);
+  const showRoute = (opts.includeRoute ?? true) && active && (isClient || isRequester || isDriver || isController);
+  const route = showRoute ? currentRoute(o) : null;
 
   const myRating = o.ratings.find((r) => r.fromUserId === viewer.id)?.score ?? null;
   const canRate =
@@ -190,7 +240,12 @@ export function toOrderDto(
             ratingAvg: opts.driverRatingAvg ?? null,
             lastLocation:
               showDriverLive && profile.lastLat !== null && profile.lastLng !== null && profile.lastLocationAt
-                ? { lat: profile.lastLat, lng: profile.lastLng, at: iso(profile.lastLocationAt) }
+                ? {
+                    lat: profile.lastLat,
+                    lng: profile.lastLng,
+                    at: iso(profile.lastLocationAt),
+                    heading: headingForDto(profile.lastHeading),
+                  }
                 : null,
           }
         : null,
@@ -233,7 +288,15 @@ export function toOrderDto(
     updatedAt: iso(o.updatedAt),
     myRating,
     canRate,
-    etaMinutes: showDriverLive || driverSeesDetails ? estimateEtaMinutes(o, profile) : null,
+    etaMinutes: showDriverLive || driverSeesDetails ? estimateEtaFromRoute(o, profile) : null,
+    route: route ? toRouteDto(route) : null,
+    feePaidBy: o.feePaidBy,
+    cashToCollect: o.cashToCollect,
+    recipientIsBusiness: o.recipientIsBusiness,
+    trackingUrl:
+      business && o.trackingToken && opts.publicAppUrl && (isRequester || isController)
+        ? trackingUrlFor(opts.publicAppUrl, o.trackingToken)
+        : null,
   };
   if ('events' in o) {
     dto.events = o.events.map((e) => ({
@@ -246,6 +309,70 @@ export function toOrderDto(
     }));
   }
   return dto;
+}
+
+/** Commande lue par le suivi public (GET /track/:token). */
+export const trackingInclude = {
+  store: true,
+  driver: { include: { driverProfile: true } },
+} satisfies Prisma.OrderInclude;
+export type OrderForTracking = Prisma.OrderGetPayload<{ include: typeof trackingInclude }>;
+
+/** Premier mot du nom (« Issouf S. » → « Issouf ») : le destinataire n'a pas besoin du nom complet. */
+export function firstName(name: string | null): string | null {
+  const first = name?.trim().split(/\s+/)[0];
+  return first ? first : null;
+}
+
+/**
+ * Page publique de suivi du destinataire (sans compte). Forme constante (tous les champs, null quand masqués) ;
+ * aucune autre donnée personnelle : ni le numéro du destinataire, ni les montants internes (commission, gains),
+ * ni le compte de l'entreprise. Livreur (prénom, véhicule, téléphone, position) uniquement pendant ASSIGNED /
+ * PICKED_UP ; code de livraison jusqu'à la livraison ou l'annulation.
+ */
+export function toTrackingDto(o: OrderForTracking, opts: { driverRatingAvg?: number | null } = {}): TrackingDto {
+  const active = isDriverActive(o.status);
+  const profile = o.driver?.driverProfile ?? null;
+  const route = active ? currentRoute(o) : null;
+  return {
+    number: o.number,
+    status: o.status,
+    vehicleType: o.vehicleType,
+    sender: { name: o.store?.name ?? 'Entreprise', phone: o.store?.phone ?? null },
+    recipientName: o.recipientName,
+    packageDescription: o.parcelDescription,
+    pickup: { lat: o.pickupLat, lng: o.pickupLng, address: o.pickupAddress },
+    dropoff: { lat: o.dropoffLat, lng: o.dropoffLng, address: o.dropoffAddress, landmark: o.dropoffLandmark || null },
+    amountToPay: amountDueFromRecipient(o),
+    driver:
+      active && o.driver && profile
+        ? {
+            firstName: firstName(o.driver.name),
+            vehicleType: profile.vehicleType,
+            plate: profile.plate,
+            phone: o.driver.phone,
+            ratingAvg: opts.driverRatingAvg ?? null,
+            lastLocation:
+              profile.lastLat !== null && profile.lastLng !== null && profile.lastLocationAt
+                ? {
+                    lat: profile.lastLat,
+                    lng: profile.lastLng,
+                    at: iso(profile.lastLocationAt),
+                    heading: headingForDto(profile.lastHeading),
+                  }
+                : null,
+          }
+        : null,
+    route: route ? toRouteDto(route) : null,
+    etaMinutes: active ? estimateEtaFromRoute(o, profile) : null,
+    deliveryCode: isTerminal(o.status) ? null : o.deliveryCode,
+    createdAt: iso(o.createdAt),
+    assignedAt: isoOrNull(o.assignedAt),
+    pickedUpAt: isoOrNull(o.pickedUpAt),
+    deliveredAt: isoOrNull(o.deliveredAt),
+    cancelledAt: isoOrNull(o.cancelledAt),
+    updatedAt: iso(o.updatedAt),
+  };
 }
 
 /* ------------------------------ Livreurs ------------------------------ */
@@ -320,7 +447,8 @@ export type OfferWithOrder = DispatchOffer & { order: Prisma.OrderGetPayload<{ i
 export function toOfferDto(o: OfferWithOrder): OfferDto {
   const pickupZone = approximateZone({ lat: o.order.pickupLat, lng: o.order.pickupLng });
   const dropoffZone = approximateZone({ lat: o.order.dropoffLat, lng: o.order.dropoffLng });
-  const isFood = o.order.type === 'FOOD' && o.order.store !== null;
+  // Repas, ou livraison d'entreprise : le retrait est un lieu professionnel (nom et adresse affichables).
+  const isFood = (o.order.type === 'FOOD' || isBusinessDelivery(o.order)) && o.order.store !== null;
   return {
     id: o.id,
     orderId: o.orderId,

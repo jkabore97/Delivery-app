@@ -2,6 +2,7 @@ import type { OrderStatus, OrderType, Prisma, Role } from '@prisma/client';
 import { assertTransition } from '@yaar/shared';
 import { conflict } from '../lib/errors';
 import type { Db } from './db';
+import { ROUTE_RESET } from './routes';
 
 export interface Actor {
   id: string;
@@ -11,6 +12,8 @@ export interface Actor {
 /**
  * Applique une transition de statut validée par la machine à états partagée,
  * avec verrou optimiste sur le statut courant, et l'enregistre dans OrderEvent.
+ * L'itinéraire en cache de l'étape précédente est effacé (cf. services/routes.ts) : celui de la nouvelle étape
+ * est recalculé ensuite (affectation, retrait) ; une course terminée ne garde ni tracé ni position de départ.
  */
 export async function transitionOrder(
   db: Db,
@@ -25,7 +28,7 @@ export async function transitionOrder(
   assertTransition(order.type, order.status, to);
   const res = await db.order.updateMany({
     where: { id: order.id, status: order.status },
-    data: { ...data, status: to },
+    data: { ...data, ...ROUTE_RESET, status: to },
   });
   if (res.count === 0) throw conflict('La commande a été modifiée entre-temps, veuillez réessayer');
   await db.orderEvent.create({

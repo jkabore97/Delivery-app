@@ -6,9 +6,9 @@ import { colors, radius, spacing } from '../theme';
 
 /**
  * Écran de connexion en mode démo (GET /config → demoMode) : code 123456, avertissement « démonstration
- * publique » et comptes de démonstration.
+ * publique » et comptes de démonstration (entreprises et livreurs).
  */
-export function DemoNotice({ onPick }: { onPick: (phone: string) => void }) {
+export function DemoNotice({ onPick }: { onPick: (phone: string, role: 'SELLER' | 'DRIVER') => void }) {
   return (
     <View style={styles.box} accessibilityRole="summary" testID="demo-notice">
       <Text style={styles.title}>Mode démo : utilisez le code {DEMO_OTP_CODE}</Text>
@@ -19,7 +19,7 @@ export function DemoNotice({ onPick }: { onPick: (phone: string) => void }) {
           key={a.phone}
           accessibilityRole="button"
           accessibilityLabel={`${a.role} ${a.label}`}
-          onPress={() => onPick(a.phone)}
+          onPress={() => onPick(a.phone, a.signupRole)}
           style={({ pressed }) => [styles.account, pressed && { borderColor: colors.green }]}
           testID={`demo-account-${a.phone}`}
         >

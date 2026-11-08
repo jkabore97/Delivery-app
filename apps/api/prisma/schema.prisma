@@ -2,7 +2,7 @@
 // Montants : entiers en FCFA. Coordonnées : degrés décimaux (WGS84).
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // native : poste local / CI ; rhel-openssl-3.0.x : fonctions Node de Vercel (Amazon Linux 2023).
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
@@ -87,6 +87,12 @@ enum CashEntryType {
   DEPOSIT
 }
 
+/// Livraison d'entreprise : qui paie les frais de livraison (espèces) : l'entreprise au retrait, ou le destinataire.
+enum FeePayer {
+  SENDER
+  RECIPIENT
+}
+
 enum IncidentType {
   SOS
   DISPUTE
@@ -156,6 +162,8 @@ model DriverProfile {
   lastLat           Float?
   lastLng           Float?
   lastLocationAt    DateTime?
+  /// Cap (degrés, 0 = nord) de la dernière position : envoyé par le téléphone ou calculé ; effacé avec la position.
+  lastHeading       Float?
   /// Passage en ligne le plus récent (délai de grâce avant la mise hors ligne automatique).
   onlineSince       DateTime?
   cashHeld          Int          @default(0)
@@ -308,6 +316,34 @@ model Order {
   cancelReason         String?
   /// Date de purge des positions et adresses du client (rétention 12 mois).
   locationPurgedAt     DateTime?
+
+  /// Livraison d'entreprise (modèle B2B) : null pour les anciennes commandes de clients.
+  feePaidBy           FeePayer?
+  /// Marchandise à encaisser auprès du destinataire, reversée à l'entreprise (FCFA ; égale à itemsTotal).
+  cashToCollect       Int?
+  recipientIsBusiness Boolean   @default(false)
+  /// Jeton aléatoire (144 bits, base64url) du lien public de suivi envoyé au destinataire.
+  trackingToken       String?   @unique
+  /// Montant encaissé pour le compte de l'entreprise (fixé à la livraison) ; pas encore de reversement.
+  owedToBusiness      Int?
+
+  /// Itinéraire en cache de l'étape en cours (ASSIGNED : vers le retrait ; PICKED_UP : vers le destinataire).
+  /// Effacé à chaque changement de statut ; écrit en SQL brut (updatedAt inchangé), cf. services/routes.ts.
+  routeTarget          String?
+  /// Tracé [[lat, lng], …] (≤ 300 points).
+  routePoints          Json?
+  routeDistanceM       Int?
+  routeDurationS       Int?
+  /// osrm | straight
+  routeSource          String?
+  routeComputedAt      DateTime?
+  /// Position du livreur au moment du calcul.
+  routeOriginLat       Float?
+  routeOriginLng       Float?
+  /// Dernière tentative de calcul : au plus une toutes les 30 s par commande, verrou entre instances.
+  routeAttemptAt       DateTime?
+  /// Durée estimée retrait → livraison (s), calculée une fois à l'affectation (ETA pendant ASSIGNED).
+  deliveryLegDurationS Int?
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

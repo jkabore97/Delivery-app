@@ -14,7 +14,7 @@
     "expo-router": "~58.0.30",
     "expo-secure-store": "~58.0.2",
     "expo-status-bar": "~58.0.4",
-    "leaflet": "^1.9.4",
+    "maplibre-gl": "^5.24.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",
@@ -31,7 +31,6 @@
   "devDependencies": {
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "^30.0.0",
-    "@types/leaflet": "^1.9.22",
     "@types/node": "^22.20.5",
     "@types/react": "~19.3.0",
     "jest": "^30.5.2",
@@ -49,7 +48,7 @@
     "export:web": "expo export --platform web --output-dir dist && node scripts/web-postexport.mjs dist"
   },
   "private": true,
-  "description": "Yaar Livraison : application mobile (Client, Vendeur, Livreur)",
+  "description": "Yaar Livraison : application mobile (Entreprise, Livreur, suivi public du destinataire)",
   "jest": {
     "preset": "jest-expo",
     "testMatch": [

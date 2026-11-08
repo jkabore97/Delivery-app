@@ -22,7 +22,9 @@ import { decodeUpload } from '../lib/files';
 import { iso, startOfDayUtc } from '../lib/time';
 import { parse } from '../lib/validation';
 import { extensionFor } from '../providers/storage';
+import { headingForDto, nextHeading } from '../services/heading';
 import { ratingStats } from '../services/ratings';
+import { ROUTE_STATE_SELECT } from '../services/routes';
 import {
   incidentInclude,
   ledgerInclude,
@@ -136,7 +138,7 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
     if (p.isBusy) throw conflict('Terminez votre course avant de retirer votre consentement', 'DRIVER_BUSY');
     await prisma.driverProfile.update({
       where: { userId },
-      data: { trackingConsentAt: null, isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null },
+      data: { trackingConsentAt: null, isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null, lastHeading: null },
     });
     await ctx.dispatch.withdrawDriverOffers(userId);
     if (p.isOnline) ctx.realtime.driverStatus({ driverId: userId, isOnline: false, isBusy: false });
@@ -177,7 +179,7 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
       // Hors ligne : on efface la dernière position (pas de suivi hors service).
       await prisma.driverProfile.update({
         where: { userId },
-        data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null },
+        data: { isOnline: false, onlineSince: null, lastLat: null, lastLng: null, lastLocationAt: null, lastHeading: null },
       });
       await ctx.dispatch.withdrawDriverOffers(userId);
     }
@@ -186,7 +188,11 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
     return loadDriverProfileDto(ctx, userId);
   });
 
-  /** Position GPS : acceptée UNIQUEMENT lorsque le livreur est en ligne (exigence légale). */
+  /**
+   * Position GPS : acceptée UNIQUEMENT lorsque le livreur est en ligne (exigence légale). Le cap est celui du
+   * téléphone quand il est fiable, sinon calculé depuis la position précédente (services/heading.ts). Pendant une
+   * course, l'itinéraire est recalculé si nécessaire, en arrière-plan : la réponse ne l'attend jamais.
+   */
   app.post('/driver/location', { preHandler: driver }, async (req, reply) => {
     const userId = getAuth(req).id;
     const input = parse(locationPingSchema, req.body);
@@ -196,8 +202,9 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
     const now = clock.now();
     const active = await prisma.order.findFirst({
       where: { driverId: userId, status: { in: ['ASSIGNED', 'PICKED_UP'] } },
-      select: { id: true },
+      select: ROUTE_STATE_SELECT,
     });
+    const heading = nextHeading({ lat: p.lastLat, lng: p.lastLng, heading: p.lastHeading }, input);
     await prisma.$transaction([
       prisma.locationPing.create({
         data: {
@@ -213,18 +220,19 @@ export async function driverRoutes(app: FastifyInstance, ctx: AppContext): Promi
       }),
       prisma.driverProfile.update({
         where: { userId },
-        data: { lastLat: input.lat, lastLng: input.lng, lastLocationAt: now },
+        data: { lastLat: input.lat, lastLng: input.lng, lastLocationAt: now, lastHeading: heading },
       }),
     ]);
     ctx.realtime.driverLocation({
       driverId: userId,
       lat: input.lat,
       lng: input.lng,
-      heading: input.heading ?? null,
+      heading: headingForDto(heading),
       speed: input.speed ?? null,
       orderId: active?.id ?? null,
       at: iso(now),
     });
+    if (active) await ctx.routes.onDriverPing(active, { lat: input.lat, lng: input.lng });
     reply.code(204);
     return null;
   });

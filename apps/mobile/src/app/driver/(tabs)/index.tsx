@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { LABELS } from '@yaar/shared';
 import { OnlineToggle, SosButton } from '../../../components/DriverWidgets';
-import { OrderMap } from '../../../components/OrderMap';
+import { LiveMap } from '../../../components/map/LiveMap';
+import type { SceneMarker } from '../../../components/map/types';
 import {
   Badge,
   Banner,
@@ -19,6 +20,8 @@ import {
   Title,
 } from '../../../components/ui';
 import { formatFcfa, formatOrderNumber } from '../../../lib/format';
+import { buildScene, orderSceneInput } from '../../../lib/liveScene';
+import { useFollowCamera } from '../../../hooks/useFollowCamera';
 import { hasTrackingConsent } from '../../../lib/consent';
 import { documentChecklist, kycProgress } from '../../../lib/kyc';
 import { useDriver } from '../../../state/driver';
@@ -29,6 +32,16 @@ export default function DriverHome() {
     useDriver();
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const me = position ? { lat: position.lat, lng: position.lng, heading: position.heading ?? null } : null;
+  // Carte : la course en cours (retrait / livraison) ou seulement la position du livreur.
+  const scene = useMemo(() => {
+    if (currentOrder) return buildScene(orderSceneInput(currentOrder, me));
+    const markers: SceneMarker[] = me
+      ? [{ id: 'me', kind: 'driver', lat: me.lat, lng: me.lng, heading: me.heading, vehicleType: profile?.vehicleType ?? 'MOTO', title: 'Vous' }]
+      : [];
+    return { markers, lines: [], fitPoints: me ? [me] : [] };
+  }, [currentOrder, me?.lat, me?.lng, me?.heading, profile?.vehicleType]); // eslint-disable-line react-hooks/exhaustive-deps
+  const camera = useFollowCamera(currentOrder?.status ?? 'idle', scene.fitPoints.length);
 
   if (profile === undefined) {
     return profileError ? (
@@ -101,11 +114,18 @@ export default function DriverHome() {
         ) : null}
 
         {profile.isOnline ? (
-          <OrderMap
-            me={position}
-            pickup={currentOrder?.pickup ?? null}
-            dropoff={currentOrder?.dropoff ?? null}
-            height={260}
+          <LiveMap
+            style={styles.map}
+            markers={scene.markers}
+            lines={scene.lines}
+            fitPoints={scene.fitPoints}
+            follow={camera.follow}
+            recenterKey={camera.recenterKey}
+            onUserGesture={camera.onUserGesture}
+            padding={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            animationMs={1200}
+            allowRotate
+            maxZoom={16}
           />
         ) : (
           <Card>
@@ -159,6 +179,7 @@ export default function DriverHome() {
 }
 
 const styles = StyleSheet.create({
+  map: { height: 260, borderRadius: 16 },
   sosFloating: { position: 'absolute', right: spacing.lg, bottom: spacing.lg },
   sosInline: { alignItems: 'center', marginTop: spacing.lg },
 });

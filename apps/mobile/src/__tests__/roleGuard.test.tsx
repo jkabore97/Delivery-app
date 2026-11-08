@@ -48,10 +48,17 @@ describe('RoleGuard', () => {
   });
 
   it('autre rôle : redirigé vers son espace, jamais vers le contenu', async () => {
+    mockAuth = { status: 'signedIn', user: user('SELLER') };
+    const r = await render(guarded);
+    expect(r.queryByText('espace livreur')).toBeNull();
+    expect(r.getByText('redirect:/business')).toBeTruthy();
+  });
+
+  it('ancien compte client : pas d’espace, renvoyé à la connexion (qui explique pourquoi)', async () => {
     mockAuth = { status: 'signedIn', user: user('CLIENT') };
     const r = await render(guarded);
     expect(r.queryByText('espace livreur')).toBeNull();
-    expect(r.getByText(/redirect:\/client/)).toBeTruthy();
+    expect(r.getByText('redirect:/login')).toBeTruthy();
   });
 
   it('contrôleur : renvoyé à la connexion (pas d’espace mobile)', async () => {

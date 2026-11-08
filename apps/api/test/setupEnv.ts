@@ -16,3 +16,16 @@ process.env.STORAGE_ENCRYPTION_KEY = 'a'.repeat(64);
 // (elles sont testées explicitement dans auth.test.ts avec une instance dédiée).
 process.env.AUTH_RATE_LIMIT_REQUEST = '0';
 process.env.AUTH_RATE_LIMIT_VERIFY = '0';
+// Itinéraires : ligne droite par défaut (aucun appel au service OSRM) ; les tests d'OSRM injectent un faux fetch.
+process.env.ROUTING_PROVIDER = 'straight';
+process.env.RECIPIENT_NOTIFIER = 'console';
+delete process.env.PUBLIC_APP_URL;
+
+// Aucun test ne doit sortir sur le réseau : fetch n'accepte que les serveurs locaux (tests de la fonction Vercel).
+const realFetch = globalThis.fetch;
+globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+  if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost')
+    return Promise.reject(new Error(`Accès réseau interdit pendant les tests : ${url.hostname}`));
+  return realFetch(input, init);
+}) as typeof fetch;

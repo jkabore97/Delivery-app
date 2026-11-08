@@ -7,9 +7,9 @@ export interface StoreApprovalNotice {
 }
 
 /**
- * Bandeau de validation de la boutique (docs/API.md §5 et §8.5) : une nouvelle boutique est PENDING et
- * invisible des clients jusqu'à sa validation par la console ; une boutique SUSPENDED est fermée et masquée.
- * Renvoie null pour une boutique validée (ou si l'API ne transmet pas le statut).
+ * Bandeau de validation du profil d'entreprise (docs/API.md §5 et §8.5) : un nouveau profil est PENDING
+ * jusqu'à sa validation par la console ; les demandes de livraison sont possibles une fois validé. SUSPENDED :
+ * plus de nouvelle demande. Renvoie null pour un profil validé (ou si l'API ne transmet pas le statut).
  */
 export function storeApprovalNotice(
   store: Pick<StoreDto, 'approvalStatus' | 'approvalNote'> | null | undefined,
@@ -20,17 +20,17 @@ export function storeApprovalNotice(
     case 'PENDING':
       return {
         tone: 'orange',
-        title: '⏳ Boutique en attente de validation',
+        title: '⏳ Entreprise en attente de validation',
         message:
-          'Yaar vérifie votre boutique (généralement sous 24 h). Elle n’est pas encore visible des clients : préparez votre menu en attendant.' +
+          'Yaar vérifie votre entreprise (généralement sous 24 h). Vous pourrez demander des livraisons dès sa validation.' +
           (note ? ` Remarque de Yaar : ${note}` : ''),
       };
     case 'SUSPENDED':
       return {
         tone: 'red',
-        title: '⛔ Boutique suspendue par Yaar',
+        title: '⛔ Entreprise suspendue par Yaar',
         message:
-          'Votre boutique est fermée et n’apparaît plus aux clients. Les commandes déjà en cours continuent.' +
+          'Vous ne pouvez plus demander de nouvelles livraisons. Les livraisons déjà en cours continuent.' +
           (note ? ` Motif : ${note}.` : '') +
           ' Contactez le support Yaar pour la réactiver.',
       };

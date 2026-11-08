@@ -1,7 +1,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { ApiError } from '../lib/api';
 import DeliverScreen from '../app/driver/deliver';
-import { driverProfile, order } from './fixtures';
+import { delivery, driverProfile, order } from './fixtures';
 
 jest.mock('expo-router', () => ({ router: { back: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock('../lib/photo', () => ({ capturePhoto: jest.fn(async () => null) }));
@@ -63,6 +63,30 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     await waitFor(() => expect(r.getByText('Livraison confirmée ✅')).toBeTruthy());
     expect(mockDriver.setCurrentOrder).toHaveBeenCalledWith(null);
     expect(mockDriver.refreshProfile).toHaveBeenCalled();
+  });
+
+  it('livraison d’entreprise : montant à encaisser (marchandise + frais payés par le destinataire) avant le code', async () => {
+    mockDriver.currentOrder = delivery({ feePaidBy: 'RECIPIENT', cashToCollect: 15000, deliveryFee: 1500 });
+    const r = await render(<DeliverScreen />);
+    expect(r.getByTestId('amount-to-collect')).toHaveTextContent(
+      /1\. Encaissez auprès de Awa Kaboré.*Marchandise 15 000 FCFA \+ frais de livraison 1 500 FCFA, en espèces\..*16 500 FCFA/,
+    );
+    expect(r.getByText('2. Demandez le code au destinataire')).toBeTruthy();
+    // Solde après la course : 10 000 détenus + 16 500 encaissés.
+    expect(r.getByText('26\u202f500 FCFA')).toBeTruthy();
+  });
+
+  it('frais payés par l’entreprise et rien à encaisser : le livreur le sait avant le code', async () => {
+    mockDriver.currentOrder = delivery({ feePaidBy: 'SENDER', cashToCollect: 0 });
+    const r = await render(<DeliverScreen />);
+    expect(r.queryByTestId('amount-to-collect')).toBeNull();
+    expect(r.getByText('Rien à encaisser : la livraison est déjà payée.')).toBeTruthy();
+    expect(r.getByText('Demandez le code au destinataire')).toBeTruthy();
+  });
+
+  it('ancienne commande client : le total en espèces', async () => {
+    const r = await render(<DeliverScreen />);
+    expect(r.getByTestId('amount-to-collect')).toHaveTextContent(/Total de la commande, en espèces\..*4 500 FCFA/);
   });
 
   it('pas de course récupérée : rien à livrer', async () => {

@@ -1,13 +1,11 @@
 import { addressLine, isAddressComplete, isPinAtDefault, toAddressInput } from './address';
-import { groupByCategory } from './catalog';
 import { formatFcfaShort, formatKm, initials, summarizeItems, timeAgo } from './format';
 import { externalDirectionsUrl, webDirectionsUrl } from './navigation';
 import { formatPhone, normalizePhone, telUrl } from './phone';
-import { homePathForRole, spaceForRole } from './roles';
-import { clampPrepTime, ordersOfStore, parsePrice, sortSellerOrders } from './sellerOrders';
+import { blockedAccountMessage, CLIENT_ACCOUNT_MESSAGE, homePathForRole, isSignupRole, roleLabel, spaceForRole } from './roles';
 import { base64DecodedSize, MAX_PHOTO_BASE64_LENGTH, stripDataUrl, toFileUpload, UploadTooLargeError } from './upload';
-import { pickVehicle } from '../hooks/useQuote';
-import type { OrderDto, QuoteResponse } from '@yaar/shared';
+import { pickVehicle } from './delivery';
+import type { QuoteResponse } from '@yaar/shared';
 
 describe('format', () => {
   it('formate les montants et distances', () => {
@@ -41,12 +39,24 @@ describe('téléphone', () => {
 });
 
 describe('rôles', () => {
-  it('oriente chaque rôle vers son espace, back-office exclu', () => {
-    expect(homePathForRole('CLIENT')).toBe('/client');
-    expect(homePathForRole('SELLER')).toBe('/seller');
+  it('deux espaces : Entreprise (SELLER) et Livreur ; client et back-office sans espace', () => {
+    expect(homePathForRole('SELLER')).toBe('/business');
     expect(homePathForRole('DRIVER')).toBe('/driver');
+    expect(spaceForRole('CLIENT')).toBeNull();
+    expect(homePathForRole('CLIENT')).toBe('/login');
     expect(spaceForRole('CONTROLLER')).toBeNull();
     expect(homePathForRole('ADMIN')).toBe('/login');
+    expect(roleLabel('SELLER')).toBe('Entreprise');
+  });
+  it('compte client : message d’accueil (le destinataire utilise son lien) ; pas d’inscription client', () => {
+    expect(blockedAccountMessage('CLIENT')).toBe(CLIENT_ACCOUNT_MESSAGE);
+    expect(CLIENT_ACCOUNT_MESSAGE).toMatch(/réservé aux entreprises et aux livreurs/);
+    expect(CLIENT_ACCOUNT_MESSAGE).toMatch(/lien de suivi/);
+    expect(blockedAccountMessage('ADMIN')).toMatch(/console web/);
+    expect(blockedAccountMessage('SELLER')).toBeNull();
+    expect(isSignupRole('CLIENT')).toBe(false);
+    expect(isSignupRole('SELLER')).toBe(true);
+    expect(isSignupRole('DRIVER')).toBe(true);
   });
 });
 
@@ -72,43 +82,6 @@ describe('adresses', () => {
     expect(toAddressInput(a)).toEqual({ lat: 12.123457, lng: -1.987654, address: 'Patte d’Oie', landmark: 'station Total' });
     expect(addressLine({ address: 'Zogona', landmark: '' })).toBe('Zogona');
     expect(addressLine({ address: 'Zogona', landmark: 'Boutique' })).toBe('Zogona · Repère : Boutique');
-  });
-});
-
-describe('catalogue', () => {
-  it('regroupe par catégorie, « Autres » par défaut', () => {
-    const p = (id: string, category: string) => ({ id, storeId: 's', name: id, description: '', category, price: 100, isAvailable: true });
-    const groups = groupByCategory([p('a', 'Plats'), p('b', 'Boissons'), p('c', 'Plats'), p('d', '')]);
-    expect(groups.map((g) => [g.category, g.items.length])).toEqual([
-      ['Plats', 2],
-      ['Boissons', 1],
-      ['Autres', 1],
-    ]);
-  });
-});
-
-describe('vendeur', () => {
-  it('lit un prix en FCFA', () => {
-    expect(parsePrice('2 500')).toBe(2500);
-    expect(parsePrice('1500F')).toBe(1500);
-    expect(parsePrice('0')).toBeNull();
-    expect(parsePrice('12,5')).toBeNull();
-  });
-  it('borne le temps de préparation', () => {
-    expect(clampPrepTime(0)).toBe(5);
-    expect(clampPrepTime(500)).toBe(180);
-  });
-  it('trie : nouvelles commandes d’abord, puis par ancienneté', () => {
-    const o = (id: string, status: OrderDto['status'], createdAt: string, storeId = 's1') =>
-      ({ id, status, createdAt, store: { id: storeId, name: 'x', phone: null } }) as OrderDto;
-    const list = [
-      o('a', 'ACCEPTED', '2026-11-06T10:00:00Z'),
-      o('b', 'PENDING', '2026-11-06T10:05:00Z'),
-      o('c', 'PENDING', '2026-11-06T10:01:00Z'),
-      o('d', 'PICKED_UP', '2026-11-06T09:00:00Z', 's2'),
-    ];
-    expect(sortSellerOrders(list).map((x) => x.id)).toEqual(['c', 'b', 'a', 'd']);
-    expect(ordersOfStore(list, 's2').map((x) => x.id)).toEqual(['d']);
   });
 });
 

@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { LOCATION_RETENTION_MONTHS } from '@yaar/shared';
 import type { Clock } from '../lib/clock';
 import { subtractMonths } from '../lib/time';
+import { ROUTE_RESET } from '../services/routes';
 
 export interface RetentionResult {
   locationPingsDeleted: number;
@@ -21,8 +22,9 @@ export const PURGED_ADDRESS = 'Adresse supprimée (conservation 12 mois)';
  * Purge des données à durée de conservation limitée (Annexe 3 du contrat), 12 mois :
  * - positions GPS des livreurs ;
  * - positions et adresses du client sur les commandes terminées (livrées ou annulées) : coordonnées
- *   remises à 0, adresse / repère / destinataire / notes effacés. Le retrait d'une commande repas
- *   (adresse de la boutique, donnée professionnelle) est conservé ; celui d'un colis est purgé ;
+ *   remises à 0, adresse / repère / destinataire (nom, téléphone) / notes effacés, ainsi que l'itinéraire en
+ *   cache s'il en restait un. Le retrait d'une commande repas (adresse de la boutique, donnée professionnelle)
+ *   est conservé ; celui d'un colis (dont les livraisons d'entreprise) est purgé ;
  * - positions des incidents (SOS) ;
  * - messages client ↔ livreur ;
  * - codes OTP expirés depuis plus de 24 h.
@@ -47,6 +49,7 @@ export async function runRetention(prisma: PrismaClient, clock: Clock): Promise<
     recipientName: null,
     recipientPhone: null,
     notes: null,
+    ...ROUTE_RESET,
     locationPurgedAt: now,
   };
   const [parcels, food] = await prisma.$transaction([

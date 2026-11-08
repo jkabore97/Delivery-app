@@ -3,22 +3,26 @@
 //   E2E_STAFF_CODE=<code d'accès démo des comptes de console> node tools/e2e/live-demo.cjs
 //
 // Variables (facultatives sauf E2E_STAFF_CODE) :
-//   APP_URL      application web (client / vendeur / livreur)   défaut https://yaar-livraison.vercel.app
-//   CONSOLE_URL  console de contrôle                             défaut https://yaar-console.vercel.app
-//   API_URL      API                                             défaut https://yaar-api.vercel.app
-//   E2E_OUT      dossier des captures d'écran                    défaut ./e2e-out
+//   APP_URL      application web (entreprise / livreur / page de suivi)  défaut https://yaar-livraison.vercel.app
+//   CONSOLE_URL  console de contrôle                                      défaut https://yaar-console.vercel.app
+//   API_URL      API                                                      défaut https://yaar-api.vercel.app
+//   E2E_OUT      dossier des captures d'écran                             défaut ./e2e-out
 //
-// Ce que le script vérifie, dans l'ordre :
+// Ce que le script vérifie, dans l'ordre (modèle B2B : une entreprise fait livrer un destinataire sans compte) :
 //   1. API : /health et /config (mode poll, démo active, canal OTP « console »).
 //   2. Console : avis de démo + avertissement « données réelles », le code 123456 est REFUSÉ pour un
-//      contrôleur, le code d'accès démo est accepté, carte en direct avec marqueurs et tuiles OpenStreetMap.
-//   3. Application : client → commande → vendeur accepte et prépare → livreur (consentement GPS, en ligne)
-//      reçoit l'offre par polling, l'accepte, récupère, saisit le code de livraison → livré ; puis la console
-//      voit la course « Livrée » et la caisse du livreur. Aucune requête Socket.IO (mode poll).
-//   4. Avertissement « démonstration publique » sur l'écran des pièces KYC d'un livreur.
+//      contrôleur, le code d'accès démo est accepté, carte en direct avec marqueurs.
+//   3. Entreprise (Le Verdoyant) : nouvelle livraison en 3 étapes (destination sur la carte, colis et prix, demande)
+//      → écran de suivi avec le lien à envoyer au destinataire.
+//   4. Destinataire : ouvre le lien de suivi SANS compte (titre de la page, « Recherche d'un livreur », code).
+//   5. Livreur (Karim D.) : consentement GPS, en ligne, reçoit l'offre par polling (entreprise + zone), l'accepte,
+//      récupère le colis, voit le montant à encaisser et saisit le code lu sur la page de suivi → livré ; la page de
+//      suivi affiche « Colis livré », l'entreprise « Livrée », la console la course « Livrée » et la caisse du livreur.
+//      Aucune requête Socket.IO (mode poll).
+//   6. Avertissement « démonstration publique » sur l'écran des pièces KYC d'un livreur.
 //
-// Effets sur la base de démonstration : une commande de test est créée et livrée ; Karim D. (livreur
-// moto de démo) est remis hors ligne et sans consentement GPS au début, puis hors ligne à la fin.
+// Effets sur la base de démonstration : une livraison de test est créée et livrée ; Karim D. (livreur moto de démo)
+// est remis hors ligne et sans consentement GPS au début, puis hors ligne à la fin.
 // Les appels directs à l'API passent par le navigateur (proxy et certificats du navigateur, CORS réel).
 const { chromium } = require('playwright');
 const fs = require('node:fs');
@@ -100,8 +104,11 @@ async function demoLogin(page, label) {
 
 async function tilesLoaded(page) {
   await page.waitForTimeout(3000);
+  // Console : tuiles Leaflet (img) ; application : MapLibre (canvas WebGL, pas de tuile <img> à compter).
   return page.evaluate(() => document.querySelectorAll('img.leaflet-tile-loaded').length);
 }
+
+const digits = (t) => (t ?? '').replace(/\D/g, '');
 
 async function karimToken(page) {
   await api(page, 'POST', '/auth/otp/request', { phone: KARIM });
@@ -153,79 +160,69 @@ async function karimToken(page) {
     await codeInput.fill(STAFF);
     await kp.getByRole('button', { name: 'Se connecter' }).click();
     await kp.getByText(/Actualisation automatique toutes les \d+ s/).waitFor({ timeout: 45000 });
-    await kp.waitForSelector('.leaflet-marker-icon, .leaflet-interactive', { timeout: 45000 });
-    results.checks.consoleMarkers = await kp.locator('.leaflet-marker-icon, .leaflet-interactive').count();
+    const markerSel = '.leaflet-marker-icon, .leaflet-interactive, .maplibregl-marker';
+    await kp.waitForSelector(markerSel, { timeout: 45000 });
+    results.checks.consoleMarkers = await kp.locator(markerSel).count();
     results.checks.consoleTilesLoaded = await tilesLoaded(kp);
     await shot(kp, 'c02-console-live-map');
     step(
       `console : connecté avec le code d’accès démo, carte en direct (${results.checks.consoleMarkers} marqueurs, ${results.checks.consoleTilesLoaded} tuiles OSM chargées)`,
     );
 
-    // ---------- 3. Application : client ----------
-    const client = await phone(browser, 'client');
-    const cp = client.page;
-    await demoLogin(cp, 'Client · Aminata K.');
-    await V(cp.getByText('Commander un repas', { exact: false })).waitFor({ timeout: 45000 });
-    const map = cp.getByTestId('address-map');
-    await map.waitFor({ timeout: 30000 });
-    results.checks.appTilesLoaded = await tilesLoaded(cp);
-    step(`client : connecté (Aminata), carte d’adresse (${results.checks.appTilesLoaded} tuiles OSM chargées)`);
-    await shot(cp, 'a10-client-home');
-    const box = await map.boundingBox();
-    await cp.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await cp.mouse.down();
-    await cp.mouse.move(box.x + box.width / 2 - 60, box.y + box.height / 2 - 30, { steps: 8 });
-    await cp.mouse.up();
-    await cp.waitForTimeout(500);
-    await cp.getByPlaceholder('Quartier, rue (ex. Patte d’Oie, secteur 15)').fill('Koulouba, avenue Kwame Nkrumah');
-    await cp.getByPlaceholder('Ex. derrière la station Total, portail bleu').fill('Portail vert en face de la pharmacie');
-    await V(cp.getByText('🍲 Commander un repas ou des courses')).click();
-    await V(cp.getByText('Le Verdoyant', { exact: true })).click();
-    await cp.waitForTimeout(2500);
-    await V(cp.getByLabel('Ajouter un')).click();
-    await V(cp.getByText(/Voir le panier/)).click();
-    await cp.waitForTimeout(2000);
-    await V(cp.getByText('Moto', { exact: false })).click();
-    await cp.waitForTimeout(1500);
-    await shot(cp, 'a11-client-checkout');
-    await cp.getByTestId('order-button').click();
-    await V(cp.getByText(/^Commande #\d+$/)).waitFor({ timeout: 45000 });
-    const orderNo = (await V(cp.getByText(/^Commande #\d+$/)).textContent()).replace(/\D/g, '');
-    const total = (await V(cp.getByText(/^💵 /)).textContent()).replace(/\D/g, '');
+    // ---------- 3. Entreprise : nouvelle livraison ----------
+    const biz = await phone(browser, 'business');
+    const bp = biz.page;
+    await demoLogin(bp, 'Entreprise · Le Verdoyant');
+    await V(bp.getByText('Livraisons en cours')).waitFor({ timeout: 45000 });
+    await bp.getByTestId('live-map').first().waitFor({ timeout: 30000 });
+    await shot(bp, 'b10-business-deliveries');
+    step('entreprise : connectée (Le Verdoyant), livraisons en cours et carte d’ensemble');
+    await V(bp.getByTestId('new-delivery')).click();
+    await bp.getByTestId('address-map').waitFor({ timeout: 30000 });
+    await bp.waitForSelector('[data-testid="address-map"] canvas', { timeout: 30000 });
+    await V(bp.getByText('Patte d’Oie', { exact: true })).click(); // suggestion de quartier : la carte s'y déplace
+    await bp.waitForTimeout(1500);
+    await bp.getByTestId('dropoff-address').fill('Patte d’Oie, rue 15.23 (test e2e)');
+    await bp.getByTestId('dropoff-landmark').fill('Derrière la station Total, portail bleu');
+    await bp.getByTestId('recipient-name').fill('Destinataire Test e2e');
+    await bp.getByTestId('recipient-phone').fill('76 99 00 01');
+    await shot(bp, 'b11-new-delivery-destination');
+    await bp.getByTestId('wizard-next').click();
+    await bp.getByTestId('package-description').fill('Colis de test e2e');
+    await bp.getByTestId('vehicle-MOTO').waitFor({ timeout: 30000 });
+    await bp.getByTestId('vehicle-MOTO').click();
+    await bp.getByTestId('payer-RECIPIENT').click();
+    await bp.getByTestId('cash-to-collect').fill('5000');
+    await shot(bp, 'b12-new-delivery-package-price');
+    await bp.getByTestId('wizard-next').click();
+    await bp.getByTestId('request-driver').waitFor({ timeout: 15000 });
+    const toPay = digits(await bp.getByTestId('summary-recipient-pays').textContent());
+    results.checks.recipientPays = toPay;
+    await bp.getByTestId('request-driver').click();
+    await bp.getByTestId('share-tracking').waitFor({ timeout: 45000 });
+    const orderNo = digits(await bp.getByTestId('order-chip').textContent());
+    const trackingText = (await bp.getByTestId('tracking-url').textContent()).trim();
+    const trackingPath = new URL(/^https?:/.test(trackingText) ? trackingText : `https://${trackingText}`).pathname;
     results.checks.orderNo = orderNo;
-    step(`client : commande #${orderNo} passée (${total} FCFA, moto)`);
+    results.checks.trackingPath = trackingPath;
+    await shot(bp, 'b13-business-tracking-share-link');
+    step(`entreprise : livraison #${orderNo} demandée (moto, le destinataire paie ${toPay} FCFA), lien ${trackingPath}`);
 
-    // ---------- vendeur ----------
-    const seller = await phone(browser, 'seller');
-    const sp = seller.page;
-    await demoLogin(sp, 'Vendeur · Le Verdoyant');
-    await V(sp.getByText('Commandes du jour')).waitFor({ timeout: 45000 });
-    const card = (re) =>
-      sp
-        .locator('div')
-        .filter({ hasText: `#${orderNo}` })
-        .filter({ hasNotText: new RegExp(`#(?!${orderNo})\\d{4}`) })
-        .filter({ has: sp.getByText(re) })
-        .last();
-    await card(/^Accepter · \d+ min$/).waitFor({ timeout: 45000 });
-    await card(/^Accepter · \d+ min$/).getByText(/^Accepter · \d+ min$/).click();
-    await card(/^Prête → appeler un livreur$/).waitFor({ timeout: 30000 });
-    step(`vendeur : commande #${orderNo} reçue par polling et acceptée`);
-    {
-      const t = Date.now();
-      await V(cp.getByText('Votre commande est en préparation')).waitFor({ timeout: 45000 });
-      step(`client : « en préparation » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
-    }
-    await card(/^Prête → appeler un livreur$/).getByText('Prête → appeler un livreur').click();
-    await sp.waitForTimeout(2000);
-    step('vendeur : commande prête');
-    {
-      const t = Date.now();
-      await V(cp.getByText('Recherche d’un livreur')).waitFor({ timeout: 45000 });
-      step(`client : « Recherche d’un livreur » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
-    }
+    // ---------- 4. Destinataire : lien de suivi, sans compte ----------
+    const rec = await phone(browser, 'recipient');
+    const rp = rec.page;
+    await rp.goto(`${APP}${trackingPath}`);
+    await rp.getByTestId('public-tracking').waitFor({ timeout: 45000 });
+    results.checks.trackingTitle = await rp.title();
+    if (results.checks.trackingTitle !== 'Suivi de livraison · Yaar Livraison') throw new Error(`titre inattendu : ${results.checks.trackingTitle}`);
+    await rp.getByTestId('delivery-code').waitFor({ timeout: 30000 });
+    const code = digits(await rp.getByTestId('delivery-code').getAttribute('aria-label'));
+    const pageAmount = (await rp.getByTestId('amount-to-pay').count()) ? digits(await rp.getByTestId('amount-to-pay').textContent()) : '0';
+    results.checks.trackingAmount = pageAmount;
+    await shot(rp, 'r20-recipient-searching');
+    step(`destinataire : page de suivi sans compte (code lu, ${pageAmount} FCFA à payer à la réception)`);
 
-    // ---------- livreur ----------
+    // ---------- 5. Livreur ----------
     const driver = await phone(browser, 'driver', {
       geolocation: { latitude: 12.3714, longitude: -1.5197 },
       permissions: ['geolocation'],
@@ -235,50 +232,60 @@ async function karimToken(page) {
     await dp.getByTestId('online-switch').waitFor({ timeout: 45000 });
     await dp.getByTestId('online-switch').click();
     await dp.getByTestId('tracking-consent').waitFor({ timeout: 30000 });
-    await shot(dp, 'a30-driver-consent');
+    await shot(dp, 'd30-driver-consent');
     await dp.getByTestId('accept-tracking-consent').click();
     await V(dp.getByText(/En ligne/)).waitFor({ timeout: 45000 });
     step('livreur : consentement GPS donné, en ligne');
     for (let i = 0; ; i++) {
       await dp.getByTestId('accept-offer').waitFor({ timeout: 120000 });
       await dp.waitForTimeout(500);
-      const sheet = await dp.getByText(/Espèces à encaisser/).locator('visible=true').first().textContent();
-      const cash = (/Espèces à encaisser : ([^·]+)/.exec(sheet)?.[1] ?? '').replace(/\D/g, '');
-      if (cash === total) break;
-      step(`livreur : offre d’une autre commande de démo (espèces ${cash}) → refusée`);
+      const sheet = await V(dp.getByText(/^Récupérer /)).textContent();
+      const zone = await V(dp.getByText(/^Livrer : /)).textContent();
+      if (sheet.includes('Le Verdoyant') && zone.includes('Patte d’Oie')) break;
+      step(`livreur : offre d’une autre livraison de démo (${sheet} → ${zone}) → refusée`);
       await V(dp.getByText('Refuser', { exact: true })).click();
       await dp.waitForTimeout(1500);
-      if (i > 5) throw new Error('offre de la commande de test jamais reçue');
+      if (i > 5) throw new Error('offre de la livraison de test jamais reçue');
     }
-    step(`livreur : offre de la commande #${orderNo} reçue par polling`);
-    await shot(dp, 'a31-driver-offer');
+    results.checks.offerCash = digits(await dp.getByTestId('offer-cash').textContent());
+    step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie)`);
+    await shot(dp, 'd31-driver-offer');
     await dp.getByTestId('accept-offer').click();
-    await dp.waitForTimeout(2000);
-    if (await dp.getByText('Ouvrir la course').locator('visible=true').count()) await V(dp.getByText('Ouvrir la course')).click();
-    await V(dp.getByText(/J’ai récupéré la commande/)).waitFor({ timeout: 45000 });
+    await dp.getByTestId('next-step').waitFor({ timeout: 45000 });
+    await shot(dp, 'd32-driver-order-map');
     {
       const t = Date.now();
-      await V(cp.getByText('Votre livreur arrive')).waitFor({ timeout: 45000 });
-      step(`client : « Votre livreur arrive » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
+      await V(rp.getByText('Le livreur récupère votre colis')).waitFor({ timeout: 45000 });
+      step(`destinataire : « Le livreur récupère votre colis » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
     }
-    await V(dp.getByText(/J’ai récupéré la commande/)).click();
-    await V(dp.getByText('Confirmer la livraison')).waitFor({ timeout: 45000 });
-    step('livreur : commande récupérée');
-    await V(cp.getByText('Code à donner au livreur à la réception')).waitFor({ timeout: 60000 });
-    const code = (await V(cp.locator('[aria-label^="Code de livraison"]')).getAttribute('aria-label')).replace(/\D/g, '');
-    await shot(cp, 'a15-client-tracking-code');
-    step('client : code de livraison et position du livreur affichés');
-    await V(dp.getByText('Confirmer la livraison')).click();
+    await dp.getByTestId('pickup-button').click();
+    await dp.getByTestId('go-deliver').waitFor({ timeout: 45000 });
+    step('livreur : colis récupéré');
+    {
+      const t = Date.now();
+      await V(rp.getByText('Votre colis est en route')).waitFor({ timeout: 45000 });
+      step(`destinataire : « Votre colis est en route » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
+    }
+    await shot(rp, 'r21-recipient-en-route');
+    await dp.getByTestId('go-deliver').click();
+    await dp.getByTestId('delivery-code-input').waitFor({ timeout: 30000 });
+    const collect = (await dp.getByTestId('amount-to-collect').count()) ? digits(await dp.getByTestId('amount-to-collect').textContent()) : '0';
+    results.checks.driverCollects = collect;
+    if (pageAmount !== '0' && !collect.endsWith(pageAmount)) throw new Error(`montant livreur ${collect} ≠ page de suivi ${pageAmount}`);
+    await shot(dp, 'd33-driver-amount-and-code');
     await dp.getByTestId('delivery-code-input').fill(code);
     await dp.getByTestId('deliver-button').click();
     await V(dp.getByText('Livraison confirmée ✅')).waitFor({ timeout: 45000 });
-    step('livreur : livraison validée avec le code');
+    step('livreur : montant encaissé, code saisi → livraison validée');
     {
       const t = Date.now();
-      await V(cp.getByText('Commande livrée', { exact: true })).waitFor({ timeout: 60000 });
-      step(`client : « Commande livrée » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
+      await V(rp.getByText('Colis livré : merci !')).waitFor({ timeout: 60000 });
+      step(`destinataire : « Colis livré : merci ! » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
     }
-    await shot(cp, 'a16-client-delivered');
+    await shot(rp, 'r22-recipient-delivered');
+    await V(bp.getByText(/^Livrée à /)).waitFor({ timeout: 60000 });
+    await shot(bp, 'b14-business-delivered');
+    step('entreprise : livraison « Livrée »');
 
     // ---------- console : course livrée + caisse ----------
     await kp.goto(`${CONSOLE}/courses?q=${orderNo}`);
@@ -289,7 +296,7 @@ async function karimToken(page) {
     await shot(kp, 'c03-console-cash');
     step('console : caisse des livreurs chargée (Karim D.)');
 
-    // ---------- 4. avertissement sur l'écran des pièces KYC ----------
+    // ---------- 6. avertissement sur l'écran des pièces KYC ----------
     const kyc = await phone(browser, 'kyc');
     const kg = kyc.page;
     await kg.goto(`${APP}/login`);

@@ -6,26 +6,32 @@ import { ZodError } from 'zod';
 import { loadConfig, type AppConfig } from './config';
 import type { AppContext } from './context';
 import { systemClock, type Clock } from './lib/clock';
-import { corsOriginOption } from './lib/cors';
+import { corsOriginOption, originOf, withOrigin } from './lib/cors';
 import { AppError } from './lib/errors';
 import { formatMegabytes } from './lib/files';
 import { CashPaymentProvider, MobileMoneyProvider, PaymentRegistry } from './providers/payment';
 import { ConsolePushProvider, Notifier, type PushProvider } from './providers/push';
+import { createRecipientNotifier, type RecipientNotifier } from './providers/recipients';
+import { createRoutingProvider, type RoutingProvider } from './providers/routing';
 import { ConsoleSmsProvider, type SmsProvider } from './providers/sms';
 import { createStorage, type StorageProvider } from './providers/storage';
 import { WhatsAppOtpProvider } from './providers/whatsapp';
 import { createSocketServer } from './realtime/gateway';
 import { RealtimeHub, type IoServer } from './realtime/hub';
 import { authRoutes } from './routes/auth';
+import { businessRoutes } from './routes/business';
 import { controllerRoutes } from './routes/controller';
 import { driverRoutes } from './routes/driver';
 import { meRoutes } from './routes/me';
 import { orderRoutes } from './routes/orders';
 import { storeRoutes } from './routes/stores';
 import { systemRoutes } from './routes/system';
+import { trackingRoutes } from './routes/tracking';
+import { DeliveryService } from './services/deliveries';
 import { DispatchService } from './services/dispatch';
 import { OrderService } from './services/orders';
-import { BackgroundWork } from './services/work';
+import { RouteService } from './services/routes';
+import { BackgroundWork, vercelKeepAlive, type KeepAlive } from './services/work';
 
 export interface BuildOptions {
   config?: AppConfig;
@@ -34,6 +40,12 @@ export interface BuildOptions {
   sms?: SmsProvider;
   storage?: StorageProvider;
   push?: PushProvider;
+  /** Calcul d'itinéraire (tests : faux fournisseur en mémoire, aucun accès réseau). */
+  routing?: RoutingProvider;
+  /** Messages aux destinataires (tests : MemoryRecipientNotifier). */
+  recipients?: RecipientNotifier;
+  /** Maintien en vie des tâches de fond (`waitUntil` sur Vercel). */
+  keepAlive?: KeepAlive;
   logger?: boolean;
 }
 
@@ -57,6 +69,9 @@ export const WORK_TRIGGER_ROUTES = new Set([
   'GET /controller/map',
   'GET /controller/orders/pending',
   'GET /controller/dashboard',
+  'POST /business/deliveries',
+  'GET /business/deliveries',
+  'GET /track/:token',
 ]);
 
 /**
@@ -99,8 +114,10 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     },
     notifier,
   );
-  const orders = new OrderService(prisma, clock, realtime, dispatch, payments, storage, notifier, config.maxUploadBytes);
-  dispatch.onAssigned = (orderId) => orders.notify(orderId);
+  const orders = new OrderService(prisma, clock, realtime, dispatch, payments, storage, notifier, {
+    maxUploadBytes: config.maxUploadBytes,
+    publicAppUrl: config.publicAppUrl,
+  });
   const sms =
     opts.sms ??
     (config.otpProvider === 'whatsapp' ? new WhatsAppOtpProvider() : new ConsoleSmsProvider((m) => app.log.info(m)));
@@ -110,9 +127,55 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     dispatch,
     { throttleMs: config.workThrottleMs, budgetMs: config.workBudgetMs, leaseMs: 30_000 },
     (err) => app.log.error({ err }, 'Échec du cycle d’affectation (runDueWork)'),
+    opts.keepAlive ?? vercelKeepAlive,
   );
+  const routing = opts.routing ?? createRoutingProvider(config, (m) => app.log.warn(m));
+  const routes = new RouteService(prisma, clock, routing, work, { budgetMs: config.workBudgetMs }, (err) =>
+    app.log.warn({ err }, 'Échec du calcul d’itinéraire'),
+  );
+  const recipients = opts.recipients ?? createRecipientNotifier(config, (m) => app.log.info(m));
+  const deliveries = new DeliveryService(
+    prisma,
+    clock,
+    orders,
+    dispatch,
+    payments,
+    work,
+    recipients,
+    { publicAppUrl: config.publicAppUrl },
+    (err, message) => app.log.warn({ err }, message),
+  );
+  // Affectation (offre acceptée, affectation par la console) : abonnés prévenus, puis itinéraire vers le retrait.
+  dispatch.onAssigned = async (orderId) => {
+    await orders.notify(orderId);
+    await routes.afterTransition(orderId);
+  };
+  // Retrait : itinéraire vers le destinataire, puis message au destinataire (livraison d'entreprise).
+  orders.onPickedUp = async (orderId) => {
+    await routes.afterTransition(orderId);
+    await deliveries.notifyPickedUp(orderId);
+  };
+  // Nouvel itinéraire en cache : `order.updated` (mode socket) pour que les écrans de suivi rechargent la commande.
+  routes.onRouteStored = (orderId) => orders.emitUpdated(orderId);
 
-  const ctx: AppContext = { prisma, config, clock, sms, storage, payments, push, notifier, realtime, dispatch, orders, work };
+  const ctx: AppContext = {
+    prisma,
+    config,
+    clock,
+    sms,
+    storage,
+    payments,
+    push,
+    notifier,
+    realtime,
+    dispatch,
+    orders,
+    work,
+    routing,
+    routes,
+    deliveries,
+    recipients,
+  };
 
   if (config.demoMode) {
     app.log.warn(
@@ -135,7 +198,8 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   });
 
   await app.register(cors, {
-    origin: corsOriginOption(config.corsOrigins),
+    // L'origine de PUBLIC_APP_URL (page de suivi publique des destinataires) est toujours autorisée.
+    origin: corsOriginOption(withOrigin(config.corsOrigins, originOf(config.publicAppUrl))),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: CORS_MAX_AGE_SECONDS,
   });
@@ -194,6 +258,8 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   await orderRoutes(app, ctx);
   await driverRoutes(app, ctx);
   await controllerRoutes(app, ctx);
+  await businessRoutes(app, ctx);
+  await trackingRoutes(app, ctx);
 
   // Mode poll : pas de Socket.IO, les émissions du RealtimeHub sont ignorées (aucun serveur attaché).
   let io: IoServer | null = null;
