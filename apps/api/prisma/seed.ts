@@ -26,7 +26,7 @@ import { bearingDeg } from '../src/lib/geo';
 import { createRoutingProvider } from '../src/providers/routing';
 import { createStorage } from '../src/providers/storage';
 import { newTrackingToken } from '../src/services/deliveries';
-import { DEMO_RESET_SETTING_KEY, decideDemoReset, wipeRefusal } from '../src/services/demo';
+import { DEMO_RESET_SETTING_KEY, decideDemoReset, seededDeliveryAges, wipeRefusal } from '../src/services/demo';
 import { normalizeHeading } from '../src/services/heading';
 import { generateDeliveryCode } from '../src/services/orders';
 import { trackingUrlFor } from '../src/services/serializers';
@@ -153,6 +153,8 @@ async function seed(): Promise<void> {
   if ((await prisma.order.count()) === 0) await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Order_number_seq" RESTART WITH 1001`);
   const now = new Date();
   const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+  // Livraisons déjà livrées : hier et aujourd'hui au sens du jour UTC, quelle que soit l'heure du seed (« Livrées aujourd'hui »).
+  const { yesterdayMinutesAgo, todayMinutesAgo } = seededDeliveryAges(now);
 
   for (const r of DEFAULT_PRICING_RULES)
     await prisma.pricingRule.upsert({ where: { vehicleType: r.vehicleType }, create: r, update: {} });
@@ -250,7 +252,9 @@ async function seed(): Promise<void> {
       });
     }
     if (spec.online) {
-      await prisma.locationPing.create({ data: { driverId: user.id, lat: spec.online.lat, lng: spec.online.lng } });
+      // Position du passage en ligne (onlineSince) : pas une position « récente », qui suspendrait 2 min la simulation
+      // des livreurs de démonstration en course (services/demoMotion.ts : le GPS réel l'emporte).
+      await prisma.locationPing.create({ data: { driverId: user.id, lat: spec.online.lat, lng: spec.online.lng, createdAt: minutesAgo(30) } });
     }
     return user;
   }
@@ -399,14 +403,15 @@ async function seed(): Promise<void> {
     business: B('Kaya Market'), recipient: { name: 'Bintou Zongo', phone: '+22676100001' },
     dropoff: { ...Q.patteDOie, landmark: 'Derrière la station Total, portail bleu' },
     vehicleType: 'MOTO', packageDescription: 'Robe en wax et sac à main', feePaidBy: 'SENDER', cashToCollect: 12_000,
-    path: DONE, driver: ISSOUF, createdMinutesAgo: 60 * 20,
+    path: DONE, driver: ISSOUF, createdMinutesAgo: yesterdayMinutesAgo,
   });
-  // Livrée ce matin à une entreprise (clinique) par Fatimata : frais et médicaments payés par le destinataire.
+  // Livrée aujourd'hui (3 h plus tôt en journée) à une entreprise (clinique) par Fatimata : frais et médicaments payés par
+  // le destinataire.
   const deliveredToday = await createDelivery({
     business: B('Pharmacie du Progrès'), recipient: { name: 'Clinique Les Genêts', phone: '+22625360000', isBusiness: true },
     dropoff: { ...Q.cissin, landmark: 'Portail vert, accueil' },
     vehicleType: 'BIKE', packageDescription: 'Médicaments (commande de la clinique)', feePaidBy: 'RECIPIENT', cashToCollect: 8_500,
-    path: DONE, driver: FATIMATA, createdMinutesAgo: 60 * 3,
+    path: DONE, driver: FATIMATA, createdMinutesAgo: todayMinutesAgo,
   });
   // En livraison par Issouf (Ouaga 2000) : le destinataire paie le repas et les frais.
   await createDelivery({

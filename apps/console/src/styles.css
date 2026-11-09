@@ -321,19 +321,36 @@ h2 {
   border-radius: var(--radius);
   padding: 14px 16px;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
+/* Cartes étroites (six par ligne au-delà de 1280 px) : lignes coupées en parts égales, pas un mot seul en dessous. */
 .kpi-label {
   color: var(--muted);
   font-size: 0.85rem;
+  text-wrap: balance;
 }
 .kpi-value {
   font-size: 1.7rem;
   font-weight: 700;
   margin: 2px 0;
 }
+/* Nombre + précision (« 2 en course ») : côte à côte si la place suffit, sinon la précision passe d'un bloc dessous. */
+.kpi-value-noted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+.kpi-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .kpi-sub {
   font-size: 0.82rem;
   font-weight: 600;
+  text-wrap: balance;
 }
 
 /* ---------- Live page ---------- */

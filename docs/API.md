@@ -1111,7 +1111,10 @@ All routes below require a back-office token. Actions marked **audited** write a
 }
 ```
 `activeOrders` = all non-terminal statuses; `avgDeliveryMinutesToday` = creation → delivery (null if none);
-`openIncidents` = status not `RESOLVED`. Refresh every 30 s and on socket events.
+`openIncidents` = status not `RESOLVED`. "Today" (`deliveredToday`, `cancelledToday`, `avgDeliveryMinutesToday`) = since
+00:00 UTC, the Ouagadougou time all year (`deliveredAt` / `cancelledAt` ≥ start of the UTC day), computed on each call
+(no cache). Refresh every 30 s and on socket events (poll mode: also when the map shows a change, see
+[Mode polling](#mode-polling-vercel)).
 
 `GET /controller/map` → `MapDataDto` (initial snapshot; then apply `driver.location`, `driver.status`,
 `order.updated`, `sos` events):
@@ -1392,6 +1395,8 @@ connection), `GET /config` returns `realtime: "poll"`. Then:
   `WORK_THROTTLE_MS` = 4 s across all instances; the triggering request waits for it at most `WORK_BUDGET_MS`,
   then the cycle finishes in the background through `waitUntil`). So an offer is closed 30-35 s after it was made
   as long as someone is polling. The 12-month retention purge runs daily from Vercel Cron (`GET /cron/daily`, below).
+  With `DEMO_MODE=true` the same cycle also moves the seeded demo drivers on a job along their route
+  ([§12](#12-demo-accounts-seed)), so their position advances while someone polls.
 - **Quota** (Vercel Hobby: 1 M function invocations per month ≈ 0.38 request/s on average, all apps together):
   every request is an invocation, CORS preflights included. The API answers preflights with
   `Access-Control-Max-Age: 7200`, and browsers cache a preflight per URL: poll **constant URLs** (same query
@@ -1428,7 +1433,10 @@ connection), `GET /config` returns `realtime: "poll"`. Then:
 `POST /orders/:id/ready` and `PATCH /driver/availability` trigger it too.
 
 The reference console idles on the live map at about **0.32 request/s** (map 0.1 + queue 0.1 + alerts 0.067 +
-indicators 0.033 + stores 0.017; the KYC queue is reloaded only when its badge changes). After **15 minutes
+indicators 0.033 + stores 0.017; the KYC queue is reloaded only when its badge changes). It also reloads the indicators
+right after a map refresh that shows something they count (an active order gone, new or with a new status, a driver
+online/offline or busy/free), so "Livrées aujourd'hui" follows the map within 10 s; nothing more while nothing changes.
+After **15 minutes
 without interaction** (pointer, keyboard, touch, tab visibility) it stops polling and shows
 "Actualisation en pause (inactivité) — cliquez pour reprendre"; any interaction resumes with an immediate refresh.
 The mobile app never pauses an online driver's offer polling for inactivity.
@@ -1614,6 +1622,7 @@ recipient (no account) sees only the public tracking page ([Suivi public du dest
 | Routing requests | ≤ `ROUTING_MAX_RPS` per second per instance (1: FOSSGIS policy), wait ≤ 1 s, else straight line | `TokenBucket` (`providers/routing.ts`) |
 | Cancelled after pickup (`SENDER`) | fee given back to the business: `COLLECTION` adjustment of `-deliveryFee` | `OrderService.cancel` |
 | Driver heading | phone heading when speed ≥ 1 m/s (or not sent), else bearing after ≥ 15 m, else unchanged | `services/heading.ts` |
+| Demo motion (`DEMO_MODE` only) | seeded drivers on a job (`+22673000001`, `+22673000004`) moved along their cached route, 4 s steps, 45 s stop then loop; real GPS < 2 min wins | `services/demoMotion.ts` |
 
 Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Format amounts with
 `formatFcfa(6500)` → `"6 500 FCFA"`.
@@ -1638,7 +1647,28 @@ database. Partners' accounts, deliveries and uploads made in the demo are delete
 The demo is public: the seeded KYC documents are blank images, never upload real ID documents.
 The demo follows the B2B model: businesses request deliveries to recipients (fictitious names and numbers, no
 accounts); the seed prints the public tracking links of the active deliveries. Routes of the jobs in progress are
-computed with `ROUTING_PROVIDER` (OSRM by default, straight line if it does not answer).
+computed with `ROUTING_PROVIDER` (OSRM by default, straight line if it does not answer). Of the two delivered jobs, one
+is always delivered the previous day and the other the same day (UTC), whatever the time of the seed (a reset at night
+used to put "today's" delivery on the previous day).
+
+**Simulated drivers (demo only).** Nobody drives the two seeded drivers on a job, so with `DEMO_MODE=true` the API moves
+them: Issouf S. (`+22673000001`, #1003, picked up, to the recipient) and Abdoul T. (`+22673000004`, #1004, assigned, to
+the pickup) (`DEMO_SIMULATED_DRIVER_PHONES`, `services/demo.ts`). Never Karim D. (`+22673000002`, driven by real browsers
+in the end-to-end check and by partners trying the driver app) nor any other account, and never without `DEMO_MODE`.
+- Position derived from the time only (all instances agree): constant speed along the cached route of the current leg
+  (`ASSIGNED`: to the pickup; `PICKED_UP`: to the recipient) since it was computed (`computedAt`), over its `durationS`
+  (OSRM adjusted to the vehicle, or straight line at the average speed); **45 s stop** at the end, then back to the start
+  of the leg, in a loop. The order status never changes. Heading = bearing of the current segment of the line.
+- Written like a real position (`DriverProfile` last position, read by `GET /track/:token`, `GET /orders/:id`,
+  `GET /business/deliveries`, `GET /controller/map`) at most once per **4 s** step and per driver, by a conditional update
+  (one instance writes, never over a real position received meanwhile); no `LocationPing` row (history of real pings),
+  no routing request (the position stays on the line, never "off route"); `driver.location` event in socket mode. The ETA
+  (remaining share of the line × `durationS`) decreases as the driver advances.
+- **Real GPS wins**: no simulation while the driver sent a real position (`POST /driver/location`, going online with a
+  position) less than **2 min** ago.
+- Runs in the lazy dispatch cycle (`runDueWork`, poll mode: triggered by the tracking, business and console polling) and
+  every 4 s in socket mode (`server.ts`). A leg without a cached route gets one from the routing service (at most one
+  attempt per 30 s per order) and the driver waits until then.
 
 | Phone | Role | Notes |
 |---|---|---|
@@ -1651,10 +1681,10 @@ computed with `ROUTING_PROVIDER` (OSRM by default, straight line if it does not 
 | `+22671000005` | SELLER (business) | Kaya Market, online shop (Ouaga 2000): one delivered yesterday (12 000 FCFA owed, dispute open), one cancelled |
 | `+22671000009` | SELLER (business) | Grillades de Pissy, **pending approval** (store validation queue; cannot request deliveries) |
 | `+22672000001` / `+22672000002` / `+22672000003` | CLIENT | Aminata K. / Paul T. / Mariam O.: accounts of the deprecated client flow, no orders |
-| `+22673000001` | DRIVER | Issouf S., moto, approved, online, on a delivery (picked up), 38 500 FCFA held |
+| `+22673000001` | DRIVER | Issouf S., moto, approved, online, on a delivery (picked up), 38 500 FCFA held; moves on his own in `DEMO_MODE` (simulated) |
 | `+22673000002` | DRIVER | Karim D., moto, approved, online (has an open SOS) |
 | `+22673000003` | DRIVER | Fatimata Z., bike, approved, online, 9 700 FCFA held |
-| `+22673000004` | DRIVER | Abdoul T., car, approved, online, on a delivery (assigned, on the way to the pickup) |
+| `+22673000004` | DRIVER | Abdoul T., car, approved, online, on a delivery (assigned, on the way to the pickup); moves on his own in `DEMO_MODE` (simulated) |
 | `+22673000005` | DRIVER | Adama N., moto, approved, offline, above the cash limit |
 | `+22673000006` | DRIVER | Ousmane B., moto, PENDING, complete file |
 | `+22673000007` | DRIVER | Rasmané P., bike, PENDING, selfie missing |
@@ -1695,6 +1725,19 @@ in memory (per instance); the per-phone OTP limit (5 per hour) is in the databas
 ---
 
 ## 14. Changelog
+
+Live demo corrections (9 Nov 2026, backward compatible; no migration, no new environment variable):
+
+- **Demo motion**: with `DEMO_MODE=true`, the seeded drivers on a job (Issouf `+22673000001`, Abdoul `+22673000004`;
+  never Karim `+22673000002`) move along their cached route like a real driver (4 s steps, 45 s stop at the end, then
+  again from the start; status unchanged; real GPS of the last 2 min wins; no `LocationPing`, no routing request), so the
+  tracking page, the business app and the console show live movement and a decreasing ETA ([§12](#12-demo-accounts-seed)).
+  `runDueWork()` results may carry `demoMotion` (not exposed by `GET /cron/daily`).
+- Demo seed: the two delivered jobs are always "yesterday" and "today" in UTC (the KPI "Livrées aujourd'hui" no longer
+  depends on the hour of the reset); the seeded drivers' first positions are dated from their going online (30 min
+  before the seed), so they do not count as recent real GPS.
+- Console (poll mode): indicators reloaded as soon as the polled map shows a change they count (delivered order gone…);
+  KPI tiles read cleanly at 1280-1920 px ("2 en course" next to the number, or under it as a whole).
 
 Corrections after the review of the B2B release (9 Nov 2026, backward compatible unless marked; migration
 `20261109090000_app_settings`, one new table only):

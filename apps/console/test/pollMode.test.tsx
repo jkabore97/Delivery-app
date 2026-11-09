@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { PublicConfigDto } from '@yaar/shared';
 import { DEMO_DATA_WARNING } from '@yaar/shared';
@@ -276,6 +276,43 @@ describe('Console en mode poll', () => {
     expect(count(made, '/controller/stores')).toBe(5);
     expect(count(made, '/controller/drivers')).toBe(0); // file KYC : rechargée seulement si sa pastille change
     expect(made.every((c) => c.method === 'GET')).toBe(true);
+  });
+
+  it('course livrée (disparue de la carte) : indicateurs rechargés aussitôt, sans attendre leur rythme de 30 s', async () => {
+    const active = {
+      id: 'ord-1008', number: 1008, type: 'PARCEL' as const, status: 'PICKED_UP' as const, vehicleType: 'MOTO' as const,
+      pickup: { lat: 12.3686, lng: -1.5275, address: 'Centre' }, dropoff: { lat: 12.3226, lng: -1.4977, address: 'Ouaga 2000' },
+      driverId: 'drv-karim', createdAt: '2026-11-09T03:10:00.000Z', route: null,
+    };
+    let delivered = false;
+    const { calls } = renderPoll(liveConsole, fakeVisibility(), '/', {
+      routes: {
+        'GET /controller/map': () => ({ body: { ...mapData, orders: delivered ? [] : [active] } }),
+        'GET /controller/dashboard': () => ({ body: { ...dashboard, deliveredToday: delivered ? 2 : 1 } }),
+      },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const deliveredKpi = () => within(screen.getByRole('article', { name: "Livrées aujourd'hui" })).getByText(/^\d+$/).textContent;
+    expect(count(calls, '/controller/dashboard')).toBe(1);
+    expect(deliveredKpi()).toBe('1');
+    // Carte inchangée au rafraîchissement suivant : pas de requête de plus.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11_000);
+    });
+    expect(count(calls, '/controller/dashboard')).toBe(1);
+    // La course est livrée : elle quitte la carte au rafraîchissement suivant, les indicateurs suivent dans la seconde.
+    delivered = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(count(calls, '/controller/map')).toBe(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(count(calls, '/controller/dashboard')).toBe(2);
+    expect(deliveredKpi()).toBe('2');
   });
 
   it('inactivité de 15 min : bandeau « Actualisation en pause », plus aucune requête ; un clic reprend aussitôt', async () => {

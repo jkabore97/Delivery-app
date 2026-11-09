@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatFcfaCompact, formatPhone, formatRelative, formatWaiting, initials } from '../src/lib/format';
-import { applyDriverLocation, applyDriverStatus, applyIncident, filterDrivers } from '../src/lib/mapState';
+import { applyDriverLocation, applyDriverStatus, applyIncident, filterDrivers, kpiFingerprint } from '../src/lib/mapState';
 import { chipText, documentChips, kycActions } from '../src/lib/kyc';
 import { candidateBlocker } from '../src/components/AssignDialog';
 import { currentWaitingSeconds } from '../src/components/PendingOrdersPanel';
@@ -84,6 +84,22 @@ describe('mapState', () => {
   it('filtre par véhicule', () => {
     expect(filterDrivers(mapData.drivers, 'BIKE').map((d) => d.id)).toEqual(['drv-fati']);
     expect(filterDrivers(mapData.drivers, 'ALL')).toHaveLength(2);
+  });
+
+  it('empreinte des indicateurs : courses actives (statut), livreurs en ligne et en course ; pas les positions', () => {
+    const order = {
+      id: 'ord-1', number: 1001, type: 'PARCEL' as const, status: 'ASSIGNED' as const, vehicleType: 'BIKE' as const,
+      pickup: { lat: 12.37, lng: -1.52, address: 'A' }, dropoff: { lat: 12.38, lng: -1.5, address: 'B' },
+      driverId: 'drv-fati', createdAt: '2026-11-06T19:00:00.000Z', route: null,
+    };
+    const base = { ...mapData, orders: [order] };
+    const key = kpiFingerprint(base);
+    const moved = applyDriverLocation(base, { driverId: 'drv-karim', lat: 12.4, lng: -1.5, heading: 90, speed: 5, orderId: null, at: '2026-11-06T19:30:00.000Z' });
+    expect(kpiFingerprint(moved.state)).toBe(key);
+    expect(kpiFingerprint({ ...base, orders: [{ ...order, status: 'PICKED_UP' }] })).not.toBe(key);
+    expect(kpiFingerprint({ ...base, orders: [] })).not.toBe(key);
+    expect(kpiFingerprint(applyDriverStatus(base, { driverId: 'drv-karim', isOnline: true, isBusy: true }).state)).not.toBe(key);
+    expect(kpiFingerprint(applyDriverStatus(base, { driverId: 'drv-karim', isOnline: false, isBusy: false }).state)).not.toBe(key);
   });
 });
 

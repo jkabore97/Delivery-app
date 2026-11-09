@@ -143,14 +143,14 @@ export async function loginStaff(t: TestApp, role: 'CONTROLLER' | 'ADMIN' = 'CON
   return login(t.app, 'CLIENT', phone);
 }
 
-/** Livreur validé, en ligne à la position donnée. */
+/** Livreur validé, en ligne à la position donnée (`opts.phone` : numéro imposé, ex. un livreur du seed). */
 export async function createDriver(
   t: TestApp,
   vehicleType: VehicleType,
   pos: { lat: number; lng: number } | null,
-  opts: { cashHeld?: number; status?: 'APPROVED' | 'PENDING' } = {},
+  opts: { cashHeld?: number; status?: 'APPROVED' | 'PENDING'; phone?: string } = {},
 ): Promise<AuthResponse> {
-  const auth = await login(t.app, 'DRIVER', nextPhone(), `Livreur ${vehicleType}`);
+  const auth = await login(t.app, 'DRIVER', opts.phone ?? nextPhone(), `Livreur ${vehicleType}`);
   await t.prisma.driverProfile.create({
     data: {
       userId: auth.user.id,

@@ -29,6 +29,8 @@ import { storeRoutes } from './routes/stores';
 import { systemRoutes } from './routes/system';
 import { TRACKING_HEADERS, trackingRoutes } from './routes/tracking';
 import { DeliveryService, TRACKING_NOT_FOUND } from './services/deliveries';
+import { DEMO_SIMULATED_DRIVER_PHONES } from './services/demo';
+import { DemoMotionService } from './services/demoMotion';
 import { DispatchService } from './services/dispatch';
 import { OrderService } from './services/orders';
 import { RouteService } from './services/routes';
@@ -192,6 +194,18 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   orders.onCancelled = (orderId) => deliveries.notifyCancelled(orderId);
   // Nouvel itinéraire en cache : `order.updated` (mode socket) pour que les écrans de suivi rechargent la commande.
   routes.onRouteStored = (orderId) => orders.emitUpdated(orderId);
+  // Démonstration : livreurs du seed en course déplacés le long de leur itinéraire, à chaque cycle de runDueWork()
+  // (mode poll ; en mode socket, minuterie de server.ts). Jamais hors DEMO_MODE, jamais un autre compte.
+  const demoMotion = new DemoMotionService(prisma, clock, realtime, routes, {
+    enabled: config.demoMode,
+    phones: DEMO_SIMULATED_DRIVER_PHONES,
+  });
+  if (demoMotion.enabled)
+    work.demoMotion = () =>
+      demoMotion.step().catch((err: unknown) => {
+        app.log.warn({ err }, 'Échec de la simulation de déplacement des livreurs de démonstration');
+        return null;
+      });
 
   const ctx: AppContext = {
     prisma,
@@ -210,11 +224,12 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     routes,
     deliveries,
     recipients,
+    demoMotion,
   };
 
   if (config.demoMode) {
     app.log.warn(
-      '⚠⚠⚠ DEMO_MODE=true : le code OTP 123456 est accepté pour les clients, vendeurs, livreurs et nouveaux comptes (y compris en production), DEMO_STAFF_CODE pour les comptes de console, et le seed de démonstration est autorisé. Ne jamais utiliser avec de vrais utilisateurs. ⚠⚠⚠',
+      `⚠⚠⚠ DEMO_MODE=true : le code OTP 123456 est accepté pour les clients, vendeurs, livreurs et nouveaux comptes (y compris en production), DEMO_STAFF_CODE pour les comptes de console, le seed de démonstration est autorisé et les livreurs du seed en course (${DEMO_SIMULATED_DRIVER_PHONES.join(', ')}) se déplacent seuls (positions simulées). Ne jamais utiliser avec de vrais utilisateurs. ⚠⚠⚠`,
     );
   } else if (config.otpDevBypass) {
     app.log.warn('OTP_DEV_BYPASS actif : le code 123456 est accepté (développement uniquement)');

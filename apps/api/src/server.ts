@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { buildApp } from './app';
 import { runRetention } from './jobs/retention';
+import { DEMO_MOTION_STEP_MS } from './services/demoMotion';
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -19,6 +20,17 @@ async function main(): Promise<void> {
     dispatchTimer = setInterval(() => void runTick(), config.dispatchTickMs);
   }
 
+  // Démonstration (DEMO_MODE=true) en mode socket : déplacement simulé des livreurs du seed en course toutes les 4 s
+  // (événements `driver.location` comme une vraie position). Mode poll : dans runDueWork(), déclenché par les requêtes.
+  let demoMotionTimer: NodeJS.Timeout | undefined;
+  if (config.realtimeMode === 'socket' && ctx.demoMotion.enabled) {
+    const runMotion = () =>
+      ctx.demoMotion
+        .step()
+        .catch((err: unknown) => app.log.error({ err }, 'Échec de la simulation de déplacement des livreurs de démonstration'));
+    demoMotionTimer = setInterval(() => void runMotion(), DEMO_MOTION_STEP_MS);
+  }
+
   // Rétention : purge quotidienne (12 mois). Sur Vercel : GET /cron/daily (Vercel Cron).
   const retention = async () => {
     try {
@@ -33,6 +45,7 @@ async function main(): Promise<void> {
 
   app.addHook('onClose', async () => {
     clearInterval(dispatchTimer);
+    clearInterval(demoMotionTimer);
     clearInterval(retentionTimer);
     await ctx.prisma.$disconnect();
   });

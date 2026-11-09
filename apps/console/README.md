@@ -104,7 +104,11 @@ Quand `GET /config` répond `realtime: "poll"`, aucun socket n'est ouvert : chaq
 masqué. Rythmes (`src/config.ts`, `POLL_MS`) : carte et file d'attente 10 s, alertes 15 s (une seule requête
 `status=OPEN,IN_PROGRESS` partagée par les toasts SOS de l'en-tête et le panneau de la carte, `IncidentsProvider`),
 indicateurs 30 s, entreprises à valider 60 s, fiche de livraison 10 s, caisse 30 s ; la file KYC de la carte n'est
-rechargée que quand sa pastille change, et « à reverser aux entreprises » quand le cash détenu change (ou « Actualiser »). Une console inactive sur la carte coûte ≈ 0,32 requête/s (quota Vercel Hobby : 1 M
+rechargée que quand sa pastille change, et « à reverser aux entreprises » quand le cash détenu change (ou « Actualiser »).
+Les indicateurs sont aussi rechargés dès que la carte rafraîchie montre un changement qu'ils comptent (course livrée ou
+annulée qui disparaît, nouvelle course, changement de statut, livreur en ligne ou en course : `kpiFingerprint`,
+`src/lib/mapState.ts`) : « Livrées aujourd'hui » suit la carte à 10 s près au lieu de 30 s, sans requête de plus quand
+rien ne change. Une console inactive sur la carte coûte ≈ 0,32 requête/s (quota Vercel Hobby : 1 M
 d'appels par mois). Après **15 min sans interaction** (souris, clavier, toucher, changement d'onglet), plus aucune
 requête et un bandeau « Actualisation en pause (inactivité) — cliquez pour reprendre » ; toute interaction relance
 aussitôt un rafraîchissement (`src/realtime/idle.ts`). Tests de bout en bout uniquement : `window.__YAAR_IDLE_PAUSE_MS__`

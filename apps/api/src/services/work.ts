@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { waitUntil as vercelWaitUntil } from '@vercel/functions';
 import type { Clock } from '../lib/clock';
+import type { DemoMotionResult } from './demoMotion';
 import type { DispatchService, TickResult } from './dispatch';
 
 export interface WorkConfig {
@@ -13,7 +14,8 @@ export interface WorkConfig {
 }
 
 export type DueWorkResult =
-  | { ran: true; tick: TickResult }
+  /** `demoMotion` : pas de la simulation de déplacement (démonstration uniquement, cf. `BackgroundWork.demoMotion`). */
+  | { ran: true; tick: TickResult; demoMotion?: DemoMotionResult }
   | { ran: false; reason: 'not_due' };
 
 export const DISPATCH_JOB = 'dispatch';
@@ -52,16 +54,24 @@ export async function waitWithin(run: Promise<unknown>, budgetMs: number, keepAl
 
 /**
  * Tâches de fond sans processus permanent (mode poll / Vercel) : expiration des offres (30 s),
- * relance des commandes en attente, mise hors ligne des livreurs silencieux.
+ * relance des commandes en attente, mise hors ligne des livreurs silencieux ; en démonstration, déplacement simulé des
+ * livreurs du seed en course (`demoMotion`).
  *
  * `runDueWork()` est sûr entre plusieurs instances : un bail en base (`JobLease`, pris par un
  * INSERT … ON CONFLICT DO UPDATE … WHERE conditionnel) garantit qu'une seule instance exécute le cycle
  * à la fois et au plus une fois par `throttleMs`. Les opérations du cycle restent elles-mêmes idempotentes (mises à jour
  * conditionnelles, index uniques partiels sur les offres ouvertes).
  * Il est déclenché paresseusement par les requêtes utiles (`kick()`) et par le cron quotidien.
- * En mode socket (serveur persistant), `server.ts` garde l'appel périodique de `dispatch.tick()`.
+ * En mode socket (serveur persistant), `server.ts` garde l'appel périodique de `dispatch.tick()` (et, en démonstration,
+ * celui du pas de simulation).
  */
 export class BackgroundWork {
+  /**
+   * Démonstration (DEMO_MODE=true) : pas de la simulation de déplacement des livreurs du seed
+   * (services/demoMotion.ts), exécuté dans le même cycle que l'affectation, donc sous le même bail : au plus une fois
+   * par `throttleMs`, toutes instances confondues. Une erreur est transmise à `onError` sans faire échouer le cycle.
+   */
+  demoMotion: (() => Promise<DemoMotionResult | null>) | null = null;
   private lastLocalAttempt = Number.NEGATIVE_INFINITY;
   private inFlight: Promise<DueWorkResult> | null = null;
   /** Tâches lancées par `defer()` et pas encore terminées (`settled()`). */
@@ -118,9 +128,21 @@ export class BackgroundWork {
     const startedAt = this.clock.now();
     if (!(await this.claim(DISPATCH_JOB, startedAt))) return { ran: false, reason: 'not_due' };
     try {
-      return { ran: true, tick: await this.dispatch.tick() };
+      const tick = await this.dispatch.tick();
+      const demoMotion = await this.runDemoMotion();
+      return demoMotion ? { ran: true, tick, demoMotion } : { ran: true, tick };
     } finally {
       await this.release(DISPATCH_JOB, startedAt);
+    }
+  }
+
+  private async runDemoMotion(): Promise<DemoMotionResult | null> {
+    if (!this.demoMotion) return null;
+    try {
+      return await this.demoMotion();
+    } catch (err) {
+      this.onError(err);
+      return null;
     }
   }
 

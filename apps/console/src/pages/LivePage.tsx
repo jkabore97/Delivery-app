@@ -11,7 +11,7 @@ import { ErrorBanner, Loading } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useIncidents } from '../hooks/IncidentsContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
-import { applyDriverLocation, applyDriverStatus, applyIncident, type VehicleFilter } from '../lib/mapState';
+import { applyDriverLocation, applyDriverStatus, applyIncident, kpiFingerprint, type VehicleFilter } from '../lib/mapState';
 import { MAP_SAFETY_REFRESH_MS, POLL_MS } from '../config';
 import { usePolling, useRealtime, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
@@ -94,6 +94,18 @@ export function LivePage() {
   // rechargée quand sa pastille (indicateurs) change : pas de requête périodique de plus.
   usePolling(() => map.reload(true), POLL_MS.map);
   usePolling(() => pending.reload(true), POLL_MS.pendingOrders);
+
+  // Mode poll : une course qui quitte la carte (livrée, annulée), y entre ou change de statut, ou un livreur qui passe en
+  // ligne ou en course, change les indicateurs : rechargés aussitôt (« Livrées aujourd'hui » à jour en même temps que la
+  // carte) au lieu d'attendre leur rythme de 30 s. En mode socket, `order.updated` et `driver.status` s'en chargent.
+  const kpiKey = map.data ? kpiFingerprint(map.data) : null;
+  const lastKpiKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (kpiKey === null) return;
+    const previous = lastKpiKey.current;
+    lastKpiKey.current = kpiKey;
+    if (mode === 'poll' && previous !== null && previous !== kpiKey) refreshDashboard();
+  }, [kpiKey, mode, refreshDashboard]);
 
   // Nouveau dossier déposé (pastille KYC qui change) : on recharge la file affichée.
   const pendingKyc = dashboard?.pendingKyc;

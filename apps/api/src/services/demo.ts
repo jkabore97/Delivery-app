@@ -1,7 +1,9 @@
 /**
- * Démonstration publique (DEMO_MODE=true) : comptes créés par le seed, connexions qui ne se bloquent pas,
- * réinitialisation contrôlée des données (DEMO_RESET_ID, build Vercel) et garde-fous de l'effacement de la base.
+ * Démonstration publique (DEMO_MODE=true) : comptes créés par le seed, livreurs du seed dont le déplacement est simulé,
+ * connexions qui ne se bloquent pas, réinitialisation contrôlée des données (DEMO_RESET_ID, build Vercel) et garde-fous
+ * de l'effacement de la base.
  */
+import { startOfDayUtc } from '../lib/time';
 
 /** Comptes de console du seed (connexion avec DEMO_STAFF_CODE en démonstration). */
 export const DEMO_STAFF_PHONES: readonly string[] = ['+22670000001', '+22670000002'];
@@ -19,6 +21,29 @@ export const DEMO_ACCOUNT_PHONES: ReadonlySet<string> = new Set([
   // Livreurs
   '+22673000001', '+22673000002', '+22673000003', '+22673000004', '+22673000005', '+22673000006', '+22673000007',
 ]);
+
+/**
+ * Livreurs du seed dont le déplacement est simulé pendant leur course en démonstration (DEMO_MODE=true), faute de
+ * téléphone qui les conduise (services/demoMotion.ts) : Issouf S. (moto, livraison #1003 récupérée, vers le
+ * destinataire) et Abdoul T. (voiture, #1004, vers le point de retrait). Jamais Karim D. (+22673000002), que de vrais
+ * navigateurs conduisent (test de bout en bout, essais de l'application livreur), ni aucun autre compte.
+ */
+export const DEMO_SIMULATED_DRIVER_PHONES: readonly string[] = ['+22673000001', '+22673000004'];
+
+/**
+ * Seed : ancienneté (minutes) de la création des deux livraisons déjà livrées (course de 16 min), « hier » et
+ * « aujourd'hui » au sens du jour UTC (heure de Ouagadougou), quelle que soit l'heure de la réinitialisation (souvent la
+ * nuit) : celle d'hier (créée 20 h plus tôt, au plus tard la veille à 21:00 UTC) n'entre jamais dans « Livrées
+ * aujourd'hui » de la console ; celle du jour (créée 3 h plus tôt, au plus tôt à 00:01 UTC, livrée au plus tard 1 min avant
+ * le seed) y entre toujours, sauf pour un seed dans la toute première minute de la journée.
+ */
+export function seededDeliveryAges(now: Date): { yesterdayMinutesAgo: number; todayMinutesAgo: number } {
+  const sinceMidnight = Math.floor((now.getTime() - startOfDayUtc(now).getTime()) / 60_000);
+  return {
+    yesterdayMinutesAgo: Math.max(20 * 60, sinceMidnight + 3 * 60),
+    todayMinutesAgo: Math.max(17, Math.min(3 * 60, sinceMidnight - 1)),
+  };
+}
 
 /** Demandes de code de connexion par numéro et par heure (cas général). */
 export const OTP_REQUESTS_PER_HOUR = 5;

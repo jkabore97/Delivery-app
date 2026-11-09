@@ -9,6 +9,7 @@ import type { RecipientNotifier } from './providers/recipients';
 import type { RoutingProvider } from './providers/routing';
 import type { RealtimeHub } from './realtime/hub';
 import type { DeliveryService } from './services/deliveries';
+import type { DemoMotionService } from './services/demoMotion';
 import type { DispatchService } from './services/dispatch';
 import type { OrderService } from './services/orders';
 import type { RouteService } from './services/routes';
@@ -37,4 +38,6 @@ export interface AppContext {
   deliveries: DeliveryService;
   /** Messages aux destinataires (lien de suivi, code). */
   recipients: RecipientNotifier;
+  /** Démonstration (DEMO_MODE=true) : déplacement simulé des livreurs du seed en course ; inactif sinon. */
+  demoMotion: DemoMotionService;
 }

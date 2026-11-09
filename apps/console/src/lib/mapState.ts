@@ -54,6 +54,19 @@ export function applyIncident(state: MapDataDto, incident: IncidentDto): MapData
   return { ...state, openSos: [incident, ...others] };
 }
 
+/**
+ * Empreinte de ce que les indicateurs comptent et que la carte montre aussi : courses actives et leur statut, livreurs en
+ * ligne et en course. Mode poll : quand elle change d'un rafraîchissement de la carte à l'autre (course livrée ou annulée
+ * qui disparaît, nouvelle course, retrait…), les indicateurs sont rechargés aussitôt au lieu d'attendre leur rythme de 30 s.
+ */
+export function kpiFingerprint(s: MapDataDto): string {
+  const orders = s.orders
+    .map((o) => `${o.id}:${o.status}`)
+    .sort()
+    .join(',');
+  return `${orders}|${s.drivers.length}/${s.drivers.filter((d) => d.isBusy).length}`;
+}
+
 export type VehicleFilter = 'ALL' | VehicleType;
 
 export function filterDrivers(drivers: readonly MapDriverDto[], filter: VehicleFilter): MapDriverDto[] {

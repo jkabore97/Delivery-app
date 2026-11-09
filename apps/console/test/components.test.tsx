@@ -15,7 +15,14 @@ describe('KpiCards', () => {
     render(<KpiCards dashboard={dashboard} />);
     const online = screen.getByRole('article', { name: 'Livreurs en ligne' });
     expect(within(online).getByText('86')).toBeInTheDocument();
-    expect(within(online).getByText(/14 · .* 61 · .* 11/)).toBeInTheDocument();
+    // « 40 en course » : précision attachée au nombre (jamais coupée), pas en fin de la ligne des véhicules.
+    expect(within(online).getByText('40 en course')).toHaveClass('kpi-note');
+    expect(within(online).getByText('40 en course').textContent).toBe('40 en course');
+    const vehicles = within(online).getByText(/14 · .* 61 · .* 11/);
+    expect(vehicles).toHaveClass('kpi-sub');
+    expect(vehicles.textContent).not.toMatch(/course/);
+    // Un nombre ne se sépare jamais de son icône ou de son unité (espaces insécables).
+    expect(vehicles.textContent).toBe('🚲 14 · 🏍️ 61 · 🚗 11');
     expect(screen.getByText('1 depuis plus de 5 min')).toHaveClass('tone-red');
     expect(screen.getByText('27 min')).toBeInTheDocument();
     expect(screen.getByText('1,84 M F')).toBeInTheDocument();

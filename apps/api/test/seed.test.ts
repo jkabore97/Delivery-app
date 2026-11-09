@@ -4,14 +4,21 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ManualClock } from '../src/lib/clock';
+import { projectOnPolyline } from '../src/lib/geo';
+import { startOfDayUtc } from '../src/lib/time';
 import {
   DEMO_ACCOUNT_PHONES,
   DEMO_RESET_SETTING_KEY,
+  DEMO_SIMULATED_DRIVER_PHONES,
   decideDemoReset,
   isLocalDatabaseUrl,
+  seededDeliveryAges,
   wipeRefusal,
 } from '../src/services/demo';
-import { resetDb } from './helpers';
+import { DEMO_MOTION_STEP_MS } from '../src/services/demoMotion';
+import { currentRoute } from '../src/services/routes';
+import { createTestApp, resetDb } from './helpers';
 
 const run = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -107,11 +114,69 @@ describe('seed de démonstration (modèle B2B)', () => {
       if (last) expect(last.balanceAfter, p.userId).toBe(p.cashHeld);
     }
 
+    // Livraisons déjà livrées : l'une hier, l'autre aujourd'hui (jour UTC du seed), quelle que soit l'heure du seed.
+    const seededAt = byPhone.get('+22670000001')!.createdAt;
+    const dayStart = startOfDayUtc(seededAt).getTime();
+    const done = await prisma.order.findMany({ where: { status: 'DELIVERED' }, include: { store: true } });
+    expect(done.find((o) => o.store?.name === 'Kaya Market')!.deliveredAt!.getTime()).toBeLessThan(dayStart);
+    if (seededAt.getTime() - dayStart >= 60_000)
+      expect(done.find((o) => o.store?.name === 'Pharmacie du Progrès')!.deliveredAt!.getTime()).toBeGreaterThanOrEqual(dayStart);
+
     // --if-empty : second passage sans rien créer ni effacer.
     const count = await prisma.user.count();
     expect(await seedIfEmpty()).toMatch(/Seed de démonstration ignoré/);
     expect(await prisma.user.count()).toBe(count);
+
+    // Démonstration : les deux livreurs du seed en course avancent dès le premier pas (les positions du seed ne comptent pas
+    // comme un GPS réel récent) ; Karim et les autres livreurs ne bougent pas.
+    const inProgress = await prisma.order.findMany({ where: { status: { in: ['ASSIGNED', 'PICKED_UP'] } }, include: { driver: true } });
+    expect(new Set(inProgress.map((o) => o.driver?.phone))).toEqual(new Set(DEMO_SIMULATED_DRIVER_PHONES));
+    const demo = await createTestApp({ DEMO_MODE: 'true', REALTIME_MODE: 'poll' }, { clock: new ManualClock(new Date(Date.now() + 60_000)) });
+    try {
+      const before = await prisma.driverProfile.findMany({ include: { user: true } });
+      expect(await demo.ctx.demoMotion.step()).toEqual({ moved: 2, realGps: 0, waitingForRoute: 0 });
+      const stepAt = Math.floor(demo.clock.now().getTime() / DEMO_MOTION_STEP_MS) * DEMO_MOTION_STEP_MS;
+      for (const p of await prisma.driverProfile.findMany({ include: { user: true } })) {
+        const prev = before.find((b) => b.userId === p.userId)!;
+        const job = inProgress.find((o) => o.driverId === p.userId);
+        if (!job) {
+          expect(p, p.user.phone).toEqual(prev);
+          continue;
+        }
+        expect(p.lastLocationAt?.getTime()).toBe(stepAt);
+        expect([p.lastLat, p.lastLng]).not.toEqual([prev.lastLat, prev.lastLng]);
+        expect(projectOnPolyline(currentRoute(job)!.points, { lat: p.lastLat!, lng: p.lastLng! }).distanceM).toBeLessThan(1);
+      }
+      expect(await prisma.order.count({ where: { status: { in: ['ASSIGNED', 'PICKED_UP'] } } })).toBe(2);
+    } finally {
+      await demo.app.close();
+      await demo.prisma.$disconnect();
+    }
   }, 240_000);
+
+  it('livraisons déjà livrées : hier et aujourd’hui au sens du jour UTC, quelle que soit l’heure du seed', () => {
+    const day = Date.UTC(2026, 10, 9);
+    // Parcours complet du seed : livrée 16 min après sa création.
+    const deliveredAt = (now: Date, minutesAgo: number) => now.getTime() - minutesAgo * 60_000 + 16 * 60_000;
+    for (const minutes of [0.5, 1, 5, 16, 17, 17.5, 18, 60, 164, 165, 180, 196, 600, 1020, 1184, 1185, 1200, 1439.9]) {
+      const now = new Date(day + minutes * 60_000);
+      const ages = seededDeliveryAges(now);
+      const yesterday = deliveredAt(now, ages.yesterdayMinutesAgo);
+      const today = deliveredAt(now, ages.todayMinutesAgo);
+      expect(yesterday, `${minutes} min`).toBeLessThan(day);
+      expect(yesterday, `${minutes} min`).toBeGreaterThanOrEqual(day - 24 * 3600_000);
+      if (minutes >= 1) expect(today, `${minutes} min`).toBeGreaterThanOrEqual(day);
+      expect(today, `${minutes} min`).toBeLessThanOrEqual(now.getTime() - 60_000);
+    }
+    // En journée : 20 h et 3 h plus tôt, comme avant.
+    expect(seededDeliveryAges(new Date(day + 12 * 3600_000))).toEqual({ yesterdayMinutesAgo: 1200, todayMinutesAgo: 180 });
+  });
+
+  it('livreurs simulés en démonstration : Issouf et Abdoul seulement (jamais Karim), comptes du seed', () => {
+    expect(DEMO_SIMULATED_DRIVER_PHONES).toEqual(['+22673000001', '+22673000004']);
+    expect(DEMO_SIMULATED_DRIVER_PHONES).not.toContain('+22673000002');
+    for (const phone of DEMO_SIMULATED_DRIVER_PHONES) expect(DEMO_ACCOUNT_PHONES.has(phone)).toBe(true);
+  });
 });
 
 describe('réinitialisation de la démo (DEMO_RESET_ID, build Vercel)', () => {

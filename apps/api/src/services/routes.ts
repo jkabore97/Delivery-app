@@ -214,6 +214,15 @@ export class RouteService {
   }
 
   /**
+   * Étape en cours sans itinéraire en cache (démonstration : livreur simulé, cf. services/demoMotion.ts) : même calcul
+   * qu'après un changement de statut, en arrière-plan (jamais attendu) ; au plus une tentative par 30 s et par
+   * commande, toutes instances confondues (verrou `routeAttemptAt`).
+   */
+  ensureRoute(orderId: string): Promise<void> {
+    return this.work.defer(() => this.computeForNewLeg(orderId), 0, this.onError);
+  }
+
+  /**
    * Position GPS d'un livreur en course : décision immédiate, sans requête si rien n'est à recalculer ; sinon
    * calcul lancé en arrière-plan (jamais attendu par la réponse à la position).
    */
