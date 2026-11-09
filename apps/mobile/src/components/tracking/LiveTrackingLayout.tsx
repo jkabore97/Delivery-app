@@ -23,7 +23,8 @@ const SIDE_SHEET_WIDTH = 420;
  * (cercles approximatifs), `aboveSheet` (élément centré posé sur la carte juste au-dessus de la feuille, ex. grand
  * bouton rond ; la caméra le garde dégagé), `insetBottom={false}` (écran au-dessus d'une barre d'onglets : pas de
  * marge de zone sûre sous la feuille), `mapVisible={false}` (carte démontée, ex. écran masqué : une seule carte
- * WebGL à la fois).
+ * WebGL à la fois), `sheetHeader` (bloc fixé en haut de la feuille, au-dessus du contenu qui défile : titre et
+ * action principale d'une liste).
  */
 export function LiveTrackingLayout({
   markers,
@@ -37,6 +38,7 @@ export function LiveTrackingLayout({
   topCenter,
   topRight,
   children,
+  sheetHeader,
   footer,
   aboveSheet,
   allowWide = false,
@@ -59,6 +61,8 @@ export function LiveTrackingLayout({
   topCenter?: ReactNode;
   topRight?: ReactNode;
   children: ReactNode;
+  /** Bloc fixé en haut de la feuille, au-dessus du contenu qui défile (titre, action principale). */
+  sheetHeader?: ReactNode;
   /** Bloc fixé en bas de la feuille (bouton d'action). */
   footer?: ReactNode;
   /** Élément centré posé sur la carte, juste au-dessus de la feuille (ex. grand bouton rond « Passer en ligne »). */
@@ -181,6 +185,7 @@ export function LiveTrackingLayout({
             <View style={[styles.handle, darkSheet && styles.handleDark]} />
           </Pressable>
         )}
+        {sheetHeader ? <View style={styles.sheetHeader}>{sheetHeader}</View> : null}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}
@@ -305,4 +310,5 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
+  sheetHeader: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
 });

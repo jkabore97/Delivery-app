@@ -41,6 +41,17 @@ export function trackingShareMessage(p: ShareParty & { url: string }): string {
   return `${trackingShareText(p)} ${p.url}`;
 }
 
+/**
+ * Message WhatsApp de l'entreprise au destinataire (boutons « WhatsApp » des livraisons) : le message du lien de
+ * suivi quand il existe, sinon un bonjour avec le numéro du colis.
+ */
+export function recipientWhatsappText(p: ShareParty & { url?: string | null; orderNumber?: number | null }): string {
+  if (p.url) return trackingShareMessage({ ...p, url: p.url });
+  const who = recipientCallName(p.recipientName, p.recipientIsBusiness);
+  const from = p.businessName?.trim() || 'votre expéditeur';
+  return `${who ? `Bonjour ${who}, ` : 'Bonjour, '}${from} vous envoie un colis${p.orderNumber ? ` (#${p.orderNumber})` : ''} avec Yaar Livraison.`;
+}
+
 /** Lien WhatsApp « wa.me/<chiffres du numéro>?text=… » (sans numéro valide : choix du contact dans WhatsApp). */
 export function whatsappUrl(phone: string | null | undefined, text: string): string {
   const digits = (normalizePhone(phone ?? '') ?? '').replace(/\D/g, '');
@@ -129,4 +140,34 @@ export async function copyText(text: string, env: ShareEnv = defaultShareEnv()):
 export function shareButtonLabel(env: Pick<ShareEnv, 'platform' | 'navigator'> = defaultShareEnv()): string {
   if (env.platform === 'web' && typeof env.navigator?.share !== 'function') return 'Envoyer le lien de suivi par WhatsApp';
   return 'Envoyer le lien de suivi au destinataire';
+}
+
+export type QuickShareOutcome = ShareOutcome | 'copied' | 'failed';
+
+/**
+ * Bouton rond « Partager le lien » (suivi d'une livraison) : feuille de partage du téléphone, ou navigator.share sur
+ * le web ; sur un ordinateur sans partage, le lien est COPIÉ (le bouton « WhatsApp » voisin envoie déjà le message).
+ */
+export async function shareOrCopyTrackingLink(
+  p: ShareParty & { url: string; recipientPhone?: string | null },
+  env: ShareEnv = defaultShareEnv(),
+): Promise<QuickShareOutcome> {
+  if (env.platform === 'web' && typeof env.navigator?.share !== 'function') return (await copyText(p.url, env)) ? 'copied' : 'failed';
+  return shareTrackingLink(p, env);
+}
+
+/** Message affiché après un envoi du lien (null : partage annulé, rien à dire). */
+export function shareFeedback(outcome: QuickShareOutcome): string | null {
+  switch (outcome) {
+    case 'whatsapp':
+      return 'WhatsApp ouvert avec le message prêt à envoyer.';
+    case 'shared':
+      return 'Lien envoyé.';
+    case 'copied':
+      return 'Lien copié ✓';
+    case 'failed':
+      return 'Partage impossible : copiez le lien.';
+    default:
+      return null;
+  }
 }

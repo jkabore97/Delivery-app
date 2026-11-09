@@ -26,8 +26,11 @@ export interface PackageCardProps {
   notes?: string | null;
   /** Ligne discrète (date, distance…). */
   meta?: string | null;
-  /** Montant mis en avant (espèces à encaisser en ambre, gain en vert). */
-  amount?: { label: string; value: number; tone?: 'amber' | 'green' } | null;
+  /**
+   * Montant mis en avant (espèces à encaisser en ambre, gain en vert). `testID` (facultatif) : sur la ligne, et
+   * `<testID>-value` sur le montant (vérifications exactes, comme AmountRow).
+   */
+  amount?: { label: string; value: number; tone?: 'amber' | 'green'; testID?: string } | null;
   /** Numéro du contact : boutons ronds WhatsApp et Appeler ; null = boutons inactifs ; absent = pas de boutons. */
   phone?: string | null;
   /** Message prérempli du bouton WhatsApp. */
@@ -115,9 +118,11 @@ export function PackageCard({
       ) : null}
       {notes ? <Text style={[styles.notes, { color: c.muted, borderLeftColor: c.border }]}>« {notes} »</Text> : null}
       {amount ? (
-        <View style={styles.amountRow}>
+        <View style={styles.amountRow} testID={amount.testID}>
           <Text style={[styles.amountLabel, { color: c.muted }]}>{amount.label}</Text>
-          <Text style={[styles.amount, { color: amountColor }]}>{formatFcfa(amount.value)}</Text>
+          <Text style={[styles.amount, { color: amountColor }]} testID={amount.testID ? `${amount.testID}-value` : undefined}>
+            {formatFcfa(amount.value)}
+          </Text>
         </View>
       ) : null}
       {meta ? <Text style={[styles.meta, { color: c.faint }]}>{meta}</Text> : null}

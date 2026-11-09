@@ -90,3 +90,13 @@ export function trackingHeadline(
       };
   }
 }
+
+/**
+ * Message WhatsApp prérempli du destinataire à son livreur (page publique) : « Bonjour Issouf, je suis le
+ * destinataire du colis #1052 de Pharmacie du Centre (Yaar Livraison). »
+ */
+export function recipientToDriverText(p: { driver?: string | null; sender?: string | null; number: number }): string {
+  const driver = p.driver?.trim();
+  const sender = p.sender?.trim();
+  return `${driver ? `Bonjour ${driver}` : 'Bonjour'}, je suis le destinataire du colis #${p.number}${sender ? ` de ${sender}` : ''} (Yaar Livraison).`;
+}

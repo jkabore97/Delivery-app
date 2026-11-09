@@ -12,6 +12,7 @@ import {
   type TrackingDto,
   type VehicleType,
 } from '@yaar/shared';
+import { avatarInitials } from '../components/map/markerArt';
 import type { MapPoint, SceneLine, SceneMarker } from '../components/map/types';
 import { fixTime } from './map/motion';
 
@@ -213,19 +214,22 @@ export function trackingSceneInput(t: TrackingDto): SceneInput {
 
 /**
  * Carte d'ensemble de l'entreprise : son point de retrait (radar si une livraison attend un livreur), les
- * destinataires et les livreurs de toutes les livraisons en cours.
+ * destinataires et les livreurs de toutes les livraisons en cours. `recipientInitials` : destinataires en épingles
+ * « avatar » à leurs initiales (l'entreprise garde son pictogramme : c'est « chez elle »).
  */
 export function overviewScene(
   business: MapPoint | null,
   deliveries: OrderDto[],
   businessName?: string,
+  opts: { recipientInitials?: boolean } = {},
 ): { markers: SceneMarker[]; lines: SceneLine[]; fitPoints: MapPoint[] } {
   const markers: SceneMarker[] = [];
   const lines: SceneLine[] = [];
   const fitPoints: MapPoint[] = [];
   let searching = false;
   for (const o of deliveries) {
-    const s = buildScene(orderSceneInput(o));
+    const input = orderSceneInput(o);
+    const s = buildScene(opts.recipientInitials ? { ...input, initials: { dropoff: avatarInitials(o.recipientName) } } : input);
     if (s.stage === 'searching') searching = true;
     for (const m of s.markers) {
       // Un seul marqueur pour l'entreprise, sauf retrait ailleurs qu'à son adresse.
