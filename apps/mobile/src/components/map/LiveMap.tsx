@@ -10,8 +10,8 @@ import MapView, {
   type MapMarkerProps,
 } from 'react-native-maps';
 import { boundsOf, OUAGADOUGOU_CENTER, padBounds, regionForBounds } from '@yaar/shared';
-import { clampPadding, nativeEdgePadding, withDefaultPadding } from '../../lib/mapCamera';
-import { pointsKey, resolveLines, type DrawnLine } from '../../lib/map/lines';
+import { clampBasePadding, nativeFitPadding, withDefaultPadding } from '../../lib/mapCamera';
+import { activeLegPoints, pointsKey, resolveLines, type DrawnLine } from '../../lib/map/lines';
 import { DriverMotion } from '../../lib/map/motion';
 import { radarRings, RADAR_PERIOD_MS, RADAR_STEP_MS } from '../../lib/map/radar';
 import { ANDROID_MAP_STYLE, MAP_COLORS } from '../../lib/map/style';
@@ -36,10 +36,16 @@ const ll = (p: MapPoint) => ({ latitude: p.lat, longitude: p.lng });
 const CENTER = { x: 0.5, y: 0.5 };
 const android = Platform.OS === 'android';
 
-/** Ancre d'une vue carrée de `size` dp décalée de DRIVER_NUDGE_PX à l'écran. */
+/** Ancre (Android) d'une vue carrée de `size` dp décalée de DRIVER_NUDGE_PX à l'écran. */
 function nudgedAnchor(size: number) {
   return { x: 0.5 - DRIVER_NUDGE_PX[0] / size, y: 0.5 - DRIVER_NUDGE_PX[1] / size };
 }
+
+/** iOS (Apple Plans) : `anchor` n'existe pas, la vue est décalée par `centerOffset` (y positif = vers le bas). */
+const NUDGE_OFFSET = { x: DRIVER_NUDGE_PX[0], y: DRIVER_NUDGE_PX[1] };
+const NO_OFFSET = { x: 0, y: 0 };
+/** Épingle du destinataire (vue 64 × 56, pointe à 45 px du haut) : pointe sur la position, sur iOS aussi. */
+const DROPOFF_CENTER_OFFSET = { x: 0, y: -(45 - 28) };
 
 /** Marker.Animated accepte une AnimatedRegion et des enfants (vue personnalisée) ; ses types ne le disent pas. */
 const AnimatedMarker = MarkerAnimated as unknown as ComponentType<
@@ -106,6 +112,7 @@ const StaticMarker = memo(function StaticMarker({ marker }: { marker: SceneMarke
     <Marker
       coordinate={ll(marker)}
       anchor={isDropoff ? { x: 0.5, y: 45 / 56 } : CENTER}
+      centerOffset={isDropoff ? DROPOFF_CENTER_OFFSET : NO_OFFSET}
       tracksViewChanges={tracks}
       title={marker.title}
       zIndex={isDropoff ? 3 : 2}
@@ -129,6 +136,7 @@ function ChevronMarker({ region, heading, nudge }: { region: AnimatedRegion; hea
     <AnimatedMarker
       coordinate={region}
       anchor={nudge ? nudgedAnchor(CHEVRON_VIEW_SIZE) : CENTER}
+      centerOffset={nudge ? NUDGE_OFFSET : NO_OFFSET}
       flat
       rotation={android ? heading : 0}
       tracksViewChanges={tracks}
@@ -204,6 +212,7 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
       <AnimatedMarker
         coordinate={region}
         anchor={marker.nudge ? nudgedAnchor(DRIVER_VIEW_SIZE) : CENTER}
+        centerOffset={marker.nudge ? NUDGE_OFFSET : NO_OFFSET}
         tracksViewChanges={tracks}
         title={marker.title}
         zIndex={5}
@@ -308,7 +317,9 @@ export function LiveMap({
   const linesKeyed = useMemo(() => lines, [lines.map((l) => `${l.id}:${l.kind}:${l.trimToMarkerId ?? ''}:${pointsKey(l.points)}`).join(';')]); // eslint-disable-line react-hooks/exhaustive-deps
   const markersKeyed = useMemo(() => markers, [markers.map((m) => `${m.id}:${m.lat.toFixed(6)},${m.lng.toFixed(6)}`).join(';')]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mapPadding: MapPadding = { top: 0, right: 0, bottom: Math.max(0, Math.round(bottomInset)), left: 0 };
+  // Logo Google / « Mentions légales » d'Apple au-dessus de la feuille ; jamais plus que la carte elle-même.
+  const wanted: MapPadding = { top: 0, right: 0, bottom: Math.max(0, Math.round(bottomInset)), left: 0 };
+  const mapPadding = size ? clampBasePadding(wanted, size.w, size.h) : wanted;
   const pad = withDefaultPadding(padding);
   const padKey = `${pad.top},${pad.right},${pad.bottom},${pad.left}`;
   const fitKey = pointsKey(fitPoints);
@@ -324,8 +335,10 @@ export function LiveMap({
     if (first || recenter || (follow && changed)) {
       // Étendue minimale (~330 m) : deux coins suffisent à cadrer sans zoom excessif. Marges bornées à la taille de
       // la carte (Google Maps refuse un cadrage dont les marges dépassent la vue), moins la marge de base (Android).
-      const b = padBounds(bounds, 0, 0.003);
-      const edgePadding = nativeEdgePadding(clampPadding(pad, size.w, size.h), mapPadding, Platform.OS);
+      // Livreur en train de glisser : sa position affichée et l'étape dessinée depuis elle restent dans le cadre.
+      const all = boundsOf([...fitPoints, ...activeLegPoints(linesKeyed, (id) => store.get(id))]) ?? bounds;
+      const b = padBounds(all, 0, 0.003);
+      const edgePadding = nativeFitPadding(pad, mapPadding, Platform.OS, size.w, size.h);
       map.fitToCoordinates(
         [
           { latitude: b.south, longitude: b.west },

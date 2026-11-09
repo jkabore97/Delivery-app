@@ -71,6 +71,9 @@ export function SocketProvider({ children, visibility }: { children: ReactNode; 
         if (err.message === 'UNAUTHENTICATED') void signOut('Session expirée, reconnectez-vous.');
       });
       setSocket(sock);
+    }).catch(() => {
+      // Bloc JS du client Socket.IO injoignable (réseau, web) : pas de temps réel, l'écran le signale (connected = false).
+      if (!cancelled) setConnected(false);
     });
     return () => {
       cancelled = true;

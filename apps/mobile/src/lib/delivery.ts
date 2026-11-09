@@ -242,7 +242,7 @@ export function validatePackage(form: DeliveryForm, quote: QuoteResponse | null)
   const option = quote?.options.find((o) => o.vehicleType === form.vehicleType);
   if (!form.vehicleType || !option?.available) e.vehicleType = 'Choisissez un véhicule disponible.';
   if (parseAmount(form.cashToCollect) === null)
-    e.cashToCollect = `Montant invalide (nombre entier de FCFA, ${MAX_CASH_TO_COLLECT.toLocaleString('fr-FR')} au plus).`;
+    e.cashToCollect = `Montant invalide (nombre entier, ${formatFcfa(MAX_CASH_TO_COLLECT)} au plus).`;
   return e;
 }
 

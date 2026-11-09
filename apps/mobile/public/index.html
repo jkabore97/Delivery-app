@@ -99,9 +99,14 @@
           meta.content = 'no-referrer';
           document.head.appendChild(meta);
           // Blocs JS de la page (carte comprise) téléchargés tout de suite, en parallèle de l'application
-          // (liste écrite par scripts/web-postexport.mjs).
+          // (liste écrite par scripts/web-postexport.mjs). Connexion très lente (2G, « 3G lente », économie de
+          // données) : MapLibre (≈ 270 ko) n'est pas préchargé ici, pour ne pas retarder le suivi lui-même (code,
+          // heure d'arrivée) ; l'application le demande dès l'ouverture de l'écran de suivi.
           var urls = /*YAAR_SUIVI_PRELOAD*/[];
+          var conn = navigator.connection;
+          var slow = !!conn && (conn.saveData === true || /(^|-)2g$/.test(conn.effectiveType || ''));
           for (var i = 0; i < urls.length; i++) {
+            if (slow && urls[i].indexOf('maplibre-gl-') >= 0) continue;
             var link = document.createElement('link');
             link.rel = 'preload';
             link.as = 'script';

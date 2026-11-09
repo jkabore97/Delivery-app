@@ -159,6 +159,9 @@ describe('arrivée au retrait (entreprise, livreur en route vers elle)', () => {
     expect(estimatePickupMinutes(buildScene(far), far)).toBeGreaterThanOrEqual(1);
     const there = orderSceneInput(assigned({ route: null }), { lat: 12.36865, lng: -1.52752 });
     expect(estimatePickupMinutes(buildScene(there), there)).toBe(0);
+    // Sur place avec un itinéraire : imminent aussi (pas « dans 1 min »).
+    const thereRoute = orderSceneInput(assigned(), { lat: 12.36865, lng: -1.52752 });
+    expect(estimatePickupMinutes(buildScene(thereRoute), thereRoute)).toBe(0);
     const picked = orderSceneInput(delivery());
     expect(estimatePickupMinutes(buildScene(picked), picked)).toBeNull();
   });

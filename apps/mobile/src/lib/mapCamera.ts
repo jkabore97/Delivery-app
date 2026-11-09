@@ -65,6 +65,41 @@ export function nativeEdgePadding(p: MapPadding, base: MapPadding, platform: str
 }
 
 /**
+ * Marge de base des cartes natives (`mapPadding`) bornée à la carte : une feuille dépliée ne doit jamais laisser
+ * moins de `minFree` px de carte (Google Maps refuse alors de cadrer : « View size is too small after padding »).
+ */
+export function clampBasePadding(base: MapPadding, width: number, height: number, minFree = 80): MapPadding {
+  return clampPadding(base, width, height, minFree);
+}
+
+/**
+ * Marges de `fitToCoordinates` en natif : marges voulues bornées à la carte (clampPadding), moins la marge de base
+ * sur Android, puis réduites si marge de base + marges de cadrage dépassent encore la carte (feuille dépliée).
+ */
+export function nativeFitPadding(
+  p: MapPadding,
+  base: MapPadding,
+  platform: string,
+  width: number,
+  height: number,
+  minFree = 80,
+): MapPadding {
+  const c = clampPadding(p, width, height, minFree);
+  if (platform !== 'android') return c;
+  const e = nativeEdgePadding(c, base, platform);
+  const fit = (a: number, b: number, baseSum: number, size: number): [number, number] => {
+    const room = Math.max(0, size - minFree - baseSum);
+    const sum = a + b;
+    if (sum <= room || sum === 0) return [a, b];
+    const k = room / sum;
+    return [Math.floor(a * k), Math.floor(b * k)];
+  };
+  const [top, bottom] = fit(e.top, e.bottom, base.top + base.bottom, height);
+  const [left, right] = fit(e.left, e.right, base.left + base.right, width);
+  return { top, right, bottom, left };
+}
+
+/**
  * Marges des cartes de suivi plein écran (feuille en bas) : en bas la feuille + 90 px (marqueurs de 44 px et
  * mention des données toujours au-dessus de la feuille), au moins 60 px sur les côtés (chevron de cap compris),
  * en haut la barre des boutons flottants et la hauteur d'une épingle.

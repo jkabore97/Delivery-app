@@ -14,6 +14,14 @@ B2B (une entreprise fait livrer un destinataire qui n’a pas de compte) :
    « Livrée » côté entreprise, course « Livrée » et caisse du livreur dans la console ; aucune requête Socket.IO ;
 6. avertissement « démonstration publique » sur l’écran des pièces KYC d’un livreur.
 
+Contrôles stricts :
+
+- **montants exacts** : le montant que paiera le destinataire (récapitulatif de la demande) est comparé à l’identique
+  au montant affiché sur sa page de suivi, aux espèces de l’offre reçue par le livreur et au montant qu’il encaisse ;
+- **cartes** : marqueurs MapLibre du destinataire, puis de l’entreprise et du livreur présents sur la page de suivi ;
+- **connexions de démonstration sans demande de code** (le code 123456 est accepté en mode démo) : le script peut être
+  relancé plusieurs fois dans l’heure sans buter sur la limite de 5 codes par numéro.
+
 ```bash
 E2E_STAFF_CODE=<code d'accès démo> node tools/e2e/live-demo.cjs
 ```

@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { Marker as MlMarker } from 'maplibre-gl';
 import { boundsOf, distanceM, OUAGADOUGOU_CENTER, padBounds } from '@yaar/shared';
 import { clampPadding, withDefaultPadding } from '../../lib/mapCamera';
-import { pointsKey, resolveLines } from '../../lib/map/lines';
+import { activeLegPoints, pointsKey, resolveLines } from '../../lib/map/lines';
 import {
   createBaseMap,
   ensureLineLayers,
@@ -175,7 +175,9 @@ class LiveMapController {
     const container = this.map.getContainer();
     const w = container.clientWidth;
     const h = container.clientHeight;
-    const bounds = boundsOf(points);
+    // Le livreur affiché glisse encore vers sa dernière position : on cadre aussi sa position affichée et l'étape en
+    // cours telle qu'elle est dessinée depuis elle (sinon il peut sortir du cadre pendant le glissement).
+    const bounds = boundsOf([...points, ...activeLegPoints(this.lines, (id) => this.entries.get(id)?.pos)]);
     if (!w || !h || !bounds) return;
     // Étendue minimale (~330 m) : un point seul ne zoome pas à l'extrême.
     const b = padBounds(bounds, 0, 0.003);

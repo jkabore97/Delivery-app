@@ -142,7 +142,7 @@ export default function BusinessDeliveryScreen() {
         <ArrivalHeadline
           etaMinutes={pickupEta}
           label="Au retrait vers"
-          imminentLabel="Le livreur arrive au retrait"
+          imminentLabel="Arrivée au retrait imminente"
           secondary={deliveryEtaLine(deliveryEta, now, recipientCallName(o.recipientName, o.recipientIsBusiness), pickupEta)}
           headline={headline}
           now={now}

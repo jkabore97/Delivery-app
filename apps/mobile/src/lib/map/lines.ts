@@ -37,6 +37,22 @@ export function resolveLines(lines: SceneLine[], positionOf: (markerId: string) 
   return out;
 }
 
+/**
+ * Points de l'étape en cours telle qu'elle est dessinée depuis la position AFFICHÉE (animée) des livreurs : lignes
+ * rognées à un livreur (itinéraire restant, raccord éventuel, ligne droite) et position du livreur. Ajoutés au cadrage
+ * pour que le livreur reste visible pendant qu'il glisse vers sa dernière position connue.
+ */
+export function activeLegPoints(lines: SceneLine[], positionOf: (markerId: string) => MapPoint | null | undefined): MapPoint[] {
+  const out: MapPoint[] = [];
+  const active = lines.filter((l) => l.trimToMarkerId);
+  for (const l of resolveLines(active, positionOf)) out.push(...l.points);
+  for (const l of active) {
+    const p = positionOf(l.trimToMarkerId!);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
 /** Clé stable d'une liste de points (≈ 1 m) : évite de redessiner pour des changements insignifiants. */
 export function pointsKey(points: ReadonlyArray<MapPoint>): string {
   return points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|');

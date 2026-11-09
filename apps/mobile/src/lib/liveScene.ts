@@ -236,12 +236,11 @@ export function overviewScene(
  */
 export function estimatePickupMinutes(scene: LiveScene, input: SceneInput): number | null {
   if (scene.stage !== 'toPickup' || !scene.driver) return null;
-  if (scene.route && scene.route.target === 'PICKUP') return minutesFromSeconds(routeProgress(scene.route, scene.driver).remainingS);
   const pickup = pt(input.pickup);
+  // Déjà sur place (le livreur attend le colis) : arrivée imminente, avec ou sans itinéraire.
+  if (pickup && distanceM(scene.driver, pickup) < NUDGE_AT_PICKUP_M) return 0;
+  if (scene.route && scene.route.target === 'PICKUP') return minutesFromSeconds(routeProgress(scene.route, scene.driver).remainingS);
   if (!pickup) return null;
-  const meters = distanceM(scene.driver, pickup);
-  // Déjà sur place (le livreur attend le colis) : arrivée imminente.
-  if (meters < NUDGE_AT_PICKUP_M) return 0;
   return minutesFromSeconds((roadDistanceKm(scene.driver, pickup) / AVERAGE_SPEED_KMH[input.vehicleType]) * 3600);
 }
 

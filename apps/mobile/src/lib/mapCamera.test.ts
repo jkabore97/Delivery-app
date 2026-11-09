@@ -4,12 +4,14 @@ import {
   clampPadding,
   followReducer,
   INITIAL_FOLLOW,
+  clampBasePadding,
   nativeEdgePadding,
+  nativeFitPadding,
   shouldShowRecenter,
   trackingPadding,
   withDefaultPadding,
 } from './mapCamera';
-import { resolveLines } from './map/lines';
+import { activeLegPoints, resolveLines } from './map/lines';
 
 describe('caméra : suivi et « Recentrer »', () => {
   it('suit le livreur, s’arrête au premier geste, « Recentrer » relance le suivi et recadre', () => {
@@ -74,6 +76,22 @@ describe('tracé rogné à la position animée du livreur', () => {
     expect(drawn.map((l) => `${l.id}:${l.kind}`)).toEqual(['r-join:dashed', 'r:route']);
   });
 
+  it('cadrage : étape en cours dessinée depuis la position affichée du livreur (pendant son glissement)', () => {
+    const shown = { lat: 12.36, lng: -1.5206 };
+    const pts = activeLegPoints(
+      [
+        { id: 'r', kind: 'route', points, trimToMarkerId: 'd' },
+        { id: 'next', kind: 'dashed', points: [points[0]!, points[2]!] },
+      ],
+      () => shown,
+    );
+    expect(pts).toContainEqual(shown);
+    expect(pts).toContainEqual(points[2]);
+    // L'étape suivante (sans livreur) n'est pas ajoutée au cadrage.
+    expect(pts).not.toContainEqual(points[0]);
+    expect(activeLegPoints([{ id: 'r', kind: 'route', points, trimToMarkerId: 'd' }], () => null)).toEqual(points);
+  });
+
   it('ligne droite : part de la position animée ; sans position, inchangée', () => {
     const line = { id: 'x', kind: 'dashed' as const, points: [points[0]!, points[2]!], trimToMarkerId: 'd' };
     expect(resolveLines([line], () => ({ lat: 1, lng: 2 }))[0]!.points[0]).toEqual({ lat: 1, lng: 2 });
@@ -106,5 +124,22 @@ describe('marges des cartes de suivi (feuille en bas)', () => {
     expect(nativeEdgePadding(pad, base, 'ios')).toEqual(pad);
     // Jamais de marge négative.
     expect(nativeEdgePadding({ ...pad, bottom: 100 }, base, 'android').bottom).toBe(0);
+  });
+
+  it('natif, feuille dépliée (86 %) sur 360 × 640 : marge de base + cadrage tiennent toujours dans la carte', () => {
+    const base = clampBasePadding({ top: 0, right: 0, bottom: 550, left: 0 }, 360, 640);
+    expect(base.bottom).toBeLessThanOrEqual(640 - 80);
+    const pad = trackingPadding(550, 24, 360);
+    for (const platform of ['android', 'ios']) {
+      const e = nativeFitPadding(pad, base, platform, 360, 640);
+      const totalV = e.top + e.bottom + (platform === 'android' ? base.top + base.bottom : 0);
+      expect(totalV).toBeLessThanOrEqual(640 - 80);
+      expect(e.left + e.right).toBeLessThanOrEqual(360 - 80);
+      expect(Math.min(e.top, e.bottom, e.left, e.right)).toBeGreaterThanOrEqual(0);
+    }
+    // Feuille repliée : Android ne garde que les 90 px au-dessus de la feuille, iOS la marge complète.
+    const folded = { top: 0, right: 0, bottom: 300, left: 0 };
+    expect(nativeFitPadding(trackingPadding(300, 24, 390), folded, 'android', 390, 844).bottom).toBe(90);
+    expect(nativeFitPadding(trackingPadding(300, 24, 390), folded, 'ios', 390, 844).bottom).toBe(390);
   });
 });

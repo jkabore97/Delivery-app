@@ -70,6 +70,8 @@ const config: ExpoConfig = {
   ],
   experiments: {
     typedRoutes: false,
+    // Web : blocs JS regroupés par écran (la page publique /suivi/… ne télécharge ni le code livreur / entreprise
+    // ni Socket.IO) au lieu d'un bloc « __common » chargé par toutes les pages.
     chunking: { mode: 'granular' },
   },
   extra: {

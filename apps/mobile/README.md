@@ -54,7 +54,7 @@ ni de vraies données personnelles. », repris sur l’écran des pièces KYC du
 | `npm run typecheck` | `tsc --noEmit` (strict, `noUncheckedIndexedAccess`) |
 | `npm test` | tests jest (`jest-expo`) : logique (cartes, montants, partage du lien, étapes), hooks, contextes (livreur, socket) et écrans (suivi public, nouvelle livraison, suivi entreprise, course et livraison du livreur, offre, connexion) dans `src/__tests__/` |
 | `npm run export:android` | bundle de production Android dans `dist/` (vérifie que tout compile) |
-| `npm run export:web` | version web (Vercel) dans `dist/` ; MapLibre est un bloc JS séparé, chargé seulement sur les écrans avec carte |
+| `npm run export:web` | version web (Vercel) dans `dist/` : découpage « granular » par écran (`experiments.chunking`), MapLibre dans un bloc séparé ; `scripts/web-postexport.mjs` écrit dans `index.html` la liste des blocs que la page publique `/suivi/…` précharge dès le HTML |
 
 ## Cartes (suivi façon Uber / DoorDash)
 
@@ -64,23 +64,46 @@ livreur, à la carte d’ensemble et au choix d’adresse :
 - **Web** : MapLibre GL JS (`maplibre-gl` 5.x, construction UMD qui embarque son worker ; la 6.x, ESM seulement, charge
   son worker par `import.meta.url`, que le bundle web de Metro ne sait pas servir), chargé à la demande
   (`import('maplibre-gl')`), densité de pixels plafonnée à 2, rotation et inclinaison désactivées sauf pour le
-  livreur. Style vectoriel gratuit OpenFreeMap « positron » (`https://tiles.openfreemap.org/styles/positron`, sans
-  clé), remplaçable par `EXPO_PUBLIC_MAP_STYLE_URL` ; si le style échoue ou n’est pas chargé après 6 s, style de
-  secours embarqué (fond clair, sans tuiles) : marqueurs et itinéraires restent affichés. Mention
-  « © OpenFreeMap © OpenMapTiles © OpenStreetMap contributors » toujours visible au-dessus de la feuille.
+  livreur. La carte s’affiche aussitôt avec un style de secours embarqué (fond clair, marqueurs et itinéraires), puis
+  passe au style vectoriel gratuit OpenFreeMap « positron » (`https://tiles.openfreemap.org/styles/positron`, sans
+  clé, remplaçable par `EXPO_PUBLIC_MAP_STYLE_URL`) dès qu’il arrive : il est redemandé avec un délai croissant
+  (2 s, 4 s… 60 s) tant qu’il n’est pas chargé, et aussitôt au retour du réseau (`online`) — jamais abandonné
+  (`src/lib/map/styleLoader.ts`). Seules les règles utiles de `maplibre-gl.css` sont injectées avec la carte (la
+  feuille complète bloquait le premier affichage). Mention « © OpenFreeMap © OpenMapTiles © OpenStreetMap
+  contributors » toujours visible au-dessus de la feuille, dans la marge de cadrage (jamais sur un marqueur cadré).
 - **Android / iOS** : `react-native-maps` ; Google Maps (Android) avec un style « argenté » discret
-  (`customMapStyle`), Apple Plans `mutedStandard` (iOS) ; marqueurs en vues personnalisées.
-- **Marqueurs** : entreprise (carré orange arrondi, vitrine), destinataire (épingle verte, maison, halo pulsé),
-  livreur (rond blanc ombré, véhicule vu du dessus orienté selon le cap `heading` de l’API, ou calculé). Mêmes
-  pictogrammes sur le web (SVG) et en natif (vues) : `markerArt.ts`.
+  (`customMapStyle`), Apple Plans `mutedStandard` (iOS) ; marqueurs en vues personnalisées STATIQUES, capturées une
+  seule fois (`tracksViewChanges` coupé après le premier rendu : aucune image redessinée à chaque image) ; radar
+  « recherche d’un livreur » en cercles natifs (5 images/s) ; `mapPadding` garde le logo Google et le lien
+  « Mentions légales » d’Apple au-dessus de la feuille ; marges de cadrage bornées à la taille de la carte.
+- **Marqueurs** (mêmes formes que la console) : entreprise (carré orange arrondi, vitrine), destinataire (épingle
+  verte, maison, halo), livreur (disque vert cerclé de blanc, moto / vélo / voiture DE PROFIL, toujours droit) avec
+  un petit chevron séparé sur l’anneau qui suit le cap (`heading` de l’API, ou déduit du déplacement), masqué quand
+  le cap est inconnu, le livreur arrêté ou sa position ancienne ; seul le chevron tourne (web : élément enfant,
+  corrigé de l’orientation de la carte ; natif : marqueur plat séparé avec `rotation`). Livreur arrivé chez
+  l’entreprise : marqueur décalé de quelques pixels pour ne pas la cacher. Mêmes pictogrammes sur le web (SVG) et en
+  natif (vues) : `markerArt.ts`.
 - **Itinéraire** : `route` de l’API (`OrderDto` / `TrackingDto`) en vert `#0B7A4B` avec liseré blanc ; ligne droite en
   pointillés sans itinéraire (ou `source: "straight"`) ; la partie parcourue est rognée au point de la ligne le plus
   proche du livreur (fonctions de `packages/shared/src/map.ts`).
-- **Livreur animé** entre deux positions pendant ~l’intervalle de rafraîchissement (requestAnimationFrame sur le web,
-  `AnimatedRegion` en natif), tourné vers son cap.
-- **Caméra** : cadre livreur + cible (entreprise tant que le colis n’est pas récupéré, puis destinataire) en tenant
-  compte de la feuille du bas ; suit le livreur jusqu’au premier geste de l’utilisateur, puis « Recentrer ». Avant
-  l’affectation : entreprise + destinataire en pointillés et radar « Recherche d’un livreur… ».
+- **Livreur qui roule en continu** : chaque nouvelle position est atteinte à vitesse constante pendant l’écart RÉEL
+  entre deux relevés GPS (`lastLocation.at`, borné à 2–12 s ; `src/lib/map/motion.ts`), quel que soit le rythme des
+  rafraîchissements (requestAnimationFrame sur le web, `AnimatedRegion` en natif) ; tracé rogné au plus une fois par
+  seconde en natif.
+- **Rafraîchissements** : page publique toutes les `trackingPollIntervalMs` de `/config` (8 s par défaut) pendant la
+  course, deux fois moins souvent pendant la recherche d’un livreur ; carte d’ensemble de l’entreprise toutes les
+  10 s, démontée quand une livraison est ouverte par-dessus (une seule carte WebGL à la fois).
+- **Caméra** : cadre livreur + cible (entreprise tant que le colis n’est pas récupéré, puis destinataire ; la page du
+  destinataire garde aussi sa propre épingle pendant le retrait) avec des marges de feuille + 90 px en bas et 60 px
+  au moins sur les côtés ; suit le livreur jusqu’au premier geste de l’utilisateur, puis « Recentrer ». Avant
+  l’affectation : entreprise + destinataire en pointillés et radar « Recherche d’un livreur… ». Page publique sur
+  ordinateur (≥ 900 px) : carte à gauche, feuille en panneau à droite.
+- **Heure d’arrivée** : le destinataire voit l’heure de livraison ; l’entreprise voit, pendant le retrait, l’arrivée
+  du livreur CHEZ ELLE (durée restante de l’itinéraire vers le retrait), l’heure de livraison étant rappelée dessous.
+- **Page publique en 3G** : écran de démarrage écrit dans `public/index.html` (visible avant le JavaScript), blocs
+  de la page et de MapLibre préchargés dès le HTML (MapLibre seulement après le suivi lui-même sur une connexion
+  très lente : `navigator.connection` 2G ou économie de données), aucun module livreur / entreprise (Socket.IO,
+  localisation, appareil photo) ni zod téléchargé par la page publique.
 
 Clé Google Maps (build Android) :
 
@@ -99,9 +122,13 @@ Clé Google Maps (build Android) :
 Les types, énumérations, schémas zod, tarifs et libellés viennent de `packages/shared` (`@yaar/shared`),
 importé **depuis les sources** :
 
-- `tsconfig.json` : `paths` → `../../packages/shared/src/index.ts` (et `zod` → la copie de l’application) ;
-- `metro.config.js` : `watchFolders` sur `packages/shared` et résolution forcée de `@yaar/shared` et `zod`
-  (une seule copie de zod, celle de `apps/mobile/node_modules`, même si la racine du monorepo n’est pas installée) ;
+- `@yaar/shared` → `shims/yaar-shared.ts` : tout le code partagé SAUF les valeurs des schémas zod (leurs types
+  restent disponibles) ; les écrans qui valident des données importent schémas et `normalizePhone` depuis
+  `@yaar/shared/schemas`. Ainsi la page publique de suivi ne télécharge jamais zod, et TypeScript refuse un schéma
+  importé de `@yaar/shared` comme valeur ;
+- `tsconfig.json` : `paths` (`@yaar/shared`, `@yaar/shared/schemas`, et `zod` → la copie de l’application) ;
+- `metro.config.js` : `watchFolders` sur `packages/shared`, mêmes alias, une seule copie de zod (celle de
+  `apps/mobile/node_modules`), et ses langues réduites au français et à l’anglais (`shims/zod-locales.js`) ;
 - jest : `moduleNameMapper` équivalent (dans `package.json`).
 
 ## Organisation
