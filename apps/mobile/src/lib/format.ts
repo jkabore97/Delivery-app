@@ -1,10 +1,19 @@
-import { formatFcfa, type OrderItemDto } from '@yaar/shared';
+import type { OrderItemDto } from '@yaar/shared';
 
-export { formatFcfa };
+/** Espace fine insécable (U+202F) : séparateur des milliers et espace avant l'unité (typographie française). */
+export const NNBSP = '\u202F';
 
-/** Montant court comme sur les maquettes : « 6 500 F ». */
-export function formatFcfaShort(amount: number): string {
-  return formatFcfa(amount).replace(' FCFA', ' F');
+/**
+ * LE format des montants de l'application : « 1 000 FCFA », « 16 500 FCFA », espaces fines insécables entre les
+ * milliers et avant « FCFA » (le montant n'est jamais coupé en fin de ligne). Utilisé partout (devis, offre du
+ * livreur, suivi, historique) pour que les mêmes montants s'affichent de la même façon.
+ */
+export function formatFcfa(amount: number): string {
+  const n = Math.round(Number.isFinite(amount) ? amount : 0);
+  const digits = Math.abs(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, NNBSP);
+  return `${n < 0 ? '-' : ''}${digits}${NNBSP}FCFA`;
 }
 
 /** « il y a 3 min », « il y a 2 h », « à l’instant ». */

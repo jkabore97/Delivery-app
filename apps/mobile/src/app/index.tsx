@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { Redirect } from 'expo-router';
 import { Loading } from '../components/ui';
 import { homePathForRole } from '../lib/roles';
+import { hideWebSplash } from '../lib/webShell';
 import { useAuth } from '../state/auth';
 
 /**
@@ -9,6 +11,7 @@ import { useAuth } from '../state/auth';
  */
 export default function Index() {
   const { status, user } = useAuth();
+  useEffect(() => hideWebSplash(), []);
   if (status === 'loading') return <Loading />;
   if (status === 'signedOut' || !user) return <Redirect href="/login" />;
   return <Redirect href={homePathForRole(user.role)} />;

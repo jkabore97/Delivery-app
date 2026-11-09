@@ -14,9 +14,10 @@ jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
 }));
 jest.mock('expo-router/head', () => ({ __esModule: true, default: () => null }));
-jest.mock('../state/config', () => ({
-  useAppConfig: () => ({ config: { realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'sms' } }),
-}));
+const mockConfig: { config: Record<string, unknown> } = {
+  config: { realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'sms' },
+};
+jest.mock('../state/config', () => ({ useAppConfig: () => mockConfig }));
 const mockTrack = jest.fn<Promise<TrackingDto>, [string]>();
 jest.mock('../lib/publicApi', () => ({ publicApi: { trackDelivery: (token: string) => mockTrack(token) } }));
 // La carte (MapLibre / react-native-maps) est remplacée par un résumé de sa scène.
@@ -47,6 +48,7 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: T0 });
     mockTrack.mockReset();
+    mockConfig.config = { realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'sms' };
   });
   afterEach(() => jest.useRealTimers());
 
@@ -58,6 +60,12 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(r.getByText('Donnez ce code au livreur')).toBeTruthy();
     expect(r.getByTestId('live-map').props.children).toBe('pickup*,dropoff*|dashed|2');
     expect(r.queryByTestId('driver-card')).toBeNull();
+    // Recherche : seule la première étape est en cours ; rafraîchi toutes les 16 s (2 × 8 s).
+    expect(r.getByTestId('tracking-steps')).toHaveTextContent(/Confirmée.*Retrait.*En route.*Livrée/);
+    await act(async () => jest.advanceTimersByTimeAsync(15_000));
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTimeAsync(1_000));
+    expect(mockTrack).toHaveBeenCalledTimes(2);
   });
 
   it('livreur en route vers l’expéditeur : heure d’arrivée, étape, livreur avec appel', async () => {
@@ -69,21 +77,54 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(r.getByText('Issouf est en route vers Pharmacie du Centre.')).toBeTruthy();
     expect(r.getByText('Moto · 11 JJ 4521')).toBeTruthy();
     expect(r.getByTestId('live-map').props.children).toMatch(/^pickup,dropoff\*,driver\|route,dashed\|/);
+    // Le destinataire garde son épingle dans le cadre pendant le retrait : livreur + entreprise + reste de
+    // l'itinéraire (2 points) + destinataire.
+    expect(r.getByTestId('live-map').props.children).toMatch(/\|5$/);
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     await fireEvent.press(r.getByTestId('call-driver'));
     expect(open).toHaveBeenCalledWith('tel:+22673000001');
     open.mockRestore();
   });
 
-  it('en route vers vous : code à donner, montant à payer, itinéraire vers le destinataire ; rafraîchi toutes les 4 s', async () => {
+  it('en route vers vous : code à donner, montant à payer, itinéraire vers le destinataire ; rafraîchi toutes les 8 s', async () => {
     const r = await show(tracking());
     expect(r.getByText('Votre colis est en route')).toBeTruthy();
     expect(r.getByLabelText('Code de livraison 4 8 2 1')).toBeTruthy();
     expect(r.getByTestId('amount-to-pay')).toHaveTextContent(/À payer au livreur à la réception.*16 500 FCFA/);
     expect(r.getByTestId('live-map').props.children).toMatch(/^dropoff\*,driver\|route\|/);
     expect(mockTrack).toHaveBeenCalledTimes(1);
+    // /config sans trackingPollIntervalMs (pollIntervalMs = 4 s) : 8 s par défaut, pas 4 s.
+    await act(async () => jest.advanceTimersByTimeAsync(4000));
+    expect(mockTrack).toHaveBeenCalledTimes(1);
     await act(async () => jest.advanceTimersByTimeAsync(4000));
     expect(mockTrack).toHaveBeenCalledTimes(2);
+  });
+
+  it('intervalle de /config (trackingPollIntervalMs) : 6 s pendant la course, 12 s pendant la recherche', async () => {
+    mockConfig.config = { ...mockConfig.config, trackingPollIntervalMs: 6000 };
+    mockTrack.mockResolvedValueOnce(tracking({ status: 'SEARCHING_DRIVER', driver: null, route: null, etaMinutes: null }));
+    mockTrack.mockResolvedValue(tracking({ status: 'ASSIGNED', pickedUpAt: null }));
+    await render(wrap(<PublicTrackingScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTimeAsync(11_900));
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTimeAsync(100));
+    expect(mockTrack).toHaveBeenCalledTimes(2); // livreur trouvé : rythme de la course ensuite
+    await act(async () => jest.advanceTimersByTimeAsync(6000));
+    expect(mockTrack).toHaveBeenCalledTimes(3);
+  });
+
+  it('trop de requêtes (429) : message clair, sans contradiction, et nouvel essai automatique', async () => {
+    mockTrack.mockRejectedValueOnce(new ApiError(429, 'RATE_LIMITED', 'Trop de requêtes'));
+    mockTrack.mockResolvedValue(tracking());
+    const r = await render(wrap(<PublicTrackingScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByTestId('tracking-rate-limited')).toHaveTextContent(/Trop de demandes depuis votre connexion/);
+    expect(r.getByTestId('tracking-rate-limited')).toHaveTextContent(/reprend tout seul/);
+    expect(r.queryByText(/patientez quelques minutes/)).toBeNull();
+    await act(async () => jest.advanceTimersByTimeAsync(16_000));
+    expect(r.getByText('Votre colis est en route')).toBeTruthy();
   });
 
   it('livrée : merci, ni code ni montant, plus de rafraîchissement', async () => {
@@ -111,7 +152,10 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     const r = await render(wrap(<PublicTrackingScreen />));
     await act(async () => jest.advanceTimersByTimeAsync(0));
     expect(r.getByTestId('tracking-error')).toBeTruthy();
-    await act(async () => jest.advanceTimersByTimeAsync(4000));
+    // Intervalle doublé après l'échec (8 s → 16 s).
+    await act(async () => jest.advanceTimersByTimeAsync(8000));
+    expect(r.getByTestId('tracking-error')).toBeTruthy();
+    await act(async () => jest.advanceTimersByTimeAsync(8000));
     expect(r.getByText('Votre colis est en route')).toBeTruthy();
   });
 });

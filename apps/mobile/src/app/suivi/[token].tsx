@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Head from 'expo-router/head';
 import { Stack, useLocalSearchParams } from 'expo-router';
@@ -17,22 +17,29 @@ import {
 import { usePublicTracking } from '../../hooks/usePublicTracking';
 import { formatOrderNumber, formatTime } from '../../lib/format';
 import { buildScene, estimateArrivalMinutes, isLiveStage, trackingSceneInput } from '../../lib/liveScene';
+import { preloadMapEngine } from '../../lib/map/preload';
+import { trackingPollMs } from '../../lib/publicConfig';
 import { trackingHeadline, trackingSteps } from '../../lib/trackingSteps';
+import { hideWebSplash } from '../../lib/webShell';
 import { useAppConfig } from '../../state/config';
 import { colors, radius, spacing } from '../../theme';
 
 const TRACKING_PAGE_TITLE = 'Suivi de livraison · Yaar Livraison';
 
+// La carte est le cœur de la page : son moteur (MapLibre, web) est téléchargé dès le chargement de l'écran.
+preloadMapEngine();
+
 /**
  * Page publique du destinataire (lien reçu par SMS / WhatsApp), SANS compte ni connexion : carte en direct,
  * heure d'arrivée, étapes, livreur, code à donner au livreur, montant à payer. Rafraîchie toutes les
- * `pollIntervalMs` de GET /config, en pause quand l'onglet est masqué.
+ * `trackingPollIntervalMs` de GET /config (8 s par défaut) pendant la course, deux fois moins souvent pendant la
+ * recherche d'un livreur, en pause quand l'onglet est masqué.
  */
 export default function PublicTrackingScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { config } = useAppConfig();
-  const intervalMs = config?.pollIntervalMs ?? 4000;
-  const state = usePublicTracking(token, { intervalMs });
+  const state = usePublicTracking(token, { intervalMs: (data) => trackingPollMs(config, data?.status) || 60_000 });
+  useEffect(() => hideWebSplash(), []);
 
   return (
     <>
@@ -58,13 +65,24 @@ export default function PublicTrackingScreen() {
           </Text>
         </CenteredCard>
       ) : state.status === 'error' ? (
-        <CenteredCard testID="tracking-error">
-          <Text style={styles.bigIcon}>📶</Text>
-          <Text style={styles.cardTitle}>Connexion impossible</Text>
-          <Text style={styles.cardText}>{state.message} Nouvel essai automatique dans quelques secondes.</Text>
-        </CenteredCard>
+        state.rateLimited ? (
+          <CenteredCard testID="tracking-rate-limited">
+            <Text style={styles.bigIcon}>⏳</Text>
+            <Text style={styles.cardTitle}>Trop de demandes depuis votre connexion</Text>
+            <Text style={styles.cardText}>
+              Beaucoup de personnes suivent un colis depuis le même réseau. Gardez cette page ouverte : le suivi reprend
+              tout seul dans moins d’une minute.
+            </Text>
+          </CenteredCard>
+        ) : (
+          <CenteredCard testID="tracking-error">
+            <Text style={styles.bigIcon}>📶</Text>
+            <Text style={styles.cardTitle}>Connexion impossible</Text>
+            <Text style={styles.cardText}>{state.message} Nouvel essai automatique dans quelques secondes.</Text>
+          </CenteredCard>
+        )
       ) : (
-        <TrackingView data={state.data} stale={state.stale} intervalMs={intervalMs} />
+        <TrackingView data={state.data} stale={state.stale} animationMs={trackingPollMs(config, 'PICKED_UP')} />
       )}
     </>
   );
@@ -91,7 +109,7 @@ function Brand() {
   );
 }
 
-function TrackingView({ data: t, stale, intervalMs }: { data: TrackingDto; stale: boolean; intervalMs: number }) {
+function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stale: boolean; animationMs: number }) {
   const input = useMemo(() => trackingSceneInput(t), [t]);
   const scene = useMemo(() => buildScene(input), [input]);
   const eta = estimateArrivalMinutes(scene, input, t.etaMinutes);
@@ -104,7 +122,8 @@ function TrackingView({ data: t, stale, intervalMs }: { data: TrackingDto; stale
       lines={scene.lines}
       fitPoints={scene.fitPoints}
       stageKey={t.status}
-      animationMs={intervalMs}
+      animationMs={animationMs}
+      allowWide
       topCenter={
         <FloatingChip testID="brand-chip">
           <Text style={styles.chipLogo}>Yaar</Text>
@@ -174,6 +193,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     width: '100%',
+    maxWidth: 440,
     borderWidth: 1,
     borderColor: colors.border,
   },

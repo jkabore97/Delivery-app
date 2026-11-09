@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
 import { Pressable } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import type { OrderDto } from '@yaar/shared';
+import { LOCATION_RETENTION_MONTHS, type OrderDto } from '@yaar/shared';
 import { Badge, Banner, Button, Card, Empty, KeyValue, Loading, Muted, Row, Screen, Subtitle, Title } from '../../../components/ui';
 import { errorMessage } from '../../../lib/api';
-import { BUSINESS_HISTORY_STATUSES, businessStatusLabel, FEE_PAYER_LABELS } from '../../../lib/delivery';
+import { amountsToCollect, BUSINESS_HISTORY_STATUSES, businessStatusLabel, FEE_PAYER_LABELS } from '../../../lib/delivery';
 import { formatDateTime, formatFcfa, formatOrderNumber } from '../../../lib/format';
 import { useApi } from '../../../state/auth';
 
@@ -52,6 +52,8 @@ export default function BusinessHistoryScreen() {
       {items?.map((o) => {
         const badge = businessStatusLabel(o.status);
         const when = o.deliveredAt ?? o.cancelledAt ?? o.createdAt;
+        // Même montant que le détail de la livraison : marchandise + frais si le destinataire les paie.
+        const collected = o.status === 'DELIVERED' ? amountsToCollect(o).atDropoff : 0;
         return (
           <Pressable key={o.id} onPress={() => router.push(`/business/livraison/${o.id}`)} accessibilityRole="button">
             <Card>
@@ -66,8 +68,8 @@ export default function BusinessHistoryScreen() {
                 label={formatDateTime(when)}
                 value={`${formatFcfa(o.deliveryFee)}${o.feePaidBy ? ` · ${FEE_PAYER_LABELS[o.feePaidBy].title.toLowerCase()}` : ''}`}
               />
-              {o.status === 'DELIVERED' && (o.cashToCollect ?? 0) > 0 ? (
-                <Muted>Encaissé auprès du destinataire : {formatFcfa(o.cashToCollect ?? 0)}</Muted>
+              {collected > 0 ? (
+                <Muted testID={`history-collected-${o.id}`}>Encaissé auprès du destinataire : {formatFcfa(collected)}</Muted>
               ) : null}
               {o.status === 'CANCELLED' && o.cancelReason ? <Muted>Motif : {o.cancelReason}</Muted> : null}
             </Card>
@@ -77,7 +79,10 @@ export default function BusinessHistoryScreen() {
       {items && items.length < total ? (
         <Button title="Voir plus" variant="outline" onPress={() => void load(page + 1)} loading={loading} />
       ) : null}
-      <Muted>Les adresses des livraisons terminées ne sont plus affichées (protection des données des destinataires).</Muted>
+      <Muted>
+        Touchez une livraison pour revoir son détail. Les adresses et numéros des destinataires sont effacés{' '}
+        {LOCATION_RETENTION_MONTHS} mois après la livraison (protection des données) ; les montants restent dans l’historique.
+      </Muted>
     </Screen>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { formatArrivalFr, type OrderDto } from '@yaar/shared';
+import type { OrderDto } from '@yaar/shared';
 import { LiveMap } from '../../../components/map/LiveMap';
 import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import { Badge, Banner, Button, Card, Empty, Loading, Muted, Row, Subtitle, Title } from '../../../components/ui';
@@ -11,19 +11,12 @@ import { useFollowCamera } from '../../../hooks/useFollowCamera';
 import { errorMessage } from '../../../lib/api';
 import { BUSINESS_ACTIVE_STATUSES, businessStatusLabel, sortActiveDeliveries } from '../../../lib/delivery';
 import { formatOrderNumber, timeAgo } from '../../../lib/format';
-import { buildScene, estimateArrivalMinutes, orderSceneInput, overviewScene } from '../../../lib/liveScene';
+import { arrivalSummary, overviewScene } from '../../../lib/liveScene';
 import { POLL_MS } from '../../../lib/publicConfig';
 import { useApi } from '../../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../../state/business';
 import { useOrderRooms, usePolling, useSocket, useSocketEvent } from '../../../state/socket';
 import { colors, radius, spacing } from '../../../theme';
-
-/** Arrivée estimée chez le destinataire, pour une carte de la liste. */
-function arrivalLine(o: OrderDto, now: number): string | null {
-  const input = orderSceneInput(o);
-  const eta = estimateArrivalMinutes(buildScene(input), input, o.etaMinutes);
-  return eta === null ? null : formatArrivalFr(eta, now);
-}
 
 /** Onglet « Livraisons » : carte d'ensemble (livreurs en direct) et livraisons en cours. */
 export default function BusinessDeliveriesScreen() {
@@ -63,8 +56,9 @@ export default function BusinessDeliveriesScreen() {
       ) ?? prev,
     );
   });
-  // Mode poll (Vercel) : la liste complète (URL constante) porte aussi les positions des livreurs.
-  usePolling(load, POLL_MS.businessDeliveries, useIsFocused() && !!store);
+  // Mode poll (Vercel) : la liste complète (URL constante) porte aussi les positions des livreurs (toutes les 10 s).
+  const focused = useIsFocused();
+  usePolling(load, POLL_MS.businessDeliveries, focused && !!store);
 
   const business = store ? { lat: store.lat, lng: store.lng } : null;
   const overview = useMemo(() => overviewScene(business, items ?? [], store?.name), [items, store?.lat, store?.lng, store?.name]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,18 +84,22 @@ export default function BusinessDeliveriesScreen() {
       </View>
 
       <View style={styles.mapBox}>
-        <LiveMap
-          style={StyleSheet.absoluteFill}
-          markers={overview.markers}
-          lines={overview.lines}
-          fitPoints={overview.fitPoints}
-          follow={camera.follow}
-          recenterKey={camera.recenterKey}
-          onUserGesture={camera.onUserGesture}
-          padding={{ top: 64, bottom: 36, left: 40, right: 40 }}
-          animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
-          testID="overview-map"
-        />
+        {/* Carte démontée quand une livraison est ouverte par-dessus : une seule carte (contexte WebGL) à la fois. */}
+        {focused ? (
+          <LiveMap
+            style={StyleSheet.absoluteFill}
+            markers={overview.markers}
+            lines={overview.lines}
+            fitPoints={overview.fitPoints}
+            follow={camera.follow}
+            recenterKey={camera.recenterKey}
+            onUserGesture={camera.onUserGesture}
+            padding={{ top: 64, bottom: 44, left: 60, right: 60 }}
+            bottomInset={0}
+            animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
+            testID="overview-map"
+          />
+        ) : null}
         <View style={styles.mapChips} pointerEvents="none">
           <View style={styles.mapChip}>
             <Text style={styles.mapChipText}>🛵 {onTheWay} en route</Text>
@@ -153,7 +151,7 @@ export default function BusinessDeliveriesScreen() {
         ) : null}
         {items?.map((o) => {
           const badge = businessStatusLabel(o.status);
-          const arrival = arrivalLine(o, now);
+          const arrival = arrivalSummary(o, now);
           return (
             <Pressable
               key={o.id}

@@ -32,9 +32,8 @@ const mockAuth = {
   signOut: jest.fn(async () => undefined),
 };
 jest.mock('../state/auth', () => ({ useAuth: () => mockAuth }));
-jest.mock('../state/config', () => ({
-  useAppConfig: () => ({ config: { realtime: 'poll', pollIntervalMs: 4000, demoMode: true, otpChannel: 'console' } }),
-}));
+const mockConfig = { config: { realtime: 'poll', pollIntervalMs: 4000, demoMode: true, otpChannel: 'console' } };
+jest.mock('../state/config', () => ({ useAppConfig: () => mockConfig }));
 
 describe('Connexion : Entreprise et Livreur seulement', () => {
   beforeEach(() => {
@@ -42,6 +41,7 @@ describe('Connexion : Entreprise et Livreur seulement', () => {
     mockAuth.notice = null;
     mockAuth.status = 'signedOut';
     mockAuth.user = null;
+    mockConfig.config = { realtime: 'poll', pollIntervalMs: 4000, demoMode: true, otpChannel: 'console' };
   });
 
   it('deux profils, pas d’inscription client ; message pour les destinataires', async () => {
@@ -53,12 +53,24 @@ describe('Connexion : Entreprise et Livreur seulement', () => {
     expect(r.getByTestId('recipient-hint')).toHaveTextContent(/Pas besoin de compte/);
   });
 
-  it('profil choisi transmis à l’écran du code', async () => {
+  it('démo : code de démonstration, aucun code demandé (pas de limite de 5 codes par heure) ; profil transmis', async () => {
     const r = await render(<LoginScreen />);
+    expect(r.getByTestId('login-code-hint')).toHaveTextContent(/code de démonstration 123456/);
     await fireEvent.press(r.getByTestId('role-DRIVER'));
     await fireEvent.changeText(r.getByTestId('phone-input'), '73 00 00 09');
-    await fireEvent.press(r.getByText('Recevoir le code'));
+    await fireEvent.press(r.getByText('Continuer'));
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith({ pathname: '/verify', params: { phone: '+22673000009', role: 'DRIVER' } }));
+    expect(mockAuth.api.requestOtp).not.toHaveBeenCalled();
+  });
+
+  it('hors démo : « code reçu par SMS / WhatsApp », le code est demandé à l’API', async () => {
+    mockConfig.config = { realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'whatsapp' };
+    const r = await render(<LoginScreen />);
+    expect(r.getByTestId('login-code-hint')).toHaveTextContent(/vous recevrez un code par WhatsApp/);
+    await fireEvent.changeText(r.getByTestId('phone-input'), '72 00 00 01');
+    await fireEvent.press(r.getByText('Recevoir le code'));
+    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+    expect(mockAuth.api.requestOtp).toHaveBeenCalledWith('+22672000001');
   });
 
   it('comptes de démonstration : entreprises et livreurs, profil présélectionné', async () => {

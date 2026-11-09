@@ -18,9 +18,14 @@ export interface VisibilitySource {
 
 export const MAX_POLL_BACKOFF_MS = 30_000;
 
+/** Intervalle fixe, ou relu après chaque exécution (ex. selon l'étape de la livraison). */
+export type PollInterval = number | (() => number);
+
+const resolveInterval = (i: PollInterval) => Math.max(0, typeof i === 'function' ? i() : i);
+
 interface Entry {
   fn: PollTask;
-  intervalMs: number;
+  intervalMs: PollInterval;
   delayMs: number;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
@@ -53,11 +58,16 @@ export class PollScheduler {
     this.unsubscribe = visibility.subscribe((v) => this.setVisible(v));
   }
 
-  /** Ajoute une tâche périodique (premier appel après `intervalMs`) ; renvoie la fonction de retrait. */
-  add(fn: PollTask, intervalMs: number): () => void {
-    const entry: Entry = { fn, intervalMs, delayMs: intervalMs, timer: null, running: false, removed: false };
+  /**
+   * Ajoute une tâche périodique (premier appel après `intervalMs`) ; renvoie la fonction de retrait. Un intervalle
+   * donné par une fonction est relu après chaque exécution réussie.
+   */
+  add(fn: PollTask, intervalMs: PollInterval, opts: { immediate?: boolean } = {}): () => void {
+    const entry: Entry = { fn, intervalMs, delayMs: resolveInterval(intervalMs), timer: null, running: false, removed: false };
     this.entries.add(entry);
-    this.schedule(entry);
+    // `immediate` : premier appel tout de suite (même onglet masqué), l'intervalle suivant tient compte de son résultat.
+    if (opts.immediate) void this.run(entry);
+    else this.schedule(entry);
     return () => {
       entry.removed = true;
       if (entry.timer) clearTimeout(entry.timer);
@@ -115,7 +125,8 @@ export class PollScheduler {
     }
     e.running = false;
     if (e.removed) return;
-    e.delayMs = ok ? e.intervalMs : Math.min(e.delayMs * 2, Math.max(this.maxBackoffMs, e.intervalMs));
+    const interval = resolveInterval(e.intervalMs);
+    e.delayMs = ok ? interval : Math.min(e.delayMs * 2, Math.max(this.maxBackoffMs, interval));
     this.schedule(e);
   }
 }

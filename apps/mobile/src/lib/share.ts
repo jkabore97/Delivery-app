@@ -12,15 +12,32 @@ function firstName(name: string | null | undefined): string {
   return name?.trim().split(/\s+/)[0] ?? '';
 }
 
+/**
+ * Nom à utiliser pour s'adresser au destinataire : son prénom, ou le nom COMPLET d'une entreprise destinataire
+ * (« Bureau Faso Conseil », pas « Bureau »).
+ */
+export function recipientCallName(name: string | null | undefined, isBusiness?: boolean | null): string {
+  const n = name?.trim().replace(/\s+/g, ' ') ?? '';
+  return isBusiness ? n : firstName(n);
+}
+
+export interface ShareParty {
+  recipientName?: string | null;
+  /** Le destinataire est une entreprise : son nom complet est utilisé. */
+  recipientIsBusiness?: boolean | null;
+  businessName?: string | null;
+}
+
 /** Texte d'accompagnement, sans le lien (navigator.share transmet le lien à part). */
-export function trackingShareText(p: { recipientName?: string | null; businessName?: string | null }): string {
-  const hello = firstName(p.recipientName) ? `Bonjour ${firstName(p.recipientName)}, ` : 'Bonjour, ';
+export function trackingShareText(p: ShareParty): string {
+  const who = recipientCallName(p.recipientName, p.recipientIsBusiness);
+  const hello = who ? `Bonjour ${who}, ` : 'Bonjour, ';
   const from = p.businessName?.trim() || 'votre expéditeur';
   return `${hello}${from} vous envoie un colis avec Yaar Livraison. Suivez votre livreur en direct (le code à lui donner s’affiche sur la page) :`;
 }
 
 /** Message complet avec le lien (WhatsApp, SMS, feuille de partage). */
-export function trackingShareMessage(p: { recipientName?: string | null; businessName?: string | null; url: string }): string {
+export function trackingShareMessage(p: ShareParty & { url: string }): string {
   return `${trackingShareText(p)} ${p.url}`;
 }
 
@@ -57,7 +74,7 @@ export function defaultShareEnv(): ShareEnv {
 export type ShareOutcome = 'shared' | 'dismissed' | 'whatsapp';
 
 export async function shareTrackingLink(
-  p: { url: string; recipientName?: string | null; recipientPhone?: string | null; businessName?: string | null },
+  p: ShareParty & { url: string; recipientPhone?: string | null },
   env: ShareEnv = defaultShareEnv(),
 ): Promise<ShareOutcome> {
   const message = trackingShareMessage(p);

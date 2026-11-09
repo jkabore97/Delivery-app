@@ -2,10 +2,10 @@
  * Apparence des cartes (web MapLibre et natif react-native-maps).
  *
  * Web : style vectoriel gratuit OpenFreeMap « positron » (sans clé), remplaçable par EXPO_PUBLIC_MAP_STYLE_URL.
- * Si le style ne répond pas (hôte bloqué, réseau lent : rien après STYLE_TIMEOUT_MS), la carte passe au style
- * de secours ci-dessous, embarqué dans l'application : fond clair, sans tuiles, mais marqueurs et itinéraires
- * restent affichés. Natif : Google Maps (Android) avec un style « argenté » discret, Apple Plans en
- * `mutedStandard` (iOS).
+ * La carte s'affiche d'abord avec le style de secours ci-dessous, embarqué dans l'application (fond clair, sans
+ * tuiles, mais marqueurs et itinéraires), puis passe au style distant dès qu'il arrive : il est redemandé avec un
+ * délai croissant tant qu'il n'est pas chargé, et aussitôt au retour du réseau (voir styleLoader.ts). Natif :
+ * Google Maps (Android) avec un style « argenté » discret, Apple Plans en `mutedStandard` (iOS).
  */
 export const DEFAULT_MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 
@@ -15,8 +15,6 @@ export const MAP_STYLE_URL: string = process.env.EXPO_PUBLIC_MAP_STYLE_URL || DE
 export const MAP_ATTRIBUTION = '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
 export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
 
-/** Délai maximal de chargement du style distant avant de passer au style de secours. */
-export const STYLE_TIMEOUT_MS = 6000;
 /** Densité de pixels plafonnée (écrans 3x : 2x suffit et divise le coût du rendu). */
 export const MAX_PIXEL_RATIO = 2;
 
@@ -29,6 +27,9 @@ export const MAP_COLORS = {
   background: '#EEF1EC',
   pickup: '#F28C1B',
   dropoff: '#0B7A4B',
+  /** Livreur : disque vert cerclé de blanc, pictogramme blanc (comme la console). */
+  driver: '#0B7A4B',
+  driverRing: '#FFFFFF',
   driverInk: '#16202A',
 } as const;
 

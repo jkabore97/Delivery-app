@@ -1,6 +1,8 @@
 import {
+  arrivalClockFr,
   AVERAGE_SPEED_KMH,
   distanceM,
+  formatDurationFr,
   minutesFromSeconds,
   roadDistanceKm,
   routeProgress,
@@ -11,6 +13,7 @@ import {
   type VehicleType,
 } from '@yaar/shared';
 import type { MapPoint, SceneLine, SceneMarker } from '../components/map/types';
+import { fixTime } from './map/motion';
 
 /**
  * Ce qu'affiche une carte de suivi selon l'étape de la livraison :
@@ -45,7 +48,12 @@ export function isLiveStage(stage: DeliveryStage): boolean {
 
 export interface LiveDriver extends MapPoint {
   heading?: number | null;
+  /** Horodatage (ms) du relevé GPS : durée réelle du glissement entre deux positions. */
+  at?: number | null;
 }
+
+/** Livreur à moins de cette distance de l'entreprise (retrait) : son marqueur est décalé pour ne pas la cacher. */
+export const NUDGE_AT_PICKUP_M = 40;
 
 export interface SceneInput {
   /** Préfixe des identifiants (plusieurs livraisons sur la même carte). */
@@ -57,6 +65,11 @@ export interface SceneInput {
   driver: LiveDriver | null;
   route: RouteDto | null | undefined;
   labels?: { pickup?: string; dropoff?: string; driver?: string };
+  /**
+   * Page du destinataire : pendant que le livreur va chez l'entreprise, la caméra garde aussi l'épingle du
+   * destinataire (« vous ») dans le cadre.
+   */
+  keepDropoffInView?: boolean;
 }
 
 export interface LiveScene {
@@ -84,7 +97,7 @@ export function buildScene(input: SceneInput): LiveScene {
   const pickup = pt(input.pickup);
   const dropoff = pt(input.dropoff);
   const live = isLiveStage(stage);
-  const driver = live && input.driver ? { ...pt(input.driver)!, heading: input.driver.heading ?? null } : null;
+  const driver = live && input.driver ? { ...pt(input.driver)!, heading: input.driver.heading ?? null, at: input.driver.at ?? null } : null;
   const target = stage === 'toPickup' ? 'PICKUP' : stage === 'toDropoff' ? 'DROPOFF' : null;
   const route =
     target && input.route && input.route.target === target && input.route.points.length >= 2 ? input.route : null;
@@ -112,7 +125,9 @@ export function buildScene(input: SceneInput): LiveScene {
       lat: driver.lat,
       lng: driver.lng,
       heading: driver.heading,
+      fixAt: driver.at ?? null,
       vehicleType: input.vehicleType,
+      nudge: stage === 'toPickup' && !!pickup && distanceM(driver, pickup) < NUDGE_AT_PICKUP_M,
       title: input.labels?.driver,
     });
   }
@@ -136,8 +151,12 @@ export function buildScene(input: SceneInput): LiveScene {
   }
 
   let fitPoints: MapPoint[];
-  // Livreur + cible, et le reste de l'itinéraire (pas la partie déjà parcourue).
-  if (driver && targetPoint) fitPoints = [driver, targetPoint, ...(route ? routeProgress(route, driver).remaining : [])];
+  // Livreur + cible, et le reste de l'itinéraire (pas la partie déjà parcourue) ; le destinataire garde aussi son
+  // épingle dans le cadre pendant le retrait.
+  if (driver && targetPoint) {
+    fitPoints = [driver, targetPoint, ...(route ? routeProgress(route, driver).remaining : [])];
+    if (input.keepDropoffInView && stage === 'toPickup' && dropoff) fitPoints.push(dropoff);
+  }
   else if (stage === 'delivered') fitPoints = dropoff ? [dropoff] : [];
   else if (stage === 'toDropoff') fitPoints = [dropoff, driver].filter((p): p is MapPoint => !!p);
   else fitPoints = [pickup, dropoff].filter((p): p is MapPoint => !!p);
@@ -154,7 +173,7 @@ export function orderSceneInput(o: OrderDto, live?: LiveDriver | null): SceneInp
     vehicleType: o.driver?.vehicleType ?? o.vehicleType,
     pickup: o.pickup,
     dropoff: o.dropoff,
-    driver: live ?? (loc ? { lat: loc.lat, lng: loc.lng, heading: loc.heading ?? null } : null),
+    driver: live ?? (loc ? { lat: loc.lat, lng: loc.lng, heading: loc.heading ?? null, at: fixTime(loc.at) } : null),
     route: o.route ?? null,
     labels: {
       pickup: o.store?.name ?? 'Point de retrait',
@@ -172,9 +191,10 @@ export function trackingSceneInput(t: TrackingDto): SceneInput {
     vehicleType: t.driver?.vehicleType ?? t.vehicleType,
     pickup: t.pickup,
     dropoff: t.dropoff,
-    driver: loc ? { lat: loc.lat, lng: loc.lng, heading: loc.heading ?? null } : null,
+    driver: loc ? { lat: loc.lat, lng: loc.lng, heading: loc.heading ?? null, at: fixTime(loc.at) } : null,
     route: t.route,
     labels: { pickup: t.sender.name, dropoff: 'Vous', driver: t.driver?.firstName ?? 'Livreur' },
+    keepDropoffInView: true,
   };
 }
 
@@ -210,6 +230,22 @@ export function overviewScene(
 }
 
 /**
+ * Minutes avant l'arrivée du livreur chez l'entreprise (retrait), pendant ASSIGNED seulement : durée restante de
+ * l'itinéraire vers le retrait (au prorata du tracé), à défaut distance estimée (× 1,3) à la vitesse moyenne du
+ * véhicule. L'estimation de l'API (`etaMinutes`) porte, elle, sur la livraison au destinataire.
+ */
+export function estimatePickupMinutes(scene: LiveScene, input: SceneInput): number | null {
+  if (scene.stage !== 'toPickup' || !scene.driver) return null;
+  if (scene.route && scene.route.target === 'PICKUP') return minutesFromSeconds(routeProgress(scene.route, scene.driver).remainingS);
+  const pickup = pt(input.pickup);
+  if (!pickup) return null;
+  const meters = distanceM(scene.driver, pickup);
+  // Déjà sur place (le livreur attend le colis) : arrivée imminente.
+  if (meters < NUDGE_AT_PICKUP_M) return 0;
+  return minutesFromSeconds((roadDistanceKm(scene.driver, pickup) / AVERAGE_SPEED_KMH[input.vehicleType]) * 3600);
+}
+
+/**
  * Minutes avant l'arrivée chez le destinataire. Priorité à l'estimation de l'API (`etaMinutes`), sinon
  * calcul local : durée restante de l'itinéraire (au prorata du tracé), plus le trajet retrait → livraison
  * tant que le colis n'est pas récupéré ; à défaut, distance estimée (× 1,3) à la vitesse moyenne du véhicule.
@@ -230,4 +266,38 @@ export function estimateArrivalMinutes(scene: LiveScene, input: SceneInput, apiE
   else return null;
   if (scene.stage === 'toPickup' && pickup && dropoff) seconds += legS(pickup, dropoff);
   return minutesFromSeconds(seconds);
+}
+
+/**
+ * « Livraison chez Awa prévue vers 14:41 » : heure de livraison au destinataire, rappelée sous l'arrivée du livreur
+ * au retrait (jamais avant cette arrivée). `recipient` : nom à afficher (prénom, ou nom complet d'une entreprise).
+ */
+export function deliveryEtaLine(
+  deliveryMinutes: number | null,
+  now: number,
+  recipient?: string | null,
+  pickupMinutes?: number | null,
+): string | null {
+  if (deliveryMinutes === null || !Number.isFinite(deliveryMinutes)) return null;
+  const who = recipient?.trim() || null;
+  const minutes = Math.max(pickupMinutes ?? 0, deliveryMinutes);
+  return `Livraison${who ? ` chez ${who}` : ''} prévue vers ${arrivalClockFr(Math.round(minutes), now)}`;
+}
+
+/**
+ * Ligne d'arrivée d'une livraison dans la liste de l'entreprise : livreur en route vers le retrait → « Au retrait
+ * dans 2 min · livraison vers 14:41 » ; colis récupéré → « Arrivée vers 14:41 · dans 12 min ».
+ */
+export function arrivalSummary(o: OrderDto, now: number): string | null {
+  const input = orderSceneInput(o);
+  const scene = buildScene(input);
+  const delivery = estimateArrivalMinutes(scene, input, o.etaMinutes);
+  if (scene.stage === 'toPickup') {
+    const pickup = estimatePickupMinutes(scene, input);
+    const first = pickup === null ? null : pickup < 1 ? 'Au retrait' : `Au retrait dans ${formatDurationFr(pickup)}`;
+    const then = delivery === null ? null : `livraison vers ${arrivalClockFr(Math.round(Math.max(pickup ?? 0, delivery)), now)}`;
+    return [first, then].filter(Boolean).join(' · ') || null;
+  }
+  if (delivery === null) return null;
+  return delivery < 1 ? 'Arrivée imminente' : `Arrivée vers ${arrivalClockFr(Math.round(delivery), now)} · dans ${formatDurationFr(delivery)}`;
 }

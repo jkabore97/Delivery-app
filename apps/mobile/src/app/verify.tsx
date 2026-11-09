@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { errorMessage } from '../lib/api';
@@ -9,6 +9,7 @@ import { useAuth } from '../state/auth';
 import { useAppConfig } from '../state/config';
 import { colors, roleColor } from '../theme';
 import { Banner, Button, Field, Muted, Screen, Title } from '../components/ui';
+import { hideWebSplash } from '../lib/webShell';
 
 export default function VerifyScreen() {
   const params = useLocalSearchParams<{ phone: string; role?: string }>();
@@ -26,6 +27,7 @@ export default function VerifyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => hideWebSplash(), []);
 
   if (!phone) return <Redirect href="/login" />;
 
@@ -68,10 +70,10 @@ export default function VerifyScreen() {
     <Screen>
       <Title>Code de vérification</Title>
       {demo ? (
-        <Banner message={`Mode démo : le code ${DEMO_OTP_CODE} est accepté (déjà saisi).`} tone="orange" />
+        <Banner message={`Mode démo : le code ${DEMO_OTP_CODE} est accepté (déjà saisi). C’est le code de démonstration : aucun SMS n’est envoyé.`} tone="orange" />
       ) : (
         <Muted>
-          Code envoyé par {channel} au {formatPhone(phone)}.
+          Saisissez le code reçu par {channel} au {formatPhone(phone)}.
         </Muted>
       )}
       <Field
@@ -106,7 +108,7 @@ export default function VerifyScreen() {
       {info ? <Banner message={info} tone="green" /> : null}
       <Button title="Valider" color={roleColor[role]} onPress={submit} loading={busy} disabled={code.length !== 6} />
       <View style={{ alignItems: 'center' }}>
-        <Button title="Renvoyer le code" variant="ghost" color={colors.green} onPress={resend} small />
+        {demo ? null : <Button title="Renvoyer le code" variant="ghost" color={colors.green} onPress={resend} small />}
         <Button title="Changer de numéro ou de profil" variant="ghost" color={colors.textMuted} onPress={() => router.back()} small />
       </View>
     </Screen>

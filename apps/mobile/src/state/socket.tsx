@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type { RealtimeMode, ServerToClientEvents } from '@yaar/shared';
 import { API_URL } from '../config';
 import { appStateVisibility, PollScheduler, type PollTask, type VisibilitySource } from '../lib/pollScheduler';
-import { createSocket, type YaarSocket } from '../lib/socket';
+import type { YaarSocket } from '../lib/socket';
+import { loadSocketModule } from '../lib/socketLoader';
 import { useAuth } from './auth';
 import { useAppConfig } from './config';
 
@@ -27,7 +28,9 @@ const SocketContext = createContext<SocketContextValue>({
 /**
  * Temps réel de la session : une connexion Socket.IO (authentifiée par le JWT) en mode « socket » ;
  * en mode « poll » (API sur Vercel), aucun socket mais un planificateur de rafraîchissements REST
- * suspendu quand l'application passe en arrière-plan (voir usePolling).
+ * suspendu quand l'application passe en arrière-plan (voir usePolling). Le client Socket.IO (~50 ko) n'est
+ * chargé qu'en mode « socket » et une fois connecté : ni la page publique de suivi ni le mode poll ne le
+ * téléchargent.
  */
 export function SocketProvider({ children, visibility }: { children: ReactNode; visibility?: VisibilitySource }) {
   const { token, signOut } = useAuth();
@@ -54,18 +57,25 @@ export function SocketProvider({ children, visibility }: { children: ReactNode; 
       setConnected(false);
       return;
     }
-    const s = createSocket(API_URL, token);
-    s.on('connect', () => setConnected(true));
-    s.on('disconnect', () => setConnected(false));
-    s.on('connect_error', (err) => {
-      setConnected(false);
-      if (err.message === 'ACCOUNT_SUSPENDED') void signOut('Votre compte est suspendu.');
-      if (err.message === 'UNAUTHENTICATED') void signOut('Session expirée, reconnectez-vous.');
+    let cancelled = false;
+    let s: YaarSocket | null = null;
+    void loadSocketModule().then(({ createSocket }) => {
+      if (cancelled) return;
+      const sock = createSocket(API_URL, token);
+      s = sock;
+      sock.on('connect', () => setConnected(true));
+      sock.on('disconnect', () => setConnected(false));
+      sock.on('connect_error', (err) => {
+        setConnected(false);
+        if (err.message === 'ACCOUNT_SUSPENDED') void signOut('Votre compte est suspendu.');
+        if (err.message === 'UNAUTHENTICATED') void signOut('Session expirée, reconnectez-vous.');
+      });
+      setSocket(sock);
     });
-    setSocket(s);
     return () => {
-      s.removeAllListeners();
-      s.disconnect();
+      cancelled = true;
+      s?.removeAllListeners();
+      s?.disconnect();
     };
   }, [token, signOut, mode]);
 

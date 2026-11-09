@@ -49,6 +49,31 @@ export function clampPadding(p: MapPadding, width: number, height: number, minFr
 
 export const DEFAULT_PADDING: MapPadding = { top: 72, right: 48, bottom: 48, left: 48 };
 
+/**
+ * Marges de cadrage passées à `fitToCoordinates` (react-native-maps) quand la carte a déjà une marge de base
+ * (`mapPadding`, qui garde le logo Google / le lien « Mentions légales » au-dessus de la feuille) : Android
+ * additionne les deux, on retire donc la marge de base ; iOS (Apple Plans) ne tient compte que des marges de cadrage.
+ */
+export function nativeEdgePadding(p: MapPadding, base: MapPadding, platform: string): MapPadding {
+  if (platform !== 'android') return p;
+  return {
+    top: Math.max(0, p.top - base.top),
+    right: Math.max(0, p.right - base.right),
+    bottom: Math.max(0, p.bottom - base.bottom),
+    left: Math.max(0, p.left - base.left),
+  };
+}
+
+/**
+ * Marges des cartes de suivi plein écran (feuille en bas) : en bas la feuille + 90 px (marqueurs de 44 px et
+ * mention des données toujours au-dessus de la feuille), au moins 60 px sur les côtés (chevron de cap compris),
+ * en haut la barre des boutons flottants et la hauteur d'une épingle.
+ */
+export function trackingPadding(sheetHeight: number, topInset: number, width: number): MapPadding {
+  const side = width >= 600 ? 80 : 64;
+  return { top: topInset + 104, right: side, bottom: Math.max(0, sheetHeight) + 90, left: side };
+}
+
 export function withDefaultPadding(p: Partial<MapPadding> | undefined): MapPadding {
   return { ...DEFAULT_PADDING, ...(p ?? {}) };
 }

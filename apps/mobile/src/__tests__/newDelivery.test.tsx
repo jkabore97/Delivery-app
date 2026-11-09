@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { QuoteResponse, StoreDto } from '@yaar/shared';
@@ -58,6 +59,7 @@ jest.mock('../components/map/PickerMap', () => {
 });
 
 const metrics = { frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+const STORE_PICKUP = { lat: 12.3686, lng: -1.5275, address: 'Avenue Kwame Nkrumah', landmark: 'En face de la BCEAO' };
 const wrap = (el: ReactElement) => <SafeAreaProvider initialMetrics={metrics}>{el}</SafeAreaProvider>;
 
 describe('Nouvelle livraison (entreprise)', () => {
@@ -77,6 +79,8 @@ describe('Nouvelle livraison (entreprise)', () => {
     await fireEvent.press(r.getByTestId('simulate-move'));
     expect(r.getByTestId('dropoff-address').props.value).toBe('Patte d’Oie');
     expect(r.getByTestId('pin-bubble')).toHaveTextContent(/Patte d’Oie/);
+    // Téléphone courant (390 × 844) : bulle au-dessus de l'épingle.
+    expect(StyleSheet.flatten(r.getByTestId('pin-bubble').props.style)).toMatchObject({ bottom: '50%' });
     await fireEvent.changeText(r.getByTestId('recipient-name'), 'Awa Kaboré');
     await fireEvent.changeText(r.getByTestId('recipient-phone'), '7011');
     await fireEvent.press(r.getByTestId('wizard-next'));
@@ -101,10 +105,11 @@ describe('Nouvelle livraison (entreprise)', () => {
     await fireEvent.changeText(r.getByTestId('recipient-phone'), '70 11 22 33');
     await fireEvent.press(r.getByTestId('wizard-next'));
 
-    // Étape 2 : devis (retrait = adresse de l'entreprise, donc sans `pickup`).
+    // Étape 2 : devis, retrait = l'établissement choisi par l'entreprise (envoyé à l'API).
     expect(r.getByText('Colis et prix')).toBeTruthy();
     await waitFor(() => expect(r.getByTestId('vehicle-MOTO')).toBeTruthy());
     expect(mockApi.quoteDelivery).toHaveBeenCalledWith({
+      pickup: STORE_PICKUP,
       dropoff: { lat: 12.3395, lng: -1.517, address: 'Patte d’Oie, rue 15.23', landmark: 'Station Total' },
     });
     expect(r.getByTestId('vehicle-MOTO')).toHaveTextContent(/1 500 F/);
@@ -124,6 +129,7 @@ describe('Nouvelle livraison (entreprise)', () => {
     expect(r.getByText('Pharmacie du Centre')).toBeTruthy();
     await fireEvent.press(r.getByTestId('request-driver'));
     expect(mockApi.createDelivery).toHaveBeenCalledWith({
+      pickup: STORE_PICKUP,
       dropoff: { lat: 12.3395, lng: -1.517, address: 'Patte d’Oie, rue 15.23', landmark: 'Station Total' },
       recipientName: 'Awa Kaboré',
       recipientPhone: '+22670112233',
@@ -137,7 +143,10 @@ describe('Nouvelle livraison (entreprise)', () => {
   });
 
   it('erreur de l’API à la demande : message affiché, on reste sur le récapitulatif', async () => {
-    mockApi.createDelivery.mockRejectedValue(new ApiError(409, 'STORE_NOT_APPROVED', 'x'));
+    // Réponse réelle de l'API (services/deliveries.ts, businessStore) : 403 STORE_NOT_APPROVED.
+    mockApi.createDelivery.mockRejectedValue(
+      new ApiError(403, 'STORE_NOT_APPROVED', 'Votre entreprise doit être validée par Yaar avant de demander une livraison'),
+    );
     const r = await render(wrap(<NewDeliveryScreen />));
     await fireEvent.press(r.getByTestId('simulate-move'));
     await fireEvent.changeText(r.getByTestId('recipient-name'), 'Awa');
@@ -155,6 +164,26 @@ describe('Nouvelle livraison (entreprise)', () => {
     mockBusiness.store = businessStore({ approvalStatus: 'PENDING' });
     const r = await render(wrap(<NewDeliveryScreen />));
     expect(r.getByText('⏳ Entreprise en attente de validation')).toBeTruthy();
+    // Jusqu'au récapitulatif : le bouton « Demander un livreur » reste désactivé, aucune demande n'est envoyée.
+    await fireEvent.press(r.getByTestId('simulate-move'));
+    await fireEvent.changeText(r.getByTestId('recipient-name'), 'Awa');
+    await fireEvent.changeText(r.getByTestId('recipient-phone'), '70112233');
+    await fireEvent.press(r.getByTestId('wizard-next'));
+    await waitFor(() => expect(r.getByTestId('vehicle-MOTO')).toBeTruthy());
+    await fireEvent.changeText(r.getByTestId('package-description'), 'Documents');
+    await fireEvent.press(r.getByTestId('wizard-next'));
+    expect(r.getByText('Récapitulatif')).toBeTruthy();
+    expect(r.getByTestId('request-driver').props.accessibilityState).toMatchObject({ disabled: true });
+    await fireEvent.press(r.getByTestId('request-driver'));
+    expect(mockApi.createDelivery).not.toHaveBeenCalled();
+  });
+
+  it('petit téléphone (360 × 640) : la bulle de l’épingle passe sous l’épingle (pas sur « 1/3 »)', async () => {
+    const small = { frame: { x: 0, y: 0, width: 360, height: 640 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+    const dims = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1 });
+    const r = await render(<SafeAreaProvider initialMetrics={small}><NewDeliveryScreen /></SafeAreaProvider>);
+    expect(StyleSheet.flatten(r.getByTestId('pin-bubble').props.style)).toMatchObject({ top: '50%', marginTop: 12 });
+    dims.mockRestore();
   });
 
   it('pas encore de profil d’entreprise : renvoi vers le profil', async () => {

@@ -1,5 +1,13 @@
 import { Share } from 'react-native';
-import { copyText, shareButtonLabel, shareTrackingLink, trackingShareMessage, whatsappUrl, type ShareEnv } from './share';
+import {
+  copyText,
+  recipientCallName,
+  shareButtonLabel,
+  shareTrackingLink,
+  trackingShareMessage,
+  whatsappUrl,
+  type ShareEnv,
+} from './share';
 
 const URL_ = 'https://yaar-livraison.vercel.app/suivi/tok-abc';
 const input = { url: URL_, recipientName: 'Awa Kaboré', recipientPhone: '+22670112233', businessName: 'Pharmacie du Centre' };
@@ -24,6 +32,15 @@ describe('message et lien WhatsApp', () => {
     expect(trackingShareMessage(input)).toBe(
       'Bonjour Awa, Pharmacie du Centre vous envoie un colis avec Yaar Livraison. Suivez votre livreur en direct (le code à lui donner s’affiche sur la page) : https://yaar-livraison.vercel.app/suivi/tok-abc',
     );
+  });
+
+  it('destinataire entreprise : son nom complet (« Bureau Faso Conseil », pas « Bureau »)', () => {
+    expect(trackingShareMessage({ ...input, recipientName: 'Bureau Faso Conseil', recipientIsBusiness: true })).toMatch(
+      /^Bonjour Bureau Faso Conseil, Pharmacie du Centre vous envoie/,
+    );
+    expect(recipientCallName('  Awa   Kaboré ', false)).toBe('Awa');
+    expect(recipientCallName('Bureau  Faso Conseil', true)).toBe('Bureau Faso Conseil');
+    expect(recipientCallName(null, true)).toBe('');
   });
 
   it('wa.me avec les chiffres du numéro (indicatif compris) et le texte encodé', () => {

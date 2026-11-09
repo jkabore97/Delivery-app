@@ -3,23 +3,15 @@ import { trackingHeadline, trackingSteps } from './trackingSteps';
 const states = (status: Parameters<typeof trackingSteps>[0]) => trackingSteps(status).map((s) => s.state);
 
 describe('étapes du suivi', () => {
-  it('libellés du destinataire et de l’entreprise', () => {
-    expect(trackingSteps('ASSIGNED').map((s) => s.label)).toEqual([
-      'Commande confirmée',
-      'Livreur en route vers l’expéditeur',
-      'En route vers vous',
-      'Livrée',
-    ]);
-    expect(trackingSteps('ASSIGNED', 'business').map((s) => s.label)).toEqual([
-      'Demande envoyée',
-      'Livreur en route vers vous',
-      'En route vers le destinataire',
-      'Livrée',
-    ]);
+  it('libellés courts (une ligne) du destinataire et de l’entreprise', () => {
+    expect(trackingSteps('ASSIGNED').map((s) => s.label)).toEqual(['Confirmée', 'Retrait', 'En route', 'Livrée']);
+    expect(trackingSteps('ASSIGNED', 'business').map((s) => s.label)).toEqual(['Demandée', 'Retrait', 'En route', 'Livrée']);
+    for (const s of trackingSteps('PICKED_UP')) expect(s.label.length).toBeLessThanOrEqual(10);
   });
 
-  it('avancement selon le statut', () => {
-    expect(states('SEARCHING_DRIVER')).toEqual(['done', 'current', 'todo', 'todo']);
+  it('avancement selon le statut : pendant la recherche, seule la première étape est en cours', () => {
+    expect(states('SEARCHING_DRIVER')).toEqual(['current', 'todo', 'todo', 'todo']);
+    expect(states('PENDING')).toEqual(['current', 'todo', 'todo', 'todo']);
     expect(states('ASSIGNED')).toEqual(['done', 'current', 'todo', 'todo']);
     expect(states('PICKED_UP')).toEqual(['done', 'done', 'current', 'todo']);
     expect(states('DELIVERED')).toEqual(['done', 'done', 'done', 'done']);

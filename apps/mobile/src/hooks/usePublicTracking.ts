@@ -8,11 +8,14 @@ export type PublicTrackingState =
   | { status: 'loading' }
   | { status: 'ok'; data: TrackingDto; /** Dernier rafraîchissement en échec (réseau) : données affichées anciennes. */ stale: boolean }
   | { status: 'notFound' }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string; /** Trop de requêtes (429) depuis cette connexion. */ rateLimited?: boolean };
 
 export interface PublicTrackingOptions {
-  /** Intervalle de GET /config (pollIntervalMs). */
-  intervalMs: number;
+  /**
+   * Intervalle des rafraîchissements (ms), fixe ou selon les dernières données reçues (étape de la livraison) :
+   * relu après chaque rafraîchissement, sans requête supplémentaire quand il change.
+   */
+  intervalMs: number | ((data: TrackingDto | null) => number);
   visibility?: VisibilitySource;
   fetcher?: (token: string) => Promise<TrackingDto>;
 }
@@ -20,14 +23,22 @@ export interface PublicTrackingOptions {
 /**
  * Suivi public d'une livraison (GET /track/:token, sans compte), rafraîchi toutes les `intervalMs` tant que
  * la page est visible (pause quand l'onglet est masqué, rafraîchissement immédiat au retour, ralentissement
- * en cas d'erreur réseau). Arrêté une fois la livraison terminée ou le lien expiré (404).
+ * en cas d'erreur réseau ou de limite de requêtes). Arrêté une fois la livraison terminée ou le lien expiré (404).
  */
 export function usePublicTracking(token: string | undefined, opts: PublicTrackingOptions): PublicTrackingState {
   const [state, setState] = useState<PublicTrackingState>({ status: 'loading' });
   const fetcherRef = useRef(opts.fetcher ?? publicApi.trackDelivery);
   fetcherRef.current = opts.fetcher ?? publicApi.trackDelivery;
   const visibilityRef = useRef(opts.visibility);
-  const intervalMs = Math.max(1000, opts.intervalMs);
+  const intervalRef = useRef(opts.intervalMs);
+  intervalRef.current = opts.intervalMs;
+  const lastData = useRef<TrackingDto | null>(null);
+  // Intervalle fixe : un changement relance le suivi ; intervalle calculé : relu après chaque rafraîchissement.
+  const fixedKey = typeof opts.intervalMs === 'number' ? opts.intervalMs : 'dynamic';
+  const nextDelay = () => {
+    const i = intervalRef.current;
+    return Math.max(1000, typeof i === 'function' ? i(lastData.current) : i);
+  };
 
   useEffect(() => {
     if (!token) {
@@ -45,6 +56,7 @@ export function usePublicTracking(token: string | undefined, opts: PublicTrackin
       try {
         const data = await fetcherRef.current(token);
         if (cancelled) return true;
+        lastData.current = data;
         setState({ status: 'ok', data, stale: false });
         if (isTerminal(data.status)) stop();
         return true;
@@ -55,18 +67,24 @@ export function usePublicTracking(token: string | undefined, opts: PublicTrackin
           stop();
           return true;
         }
-        setState((prev) => (prev.status === 'ok' ? { ...prev, stale: true } : { status: 'error', message: errorMessage(e) }));
+        const rateLimited = e instanceof ApiError && e.status === 429;
+        setState((prev) =>
+          prev.status === 'ok'
+            ? { ...prev, stale: true }
+            : { status: 'error', message: errorMessage(e), ...(rateLimited ? { rateLimited: true } : {}) },
+        );
         return false; // intervalle doublé (30 s au plus)
       }
     };
-    remove = scheduler.add(load, intervalMs);
-    void load();
+    remove = scheduler.add(load, nextDelay, { immediate: true });
     return () => {
       cancelled = true;
       stop();
       scheduler.dispose();
     };
-  }, [token, intervalMs]);
+    // nextDelay lit des refs : seuls le jeton et un intervalle fixe relancent le suivi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, fixedKey]);
 
   return state;
 }

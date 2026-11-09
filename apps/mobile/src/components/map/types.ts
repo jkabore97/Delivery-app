@@ -14,13 +14,23 @@ export interface SceneMarker extends MapPoint {
   kind: MarkerKind;
   /** Livreur : cap en degrés (0 = nord) ; absent ou null = calculé depuis le déplacement. */
   heading?: number | null;
+  /**
+   * Livreur : horodatage (ms) du relevé GPS (`lastLocation.at`). Le glissement vers une nouvelle position dure
+   * l'écart réel entre deux relevés (2 à 12 s) ; absent = `animationMs`.
+   */
+  fixAt?: number | null;
   /** Livreur : pictogramme du véhicule. */
   vehicleType?: VehicleType;
+  /** Livreur arrivé chez l'entreprise : décalé de quelques pixels pour ne pas cacher son marqueur. */
+  nudge?: boolean;
   /** pickup : radar « recherche d'un livreur » ; dropoff : halo pulsé. */
   pulse?: boolean;
   /** Texte d'accessibilité / info-bulle. */
   title?: string;
 }
+
+/** Décalage à l'écran (px, x vers la droite, y vers le bas) du livreur arrivé chez l'entreprise. */
+export const DRIVER_NUDGE_PX: [number, number] = [20, -20];
 
 export interface SceneLine {
   id: string;
@@ -54,9 +64,15 @@ export interface LiveMapProps {
   onUserGesture?: () => void;
   /** Marges de cadrage (ex. hauteur de la feuille du bas). */
   padding?: Partial<MapPadding>;
-  /** Hauteur de l'interface posée sur le bas de la carte (feuille) : la mention des données reste visible au-dessus. */
+  /**
+   * Hauteur de l'interface posée sur le bas de la carte (feuille) : la mention des données (web), le logo Google
+   * et le lien « Mentions légales » d'Apple (natif) restent visibles au-dessus.
+   */
   bottomInset?: number;
-  /** Durée de l'animation d'un livreur entre deux positions (≈ intervalle de rafraîchissement), en ms. */
+  /**
+   * Durée du glissement d'un livreur vers une position SANS horodatage (`fixAt`), en ms (GPS du téléphone du
+   * livreur, événements temps réel) ; avec horodatages, l'écart réel entre deux relevés est utilisé.
+   */
   animationMs?: number;
   /** Rotation et inclinaison de la carte (livreur uniquement). */
   allowRotate?: boolean;

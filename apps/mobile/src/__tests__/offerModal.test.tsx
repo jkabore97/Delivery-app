@@ -62,8 +62,18 @@ describe('OfferModal', () => {
     expect(r.getByText('Récupérer chez Pharmacie du Campus')).toBeTruthy();
     expect(r.getByText(/Avenue de l’Université, Zogona · Secteur Zogona/)).toBeTruthy();
     expect(r.getByTestId('offer-vehicle')).toHaveTextContent(/Moto · 5,4 km de course/);
-    expect(r.getByTestId('offer-cash')).toHaveTextContent(/16 500 F/);
+    // Un seul format de montant (FCFA, espaces fines insécables) pour les espèces et le gain.
+    expect(r.getByTestId('offer-cash')).toHaveTextContent(/16 500 FCFA/);
     expect(r.getByTestId('offer-earning')).toHaveTextContent(/1 250 FCFA/);
+    expect(r.queryByTestId('offer-cash-split')).toBeNull(); // API sans détail retrait / livraison
+  });
+
+  it('détail des espèces de l’API : retrait (frais payés par l’entreprise) et livraison', async () => {
+    mockDriver.offers = [offer({ cashToCollect: 9700, cashAtPickup: 1700, cashAtDelivery: 8000, driverEarning: 1280 })];
+    const r = await render(<OfferModal />);
+    expect(r.getByTestId('offer-cash')).toHaveTextContent(/9 700 FCFA/);
+    expect(r.getByTestId('offer-cash-split')).toHaveTextContent('1\u202f700\u202fFCFA au retrait · 8\u202f000\u202fFCFA à la livraison');
+    expect(r.getByTestId('offer-earning')).toHaveTextContent(/1 280 FCFA/);
   });
 
   it('colis : zones approximatives au retrait et à la livraison', async () => {

@@ -8,6 +8,8 @@ import { useAuth } from '../state/auth';
 import { colors, radius, roleColor, spacing } from '../theme';
 import { Banner, Button, Field, Muted, Screen, SectionTitle, Title } from '../components/ui';
 import { DemoNotice } from '../components/DemoNotice';
+import { DEMO_OTP_CODE } from '../lib/publicConfig';
+import { hideWebSplash } from '../lib/webShell';
 import { useAppConfig } from '../state/config';
 
 /**
@@ -17,11 +19,14 @@ import { useAppConfig } from '../state/config';
 export default function LoginScreen() {
   const { api, notice, status, user, signOut } = useAuth();
   const { config } = useAppConfig();
+  const demo = config?.demoMode === true;
   const channel = config?.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const [role, setRole] = useState<SignupRole>('SELLER');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => hideWebSplash(), []);
 
   // Session d'un compte sans espace dans l'application (ancien compte client, console) : déconnexion expliquée.
   useEffect(() => {
@@ -39,7 +44,9 @@ export default function LoginScreen() {
     setError(null);
     setBusy(true);
     try {
-      await api.requestOtp(normalized);
+      // Démonstration : aucun code n'est envoyé (le code de démonstration est toujours accepté). Ne pas en demander
+      // évite la limite de 5 codes par heure et par numéro sur les comptes de démonstration partagés.
+      if (!demo) await api.requestOtp(normalized);
       router.push({ pathname: '/verify', params: { phone: normalized, role } });
     } catch (e) {
       setError(errorMessage(e));
@@ -91,7 +98,11 @@ export default function LoginScreen() {
             }}
           />
         ) : null}
-        <Muted>Entrez votre numéro de téléphone : vous recevrez un code par {channel}.</Muted>
+        <Muted testID="login-code-hint">
+          {demo
+            ? `Entrez votre numéro de téléphone, puis le code de démonstration ${DEMO_OTP_CODE} (aucun SMS n’est envoyé).`
+            : `Entrez votre numéro de téléphone : vous recevrez un code par ${channel}.`}
+        </Muted>
         <Field
           label="Numéro de téléphone"
           placeholder="70 12 34 56"
@@ -105,11 +116,12 @@ export default function LoginScreen() {
           testID="phone-input"
         />
         <Button
-          title="Recevoir le code"
+          title={demo ? 'Continuer' : 'Recevoir le code'}
           color={roleColor[role]}
           onPress={submit}
           loading={busy}
           disabled={phone.trim().length < 8}
+          testID="login-submit"
         />
         <Muted style={{ textAlign: 'center' }}>Indicatif +226 (Burkina Faso) ajouté automatiquement.</Muted>
         <View style={styles.recipient} testID="recipient-hint">

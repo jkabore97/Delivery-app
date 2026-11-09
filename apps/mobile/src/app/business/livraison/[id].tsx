@@ -19,8 +19,18 @@ import { useAsync } from '../../../hooks/useAsync';
 import { errorMessage } from '../../../lib/api';
 import { amountsToCollect, canBusinessCancel, FEE_PAYER_LABELS } from '../../../lib/delivery';
 import { formatDateTime, formatFcfa, formatOrderNumber, formatTime } from '../../../lib/format';
-import { buildScene, estimateArrivalMinutes, isLiveStage, orderSceneInput, type LiveDriver } from '../../../lib/liveScene';
+import {
+  buildScene,
+  deliveryEtaLine,
+  estimateArrivalMinutes,
+  estimatePickupMinutes,
+  isLiveStage,
+  orderSceneInput,
+  type LiveDriver,
+} from '../../../lib/liveScene';
+import { fixTime } from '../../../lib/map/motion';
 import { formatPhone } from '../../../lib/phone';
+import { recipientCallName } from '../../../lib/share';
 import { POLL_MS } from '../../../lib/publicConfig';
 import { trackingHeadline, trackingSteps } from '../../../lib/trackingSteps';
 import { confirmAsync } from '../../../lib/dialog';
@@ -33,6 +43,9 @@ import { colors, spacing } from '../../../theme';
  * Suivi d'une livraison par l'entreprise (comme Uber Direct) : carte en direct (livreur animé, itinéraire),
  * heure d'arrivée, étapes, livreur, destinataire, montants, lien de suivi à envoyer, annulation avant le
  * retrait. L'entreprise ne voit jamais le code de livraison (réservé au destinataire).
+ *
+ * Pendant que le livreur vient chercher le colis, le titre donne SON arrivée chez l'entreprise (durée restante de
+ * l'itinéraire vers le retrait) ; l'heure de livraison au destinataire est rappelée en dessous.
  */
 export default function BusinessDeliveryScreen() {
   const { id, created } = useLocalSearchParams<{ id: string; created?: string }>();
@@ -49,7 +62,7 @@ export default function BusinessDeliveryScreen() {
     if (e.orderId === id) void order.reload(true);
   });
   useSocketEvent('driver.location', (e) => {
-    if (e.orderId === id) setLive({ lat: e.lat, lng: e.lng, heading: e.heading });
+    if (e.orderId === id) setLive({ lat: e.lat, lng: e.lng, heading: e.heading, at: fixTime(e.at) });
   });
   // Mode poll (Vercel) : GET /orders/:id toutes les pollIntervalMs pendant la recherche et la course.
   const status = order.data?.status;
@@ -74,7 +87,10 @@ export default function BusinessDeliveryScreen() {
   }
 
   const businessName = o.store?.name ?? store?.name ?? null;
-  const eta = estimateArrivalMinutes(scene, input, o.etaMinutes);
+  const deliveryEta = estimateArrivalMinutes(scene, input, o.etaMinutes);
+  const pickupEta = estimatePickupMinutes(scene, input);
+  const toPickup = scene.stage === 'toPickup';
+  const now = Date.now();
   const headline = trackingHeadline(o.status, 'business', { recipient: o.recipientName, driver: o.driver?.name?.split(' ')[0] });
   const amounts = amountsToCollect(o);
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/business'));
@@ -104,6 +120,7 @@ export default function BusinessDeliveryScreen() {
     <ShareTrackingCard
       url={o.trackingUrl}
       recipientName={o.recipientName}
+      recipientIsBusiness={o.recipientIsBusiness}
       recipientPhone={o.recipientPhone}
       businessName={businessName}
       prominent={created === '1' && !isTerminal(o.status)}
@@ -116,12 +133,23 @@ export default function BusinessDeliveryScreen() {
       lines={scene.lines}
       fitPoints={scene.fitPoints}
       stageKey={o.status}
-      animationMs={pollIntervalMs}
+      animationMs={Math.max(pollIntervalMs, 4000)}
       topLeft={<FloatingButton label="←" onPress={goBack} accessibilityLabel="Retour" />}
       topCenter={<FloatingChip testID="order-chip">{`Livraison ${formatOrderNumber(o.number)}`}</FloatingChip>}
       testID="business-tracking"
     >
-      <ArrivalHeadline etaMinutes={eta} headline={headline} />
+      {toPickup ? (
+        <ArrivalHeadline
+          etaMinutes={pickupEta}
+          label="Au retrait vers"
+          imminentLabel="Le livreur arrive au retrait"
+          secondary={deliveryEtaLine(deliveryEta, now, recipientCallName(o.recipientName, o.recipientIsBusiness), pickupEta)}
+          headline={headline}
+          now={now}
+        />
+      ) : (
+        <ArrivalHeadline etaMinutes={deliveryEta} headline={headline} now={now} />
+      )}
       {o.status !== 'CANCELLED' ? <StepsProgress steps={trackingSteps(o.status, 'business')} color={colors.green} /> : null}
       {o.status === 'CANCELLED' && o.cancelReason ? <Muted>Motif : {o.cancelReason}</Muted> : null}
 

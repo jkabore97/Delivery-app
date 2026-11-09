@@ -15,10 +15,13 @@ export function CenterPin({
   moving,
   variant = 'dropoff',
   bubble,
+  bubblePlacement = 'above',
 }: {
   moving: boolean;
   variant?: 'dropoff' | 'pickup';
   bubble?: { title: string; subtitle?: string | null } | null;
+  /** `below` : bulle sous l'épingle (carte basse d'un petit téléphone, où elle toucherait les boutons du haut). */
+  bubblePlacement?: 'above' | 'below';
 }) {
   const lift = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -34,9 +37,13 @@ export function CenterPin({
     <View pointerEvents="none" style={StyleSheet.absoluteFill} testID="center-pin">
       {bubble ? (
         <Animated.View
-          style={[styles.bubbleWrap, { opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
+          style={[
+            bubblePlacement === 'below' ? styles.bubbleWrapBelow : styles.bubbleWrap,
+            { opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
+          ]}
           testID="pin-bubble"
         >
+          {bubblePlacement === 'below' ? <View style={[styles.bubbleArrow, styles.bubbleArrowUp]} /> : null}
           <View style={styles.bubble}>
             <Text style={styles.bubbleTitle} numberOfLines={1}>
               {bubble.title}
@@ -47,7 +54,7 @@ export function CenterPin({
               </Text>
             ) : null}
           </View>
-          <View style={styles.bubbleArrow} />
+          {bubblePlacement === 'below' ? null : <View style={styles.bubbleArrow} />}
         </Animated.View>
       ) : null}
       <View style={styles.shadowWrap}>
@@ -110,6 +117,15 @@ const styles = StyleSheet.create({
     marginBottom: PIN_HEIGHT + 8,
     alignItems: 'center',
   },
+  bubbleWrapBelow: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: BUBBLE_WIDTH,
+    marginLeft: -BUBBLE_WIDTH / 2,
+    marginTop: 12,
+    alignItems: 'center',
+  },
   bubble: {
     backgroundColor: '#16202A',
     borderRadius: 14,
@@ -126,4 +142,5 @@ const styles = StyleSheet.create({
   bubbleTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
   bubbleSub: { color: '#C9D2DA', fontSize: 12, marginTop: 1 },
   bubbleArrow: { width: 12, height: 12, backgroundColor: '#16202A', transform: [{ rotate: '45deg' }], marginTop: -7 },
+  bubbleArrowUp: { marginTop: 0, marginBottom: -7, zIndex: 1 },
 });

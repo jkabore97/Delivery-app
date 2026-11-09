@@ -1,33 +1,44 @@
 import type { ReactNode } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { arrivalClockFr, formatArrivalFr, formatDurationFr, LABELS, type VehicleType } from '@yaar/shared';
+import { arrivalClockFr, formatDurationFr, LABELS, type VehicleType } from '@yaar/shared';
 import { formatFcfa, initials } from '../../lib/format';
 import { telUrl } from '../../lib/phone';
 import type { Headline, TrackingStep } from '../../lib/trackingSteps';
 import { colors, radius, spacing } from '../../theme';
 import { VEHICLE_EMOJI } from '../VehicleOptions';
 
-/** Titre de la feuille : grande heure d'arrivée pendant la course, sinon l'état de la livraison. */
+/**
+ * Titre de la feuille : grande heure d'arrivée pendant la course, sinon l'état de la livraison. `label` : « Arrivée
+ * vers » (livraison) ou « Au retrait vers » (entreprise, livreur en route vers elle) ; `secondary` : seconde
+ * estimation plus discrète (ex. heure de livraison pendant le retrait).
+ */
 export function ArrivalHeadline({
   etaMinutes,
   headline,
+  label = 'Arrivée vers',
+  imminentLabel = 'Arrivée imminente',
+  secondary,
   now = Date.now(),
   testID = 'tracking-headline',
 }: {
   etaMinutes: number | null;
   headline: Headline;
+  label?: string;
+  imminentLabel?: string;
+  secondary?: string | null;
   now?: number;
   testID?: string;
 }) {
-  const eta = etaMinutes !== null ? formatArrivalFr(etaMinutes, now) : null;
-  const imminent = etaMinutes !== null && etaMinutes < 1;
+  const imminent = etaMinutes !== null && (!Number.isFinite(etaMinutes) || etaMinutes < 1);
+  const clock = etaMinutes !== null && !imminent ? arrivalClockFr(Math.round(etaMinutes), now) : null;
+  const eta = etaMinutes === null ? null : imminent ? imminentLabel : `${label} ${clock} · dans ${formatDurationFr(etaMinutes)}`;
   return (
     <View style={{ gap: 2 }} testID={testID}>
       {eta ? (
         <>
           {/* « Arrivée vers 14:32 · dans 12 min » : heure en grand, délai en pastille. */}
           <View style={styles.etaRow} accessible accessibilityRole="header" accessibilityLabel={eta}>
-            <Text style={styles.eta}>{imminent ? 'Arrivée imminente' : `Arrivée vers ${arrivalClockFr(etaMinutes!, now)}`}</Text>
+            <Text style={styles.eta}>{imminent ? imminentLabel : `${label} ${clock}`}</Text>
             {!imminent ? (
               <View style={styles.etaPill}>
                 <Text style={styles.etaPillText}>dans {formatDurationFr(etaMinutes!)}</Text>
@@ -35,6 +46,11 @@ export function ArrivalHeadline({
             ) : null}
           </View>
           <Text style={styles.headlineSmall}>{headline.title}</Text>
+          {secondary ? (
+            <Text style={styles.secondary} testID="eta-secondary">
+              {secondary}
+            </Text>
+          ) : null}
           {headline.subtitle ? <Text style={styles.muted}>{headline.subtitle}</Text> : null}
         </>
       ) : (
@@ -64,7 +80,7 @@ export function StepsProgress({ steps, color = colors.green }: { steps: Tracking
           />
           <Text
             style={[styles.stepLabel, s.state !== 'todo' && { color: colors.text }, s.state === 'current' && { color, fontWeight: '800' }]}
-            numberOfLines={3}
+            numberOfLines={1}
           >
             {s.label}
           </Text>
@@ -189,11 +205,12 @@ const styles = StyleSheet.create({
   verified: { fontSize: 11, color: colors.green, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '900', color: colors.text, letterSpacing: -0.3 },
   headlineSmall: { fontSize: 15, fontWeight: '700', color: colors.green },
+  secondary: { fontSize: 14, fontWeight: '700', color: colors.text },
   muted: { fontSize: 13, color: colors.textMuted },
   steps: { flexDirection: 'row', gap: 6 },
   step: { flex: 1, gap: 5 },
   stepBar: { height: 5, borderRadius: 3, backgroundColor: colors.border },
-  stepLabel: { fontSize: 11, color: colors.textMuted, lineHeight: 14 },
+  stepLabel: { fontSize: 12, color: colors.textMuted, lineHeight: 15 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',

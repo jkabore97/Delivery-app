@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import { copyText, shareButtonLabel, shareTrackingLink } from '../lib/share';
+import { copyText, recipientCallName, shareButtonLabel, shareTrackingLink } from '../lib/share';
 import { colors, radius, spacing } from '../theme';
 import { Button } from './ui';
 
@@ -12,12 +12,15 @@ import { Button } from './ui';
 export function ShareTrackingCard({
   url,
   recipientName,
+  recipientIsBusiness,
   recipientPhone,
   businessName,
   prominent,
 }: {
   url: string | null | undefined;
   recipientName: string | null;
+  /** Destinataire entreprise : son nom complet dans les textes. */
+  recipientIsBusiness?: boolean | null;
   recipientPhone: string | null;
   businessName: string | null;
   /** Juste après la demande : carte mise en avant. */
@@ -32,13 +35,13 @@ export function ShareTrackingCard({
       </View>
     );
   }
-  const first = recipientName?.trim().split(/\s+/)[0] ?? 'Le destinataire';
+  const who = recipientCallName(recipientName, recipientIsBusiness) || 'Le destinataire';
 
   const send = async () => {
     setBusy(true);
     setFeedback(null);
     try {
-      const outcome = await shareTrackingLink({ url, recipientName, recipientPhone, businessName });
+      const outcome = await shareTrackingLink({ url, recipientName, recipientIsBusiness, recipientPhone, businessName });
       if (outcome === 'whatsapp') setFeedback('WhatsApp ouvert avec le message prêt à envoyer.');
       else if (outcome === 'shared') setFeedback('Lien envoyé.');
     } catch {
@@ -57,7 +60,7 @@ export function ShareTrackingCard({
     <View style={[styles.box, prominent && styles.prominent]} testID="share-tracking">
       <Text style={styles.title}>{prominent ? '📩 Prévenez le destinataire' : '📩 Lien de suivi du destinataire'}</Text>
       <Text style={styles.muted}>
-        {first} suivra le livreur en direct sur la carte, sans créer de compte, et y trouvera le code à donner au livreur.
+        {who} suivra le livreur en direct sur la carte, sans créer de compte, et y trouvera le code à donner au livreur.
       </Text>
       <Button title={shareButtonLabel()} color={colors.green} onPress={send} loading={busy} testID="share-link-button" />
       {Platform.OS === 'web' ? (

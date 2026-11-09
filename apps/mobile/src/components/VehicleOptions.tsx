@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LABELS, type QuoteOptionDto, type VehicleType } from '@yaar/shared';
-import { formatFcfaShort } from '../lib/format';
+import { formatFcfa } from '../lib/format';
 import { colors, radius, spacing } from '../theme';
 
 export const VEHICLE_EMOJI: Record<VehicleType, string> = { BIKE: '🚲', MOTO: '🏍️', CAR: '🚗' };
@@ -32,7 +32,7 @@ export function VehicleOptions({
             key={o.vehicleType}
             accessibilityRole="radio"
             accessibilityState={{ selected: isSel, disabled: !o.available }}
-            accessibilityLabel={`${LABELS.vehicleType[o.vehicleType]}, ${o.available ? formatFcfaShort(o.deliveryFee) : 'indisponible'}`}
+            accessibilityLabel={`${LABELS.vehicleType[o.vehicleType]}, ${o.available ? formatFcfa(o.deliveryFee) : 'indisponible'}`}
             disabled={!o.available}
             onPress={() => onSelect(o.vehicleType)}
             style={[styles.row, isSel && { borderColor: color, backgroundColor: colors.greenLight }, !o.available && styles.disabled]}
@@ -45,7 +45,7 @@ export function VehicleOptions({
                 {o.available ? `~${o.estimatedMinutes} min · ${VEHICLE_HINT[o.vehicleType]}` : 'Indisponible pour le moment'}
               </Text>
             </View>
-            <Text style={[styles.price, isSel && { color }]}>{o.available ? formatFcfaShort(o.deliveryFee) : '—'}</Text>
+            <Text style={[styles.price, isSel && { color }]}>{o.available ? formatFcfa(o.deliveryFee) : '—'}</Text>
           </Pressable>
         );
       })}

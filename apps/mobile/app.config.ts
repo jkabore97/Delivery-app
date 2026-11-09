@@ -70,6 +70,7 @@ const config: ExpoConfig = {
   ],
   experiments: {
     typedRoutes: false,
+    chunking: { mode: 'granular' },
   },
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? null,

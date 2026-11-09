@@ -55,7 +55,37 @@ describe('Suivi d’une livraison par l’entreprise', () => {
     expect(r.queryByText(/1\s+2\s+3\s+4/)).toBeNull();
     expect(r.queryByTestId('delivery-code')).toBeNull();
     expect(r.getByTestId('recipient-amount')).toHaveTextContent(/Le destinataire paie à la livraison.*16 500 FCFA/);
-    expect(r.getByLabelText('Arrivée vers', { exact: false })).toBeTruthy();
+    // Titre : arrivée du livreur AU RETRAIT (itinéraire restant vers l'entreprise), livraison rappelée en dessous.
+    expect(r.getByLabelText(/^Au retrait vers \d\d:\d\d · dans \d+ min$/)).toBeTruthy();
+    expect(r.getByTestId('eta-secondary')).toHaveTextContent(/^Livraison chez Awa prévue vers \d\d:\d\d$/);
+  });
+
+  it('livreur en route vers l’entreprise : arrivée au retrait d’après l’itinéraire restant, pas l’heure de livraison', async () => {
+    jest.useFakeTimers({ now: Date.parse('2026-11-08T14:20:00.000Z') });
+    // Itinéraire de 2 km / 4 min vers le retrait ; le livreur est au début : ~4 min. L'API annonce 25 min (livraison).
+    mockApi.getOrder.mockResolvedValue(
+      delivery({
+        status: 'ASSIGNED',
+        etaMinutes: 25,
+        driver: { ...delivery().driver!, lastLocation: { lat: 12.3627, lng: -1.521, at: '2026-11-08T14:19:55.000Z', heading: 170 } },
+        route: route({ target: 'PICKUP', distanceM: 2000, durationS: 240, points: [[12.3627, -1.521], [12.3686, -1.5275]] }),
+      }),
+    );
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByLabelText('Au retrait vers 14:24 · dans 4 min')).toBeTruthy();
+    expect(r.getByTestId('eta-secondary')).toHaveTextContent('Livraison chez Awa prévue vers 14:45');
+    jest.useRealTimers();
+  });
+
+  it('destinataire entreprise : son nom complet dans les textes (pas « Bureau »)', async () => {
+    mockParams.created = '1';
+    mockApi.getOrder.mockResolvedValue(
+      delivery({ status: 'SEARCHING_DRIVER', driver: null, route: null, recipientName: 'Bureau Faso Conseil', recipientIsBusiness: true }),
+    );
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(r.getByTestId('share-tracking')).toBeTruthy());
+    expect(r.getByTestId('share-tracking')).toHaveTextContent(/Bureau Faso Conseil suivra le livreur/);
   });
 
   it('juste après la demande : « Envoyer le lien de suivi au destinataire » mis en avant (feuille de partage)', async () => {

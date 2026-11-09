@@ -3,7 +3,6 @@ import {
   createDeliverySchema,
   distanceM,
   formatDistanceFr,
-  formatFcfa,
   formatDurationFr,
   minutesFromSeconds,
   normalizePhone,
@@ -14,11 +13,14 @@ import {
   type CreateDeliveryInput,
   type FeePayer,
   type LatLng,
+  type OfferDto,
   type OrderDto,
   type QuoteResponse,
+  type StoreDto,
   type VehicleType,
 } from '@yaar/shared';
 import { isPinAtDefault, toAddressInput } from './address';
+import { formatFcfa } from './format';
 
 /* ------------------------------------------------------------------ */
 /* Statuts                                                             */
@@ -99,28 +101,66 @@ export interface CollectAmounts {
   business: boolean;
 }
 
+/** Montants détaillés par l'API (offre, et course si l'API les ajoute) : utilisés tels quels quand ils sont présents. */
+export interface CashSplit {
+  cashAtPickup?: number | null;
+  cashAtDelivery?: number | null;
+}
+
+const amount = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+
 /**
- * Ce que le livreur encaisse et où. Livraison d'entreprise : marchandise (`cashToCollect`) + frais si le
- * destinataire les paie, à la livraison ; frais au retrait si l'entreprise les paie. Ancienne commande
- * client : le total, à la livraison (espèces).
+ * Ce que le livreur encaisse et où. Priorité aux montants de l'API (`cashAtPickup` / `cashAtDelivery`) ; à défaut,
+ * calcul local. Livraison d'entreprise : marchandise (`cashToCollect`) + frais si le destinataire les paie, à la
+ * livraison ; frais au retrait si l'entreprise les paie. Ancienne commande client : le total, à la livraison.
  */
 export function amountsToCollect(
-  o: Pick<OrderDto, 'feePaidBy' | 'cashToCollect' | 'deliveryFee' | 'total' | 'itemsTotal' | 'paymentMethod'>,
+  o: Pick<OrderDto, 'feePaidBy' | 'cashToCollect' | 'deliveryFee' | 'total' | 'itemsTotal' | 'paymentMethod'> & CashSplit,
 ): CollectAmounts {
+  const apiPickup = amount(o.cashAtPickup);
+  const apiDelivery = amount(o.cashAtDelivery);
   if (o.feePaidBy !== 'SENDER' && o.feePaidBy !== 'RECIPIENT') {
     const cash = o.paymentMethod === 'CASH' ? o.total : 0;
-    return { atPickup: 0, atDropoff: cash, goods: o.itemsTotal, fee: o.deliveryFee, feePaidBy: null, business: false };
+    return {
+      atPickup: apiPickup ?? 0,
+      atDropoff: apiDelivery ?? cash,
+      goods: o.itemsTotal,
+      fee: o.deliveryFee,
+      feePaidBy: null,
+      business: false,
+    };
   }
   const goods = Math.max(0, o.cashToCollect ?? 0);
   const fee = o.deliveryFee;
   return {
-    atPickup: o.feePaidBy === 'SENDER' ? fee : 0,
-    atDropoff: goods + (o.feePaidBy === 'RECIPIENT' ? fee : 0),
+    atPickup: apiPickup ?? (o.feePaidBy === 'SENDER' ? fee : 0),
+    atDropoff: apiDelivery ?? goods + (o.feePaidBy === 'RECIPIENT' ? fee : 0),
     goods,
     fee,
     feePaidBy: o.feePaidBy,
     business: true,
   };
+}
+
+export interface OfferCash {
+  /** Espèces à encaisser auprès de l'entreprise au retrait (null = inconnu : ancienne API). */
+  atPickup: number | null;
+  /** Espèces à encaisser auprès du destinataire (null = inconnu). */
+  atDelivery: number | null;
+  /** Total des espèces de la course. */
+  total: number;
+}
+
+/**
+ * Espèces d'une offre : détail retrait / livraison de l'API (`cashAtPickup`, `cashAtDelivery`) quand il est
+ * fourni, sinon seulement le total (`cashToCollect`).
+ */
+export function offerCash(offer: Pick<OfferDto, 'cashToCollect'> & CashSplit): OfferCash {
+  const atPickup = amount(offer.cashAtPickup);
+  const atDelivery = amount(offer.cashAtDelivery);
+  const total = Math.max(0, Math.round(offer.cashToCollect ?? 0));
+  if (atPickup === null || atDelivery === null) return { atPickup: null, atDelivery: null, total };
+  return { atPickup, atDelivery, total: atPickup + atDelivery };
 }
 
 /** Détail du montant à encaisser à la livraison : « Marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces. » */
@@ -212,6 +252,9 @@ export function hasErrors(e: FormErrors): boolean {
 }
 
 const FIELD_LABELS: Record<string, string> = {
+  'pickup.address': 'Adresse de retrait',
+  'pickup.lat': 'Adresse de retrait',
+  'pickup.lng': 'Adresse de retrait',
   'dropoff.address': 'Adresse',
   'dropoff.landmark': 'Point de repère',
   'dropoff.lat': 'Épingle',
@@ -225,14 +268,28 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 /**
+ * Point de retrait envoyé à l'API (devis et demande) : l'établissement choisi par l'entreprise. Sans cela l'API
+ * prendrait son établissement validé le plus ancien, et le prix comme le livreur ne correspondraient pas au retrait
+ * affiché quand l'entreprise en a plusieurs.
+ */
+export function pickupFromStore(store: Pick<StoreDto, 'lat' | 'lng' | 'address' | 'landmark'> | null | undefined): AddressDto | null {
+  if (!store || !Number.isFinite(store.lat) || !Number.isFinite(store.lng) || !store.address?.trim()) return null;
+  return toAddressInput({ lat: store.lat, lng: store.lng, address: store.address, landmark: store.landmark ?? '' });
+}
+
+/**
  * Corps de POST /business/deliveries, validé avec le schéma partagé (mêmes règles que l'API).
  * Renvoie le message d'erreur français de la première règle non respectée.
  */
-export function buildDeliveryInput(form: DeliveryForm): { ok: true; input: CreateDeliveryInput } | { ok: false; error: string } {
+export function buildDeliveryInput(
+  form: DeliveryForm,
+  pickup?: AddressDto | null,
+): { ok: true; input: CreateDeliveryInput } | { ok: false; error: string } {
   if (!form.dropoff || !form.vehicleType) return { ok: false, error: 'Destination et véhicule requis.' };
   const cash = parseAmount(form.cashToCollect);
   if (cash === null) return { ok: false, error: 'Montant à encaisser invalide.' };
   const input: CreateDeliveryInput = {
+    ...(pickup ? { pickup } : {}),
     dropoff: toAddressInput(form.dropoff),
     recipientName: form.recipientName.trim(),
     recipientPhone: form.recipientPhone.trim(),

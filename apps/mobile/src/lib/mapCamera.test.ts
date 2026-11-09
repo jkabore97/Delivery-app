@@ -1,6 +1,14 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { useFollowCamera } from '../hooks/useFollowCamera';
-import { clampPadding, followReducer, INITIAL_FOLLOW, shouldShowRecenter, withDefaultPadding } from './mapCamera';
+import {
+  clampPadding,
+  followReducer,
+  INITIAL_FOLLOW,
+  nativeEdgePadding,
+  shouldShowRecenter,
+  trackingPadding,
+  withDefaultPadding,
+} from './mapCamera';
 import { resolveLines } from './map/lines';
 
 describe('caméra : suivi et « Recentrer »', () => {
@@ -70,5 +78,33 @@ describe('tracé rogné à la position animée du livreur', () => {
     const line = { id: 'x', kind: 'dashed' as const, points: [points[0]!, points[2]!], trimToMarkerId: 'd' };
     expect(resolveLines([line], () => ({ lat: 1, lng: 2 }))[0]!.points[0]).toEqual({ lat: 1, lng: 2 });
     expect(resolveLines([line], () => null)[0]!.points).toEqual(line.points);
+  });
+});
+
+describe('marges des cartes de suivi (feuille en bas)', () => {
+  it('en bas : feuille + 90 px ; côtés : au moins 60 px ; en haut : boutons flottants + une épingle', () => {
+    const p = trackingPadding(380, 47, 390);
+    expect(p.bottom).toBe(470);
+    expect(p.left).toBeGreaterThanOrEqual(60);
+    expect(p.right).toBeGreaterThanOrEqual(60);
+    expect(p.top).toBe(47 + 104);
+    expect(trackingPadding(0, 0, 1024).left).toBeGreaterThan(64);
+  });
+
+  it('feuille dépliée sur un petit téléphone : marges bornées à la taille de la carte (web et natif)', () => {
+    const p = trackingPadding(550, 24, 360);
+    const c = clampPadding(p, 360, 640);
+    expect(c.top + c.bottom).toBeLessThanOrEqual(640 - 80);
+    expect(c.left + c.right).toBeLessThanOrEqual(360 - 80);
+    expect(c.bottom).toBeGreaterThan(c.top);
+  });
+
+  it('natif : Android additionne la marge de base (logo Google au-dessus de la feuille), iOS non', () => {
+    const pad = { top: 150, right: 64, bottom: 470, left: 64 };
+    const base = { top: 0, right: 0, bottom: 380, left: 0 };
+    expect(nativeEdgePadding(pad, base, 'android')).toEqual({ top: 150, right: 64, bottom: 90, left: 64 });
+    expect(nativeEdgePadding(pad, base, 'ios')).toEqual(pad);
+    // Jamais de marge négative.
+    expect(nativeEdgePadding({ ...pad, bottom: 100 }, base, 'android').bottom).toBe(0);
   });
 });

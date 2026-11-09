@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { Banner, Card, KeyValue, Loading, Muted, ProgressBar, Row, Screen, SectionTitle, Stat, Title } from '../../../components/ui';
 import { useAsync } from '../../../hooks/useAsync';
-import { formatDateTime, formatFcfa, formatFcfaShort } from '../../../lib/format';
+import { formatDateTime, formatFcfa } from '../../../lib/format';
 import { useApi } from '../../../state/auth';
 import { colors } from '../../../theme';
 
@@ -26,8 +26,8 @@ export default function DriverEarnings() {
       {e ? (
         <>
           <Row>
-            <Stat value={formatFcfaShort(e.today.earnings)} label={`Gains du jour · ${e.today.deliveries} course(s)`} color={colors.green} />
-            <Stat value={formatFcfaShort(e.allTime.earnings)} label={`Total · ${e.allTime.deliveries} course(s)`} />
+            <Stat value={formatFcfa(e.today.earnings)} label={`Gains du jour · ${e.today.deliveries} course(s)`} color={colors.green} />
+            <Stat value={formatFcfa(e.allTime.earnings)} label={`Total · ${e.allTime.deliveries} course(s)`} />
           </Row>
           <Card highlight={e.cashBlocked ? colors.red : undefined}>
             <KeyValue label="Cash détenu" value={formatFcfa(e.cashHeld)} strong />

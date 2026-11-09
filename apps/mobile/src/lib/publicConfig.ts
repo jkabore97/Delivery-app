@@ -1,4 +1,4 @@
-import { DEMO_OTP_CODE, type PublicConfigDto } from '@yaar/shared';
+import { DEMO_OTP_CODE, type OrderStatus, type PublicConfigDto } from '@yaar/shared';
 
 /**
  * Configuration publique de l'API (GET /config, docs/API.md §1.8), lue au démarrage avant la connexion.
@@ -20,12 +20,35 @@ export function parsePublicConfig(raw: unknown): PublicConfigDto {
   const o = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const interval = typeof o.pollIntervalMs === 'number' && o.pollIntervalMs >= 1000 ? o.pollIntervalMs : 4000;
   const channel = o.otpChannel === 'whatsapp' || o.otpChannel === 'console' || o.otpChannel === 'sms' ? o.otpChannel : 'sms';
+  const tracking =
+    typeof o.trackingPollIntervalMs === 'number' && Number.isFinite(o.trackingPollIntervalMs) && o.trackingPollIntervalMs >= 1000
+      ? o.trackingPollIntervalMs
+      : undefined;
   return {
     realtime: o.realtime === 'poll' ? 'poll' : 'socket',
     pollIntervalMs: interval,
     demoMode: o.demoMode === true,
     otpChannel: channel,
+    ...(tracking !== undefined ? { trackingPollIntervalMs: tracking } : {}),
   };
+}
+
+/** Rafraîchissement par défaut de la page publique de suivi : le livreur envoie sa position toutes les ~8 s. */
+export const DEFAULT_TRACKING_POLL_MS = 8000;
+
+/**
+ * Intervalle de GET /track/:token selon l'étape : `trackingPollIntervalMs` de /config (sinon 8 s, jamais plus vite
+ * que `pollIntervalMs`) pendant que le livreur est en route (et tant que l'étape n'est pas connue) ; le double
+ * pendant la recherche d'un livreur (rien ne bouge sur la carte) ; 0 = plus de rafraîchissement (livrée, annulée).
+ */
+export function trackingPollMs(
+  config: Pick<PublicConfigDto, 'pollIntervalMs' | 'trackingPollIntervalMs'> | null | undefined,
+  status?: OrderStatus | null,
+): number {
+  const base = config?.trackingPollIntervalMs ?? Math.max(DEFAULT_TRACKING_POLL_MS, config?.pollIntervalMs ?? 0);
+  if (status === 'DELIVERED' || status === 'CANCELLED') return 0;
+  if (!status || status === 'ASSIGNED' || status === 'PICKED_UP') return base;
+  return base * 2;
 }
 
 export async function fetchPublicConfig(
@@ -61,8 +84,8 @@ export const POLL_MS = {
   /** Entreprise : suivi d'une livraison SEARCHING_DRIVER / ASSIGNED / PICKED_UP (= pollIntervalMs). */
   businessDeliveryLive: 0,
   businessDeliveryWaiting: 10_000,
-  /** Entreprise : liste et carte des livraisons en cours (positions des livreurs comprises). */
-  businessDeliveries: 7_000,
+  /** Entreprise : liste et carte des livraisons en cours (positions des livreurs comprises), comme docs/API.md. */
+  businessDeliveries: 10_000,
 } as const;
 
 /**

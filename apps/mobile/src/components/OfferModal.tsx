@@ -5,8 +5,9 @@ import { LABELS, type OfferDto } from '@yaar/shared';
 import { useCountdown } from '../hooks/useCountdown';
 import { errorMessage, isApiError } from '../lib/api';
 import { formatCountdown } from '../lib/countdown';
+import { offerCash } from '../lib/delivery';
 import { offerPlaces } from '../lib/offer';
-import { formatFcfa, formatFcfaShort, formatKm } from '../lib/format';
+import { formatFcfa, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
 import { colors, radius, spacing, MAX_APP_WIDTH } from '../theme';
@@ -35,6 +36,7 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
   const [busy, setBusy] = useState<'accept' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const places = offerPlaces(offer);
+  const cash = offerCash(offer);
 
   useEffect(() => {
     if (secs <= 0 && busy === null) {
@@ -116,7 +118,17 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
       <Row gap={spacing.sm}>
         <View style={[styles.money, { backgroundColor: colors.orangeLight }]} testID="offer-cash">
           <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
-          <Text style={[styles.moneyValue, { color: '#9A4F00' }]}>{formatFcfaShort(offer.cashToCollect)}</Text>
+          <Text style={[styles.moneyValue, { color: '#9A4F00' }]}>{formatFcfa(cash.total)}</Text>
+          {cash.atPickup !== null && cash.atDelivery !== null && cash.total > 0 ? (
+            <Text style={styles.moneySplit} testID="offer-cash-split">
+              {[
+                cash.atPickup > 0 ? `${formatFcfa(cash.atPickup)} au retrait` : null,
+                cash.atDelivery > 0 ? `${formatFcfa(cash.atDelivery)} à la livraison` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+          ) : null}
         </View>
         <View style={[styles.money, { backgroundColor: colors.greenLight }]} testID="offer-earning">
           <Text style={styles.moneyLabel}>Votre gain</Text>
@@ -169,4 +181,5 @@ const styles = StyleSheet.create({
   money: { flex: 1, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   moneyLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   moneyValue: { fontSize: 18, fontWeight: '900' },
+  moneySplit: { fontSize: 11, fontWeight: '700', color: '#9A4F00' },
 });

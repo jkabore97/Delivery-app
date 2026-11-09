@@ -36,6 +36,7 @@ import {
   FEE_PAYER_LABELS,
   hasErrors,
   parseAmount,
+  pickupFromStore,
   pickVehicle,
   recipientPays,
   validateDestination,
@@ -43,7 +44,7 @@ import {
   type DeliveryForm,
   type FormErrors,
 } from '../../lib/delivery';
-import { formatFcfa, formatFcfaShort, formatKm } from '../../lib/format';
+import { formatFcfa, formatKm } from '../../lib/format';
 import { formatPhone } from '../../lib/phone';
 import { useApi } from '../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../state/business';
@@ -65,9 +66,17 @@ export default function NewDeliveryScreen() {
   const set = <K extends keyof DeliveryForm>(k: K, v: DeliveryForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const pickup = store ? { lat: store.lat, lng: store.lng } : null;
+  // Retrait = l'établissement choisi (profil) : envoyé à l'API pour que le prix et le livreur correspondent.
+  const pickupAddress = useMemo(
+    () => pickupFromStore(store),
+    [store?.id, store?.lat, store?.lng, store?.address, store?.landmark], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const quoteInput = useMemo(
-    () => (step >= 2 && form.dropoff && form.dropoff.address.trim() ? { dropoff: toAddressInput(form.dropoff) } : null),
-    [step, form.dropoff],
+    () =>
+      step >= 2 && form.dropoff && form.dropoff.address.trim()
+        ? { ...(pickupAddress ? { pickup: pickupAddress } : {}), dropoff: toAddressInput(form.dropoff) }
+        : null,
+    [step, form.dropoff, pickupAddress],
   );
   const { quote, error: quoteError, loading: quoteLoading } = useDeliveryQuote(quoteInput);
   const vehicle = quote ? pickVehicle(quote, form.vehicleType) : form.vehicleType;
@@ -113,7 +122,9 @@ export default function NewDeliveryScreen() {
   };
 
   const submit = async () => {
-    const built = buildDeliveryInput({ ...form, vehicleType: vehicle });
+    // Entreprise pas encore validée ou prix inconnu : aucune demande (le bouton est aussi désactivé).
+    if (!option || !isBusinessApproved(store)) return;
+    const built = buildDeliveryInput({ ...form, vehicleType: vehicle }, pickupAddress);
     if (!built.ok) {
       setSubmitError(built.error);
       return;
@@ -159,6 +170,7 @@ export default function NewDeliveryScreen() {
             quoteLoading={quoteLoading}
             vehicle={vehicle}
             fee={option?.deliveryFee ?? null}
+            storeName={store.name}
           />
         ) : (
           <SummaryStep form={form} storeName={store.name} storeAddress={store.address} quote={quote} vehicle={vehicle} />
@@ -169,7 +181,7 @@ export default function NewDeliveryScreen() {
       <View style={styles.footer}>
         {step === 2 ? (
           <Button
-            title={option ? `Continuer · ${formatFcfaShort(option.deliveryFee)}` : 'Continuer'}
+            title={option ? `Continuer · ${formatFcfa(option.deliveryFee)}` : 'Continuer'}
             color={colors.orange}
             onPress={next}
             disabled={quoteLoading && !quote}
@@ -267,6 +279,8 @@ function DestinationStep({
     ? { title: zoneName(dropoff), subtitle: dropoff.address.trim() && dropoff.address !== zoneName(dropoff) ? dropoff.address : 'Livrer ici' }
     : { title: 'Déplacez la carte', subtitle: 'jusqu’au lieu de livraison' };
   const mapHeight = Math.max(280, Math.round(height * 0.5));
+  // Petit téléphone (360 × 640) : la bulle au-dessus de l'épingle toucherait la pastille « 1/3 » ; elle passe dessous.
+  const bubbleBelow = mapHeight / 2 < insets.top + 172;
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -279,7 +293,7 @@ function DestinationStep({
           onMoveStart={() => setMoving(true)}
           onCenterChange={onCenter}
         />
-        <CenterPin moving={moving} bubble={bubble} />
+        <CenterPin moving={moving} bubble={bubble} bubblePlacement={bubbleBelow ? 'below' : 'above'} />
         <View style={[styles.mapTop, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
           <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Fermer" style={styles.fab} testID="wizard-close">
             <Text style={styles.fabText}>✕</Text>
@@ -385,6 +399,7 @@ function PackageStep({
   quoteLoading,
   vehicle,
   fee,
+  storeName,
 }: {
   form: DeliveryForm;
   set: <K extends keyof DeliveryForm>(k: K, v: DeliveryForm[K]) => void;
@@ -394,6 +409,7 @@ function PackageStep({
   quoteLoading: boolean;
   vehicle: DeliveryForm['vehicleType'];
   fee: number | null;
+  storeName: string;
 }) {
   const cash = parseAmount(form.cashToCollect) ?? 0;
   return (
@@ -416,7 +432,11 @@ function PackageStep({
       <SectionTitle>Véhicule</SectionTitle>
       {quoteLoading && !quote ? <Loading label="Calcul des prix…" /> : null}
       {quote ? <VehicleOptions options={quote.options} selected={vehicle} onSelect={(v) => set('vehicleType', v)} /> : null}
-      {quote ? <Muted>Distance estimée : {formatKm(quote.distanceKm)} · retrait à votre adresse.</Muted> : null}
+      {quote ? (
+        <Muted>
+          Distance estimée : {formatKm(quote.distanceKm)} · retrait chez {storeName}.
+        </Muted>
+      ) : null}
       {quoteError ? <Banner message={quoteError} /> : null}
       {errors.vehicleType ? <Banner message={errors.vehicleType} /> : null}
 
@@ -438,7 +458,7 @@ function PackageStep({
                 <Text style={styles.payerTitle}>{FEE_PAYER_LABELS[p].title}</Text>
                 <Muted>{p === 'SENDER' ? 'En espèces au livreur, au retrait du colis' : 'En espèces au livreur, à la livraison'}</Muted>
               </View>
-              {fee !== null ? <Text style={styles.payerFee}>{formatFcfaShort(fee)}</Text> : null}
+              {fee !== null ? <Text style={styles.payerFee}>{formatFcfa(fee)}</Text> : null}
             </Pressable>
           );
         })}

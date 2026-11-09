@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>%WEB_TITLE%</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+    <!--
+      Écran de démarrage (Yaar Livraison) : affiché dès les premiers octets de la page, sans attendre le JavaScript
+      (≈ 1 Mo compressé, plusieurs secondes en 3G). L'application le retire dès qu'un écran est prêt
+      (src/lib/webShell.ts) ; filet de sécurité ci-dessous au bout de 20 s.
+    -->
+    <style id="yaar-splash-css">
+      #yaar-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: #f5f7f9;
+        color: #16202a;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        transition: opacity 0.25s ease;
+      }
+      #yaar-splash .logo {
+        font-size: 44px;
+        font-weight: 900;
+        color: #0b7a4b;
+        letter-spacing: -0.5px;
+        line-height: 1;
+      }
+      #yaar-splash .sub {
+        font-size: 15px;
+        font-weight: 800;
+        color: #f28c1b;
+      }
+      #yaar-splash .spin {
+        width: 30px;
+        height: 30px;
+        margin-top: 22px;
+        border-radius: 50%;
+        border: 3px solid #d5e6dd;
+        border-top-color: #0b7a4b;
+        animation: yaar-spin 0.9s linear infinite;
+      }
+      #yaar-splash .msg {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #5e6b78;
+      }
+      @keyframes yaar-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #yaar-splash .spin {
+          animation-duration: 2.4s;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="yaar-splash" role="status" aria-live="polite">
+      <div class="logo">Yaar</div>
+      <div class="sub">Livraison · Ouagadougou</div>
+      <div class="spin" aria-hidden="true"></div>
+      <div class="msg" id="yaar-splash-text">Chargement…</div>
+    </div>
+    <script>
+      (function () {
+        var path = location.pathname;
+        if (path.indexOf('/suivi/') === 0) {
+          // Page publique de suivi : le jeton du lien ne part jamais en en-tête Referer, dès la première requête.
+          var meta = document.createElement('meta');
+          meta.name = 'referrer';
+          meta.content = 'no-referrer';
+          document.head.appendChild(meta);
+          // Blocs JS de la page (carte comprise) téléchargés tout de suite, en parallèle de l'application
+          // (liste écrite par scripts/web-postexport.mjs).
+          var urls = /*YAAR_SUIVI_PRELOAD*/[];
+          for (var i = 0; i < urls.length; i++) {
+            var link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'script';
+            link.href = urls[i];
+            document.head.appendChild(link);
+          }
+          var text = document.getElementById('yaar-splash-text');
+          if (text) text.textContent = 'Chargement du suivi de votre colis…';
+        }
+        setTimeout(function () {
+          var splash = document.getElementById('yaar-splash');
+          if (splash) splash.remove();
+        }, 20000);
+      })();
+    </script>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript> You need to enable JavaScript to run this app. </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

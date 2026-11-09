@@ -123,13 +123,15 @@ export function Muted({
   children,
   style,
   numberOfLines,
+  testID,
 }: {
   children: ReactNode;
   style?: StyleProp<TextStyle>;
   numberOfLines?: number;
+  testID?: string;
 }) {
   return (
-    <Text style={[styles.muted, style]} numberOfLines={numberOfLines}>
+    <Text style={[styles.muted, style]} numberOfLines={numberOfLines} testID={testID}>
       {children}
     </Text>
   );

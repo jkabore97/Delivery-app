@@ -1,11 +1,14 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { OfferModal } from '../../components/OfferModal';
 import { RoleGuard } from '../../components/RoleGuard';
 import { TrackingConsentModal } from '../../components/TrackingConsentModal';
 import { DriverProvider } from '../../state/driver';
 import { colors } from '../../theme';
+import { hideWebSplash } from '../../lib/webShell';
 
 export default function DriverLayout() {
+  useEffect(() => hideWebSplash(), []);
   return (
     <RoleGuard role="DRIVER">
       <DriverProvider>

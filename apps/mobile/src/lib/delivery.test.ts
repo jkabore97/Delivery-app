@@ -6,7 +6,9 @@ import {
   collectDetail,
   EMPTY_DELIVERY_FORM,
   nextStep,
+  offerCash,
   parseAmount,
+  pickupFromStore,
   pickVehicle,
   recipientPays,
   sortActiveDeliveries,
@@ -36,16 +38,44 @@ describe('montants à encaisser par le livreur', () => {
   it('destinataire qui paie la livraison : marchandise + frais à la livraison, rien au retrait', () => {
     const a = amountsToCollect(delivery({ feePaidBy: 'RECIPIENT', cashToCollect: 15000, deliveryFee: 1500 }));
     expect(a).toMatchObject({ atPickup: 0, atDropoff: 16500, goods: 15000, fee: 1500, business: true });
-    expect(collectDetail(a)).toBe('Marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces.');
+    expect(collectDetail(a)).toBe('Marchandise 15\u202f000\u202fFCFA + frais de livraison 1\u202f500\u202fFCFA, en espèces.');
   });
 
   it('entreprise qui paie : frais au retrait, marchandise seule à la livraison', () => {
     const a = amountsToCollect(delivery({ feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }));
     expect(a).toMatchObject({ atPickup: 1700, atDropoff: 8000 });
-    expect(collectDetail(a)).toBe('Marchandise 8 000 FCFA, en espèces.');
+    expect(collectDetail(a)).toBe('Marchandise 8\u202f000\u202fFCFA, en espèces.');
     const nothing = amountsToCollect(delivery({ feePaidBy: 'SENDER', cashToCollect: 0 }));
     expect(nothing.atDropoff).toBe(0);
     expect(collectDetail(nothing)).toBeNull();
+  });
+
+  it('montants détaillés par l’API (cashAtPickup / cashAtDelivery) utilisés tels quels quand ils sont présents', () => {
+    const fromApi = amountsToCollect({ ...delivery({ feePaidBy: 'RECIPIENT', cashToCollect: 15000, deliveryFee: 1500 }), cashAtPickup: 0, cashAtDelivery: 16000 });
+    expect(fromApi).toMatchObject({ atPickup: 0, atDropoff: 16000, goods: 15000 });
+    const sender = amountsToCollect({ ...delivery({ feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }), cashAtPickup: 1800 });
+    expect(sender).toMatchObject({ atPickup: 1800, atDropoff: 8000 });
+    // Valeurs absentes ou invalides : calcul local.
+    const bad = amountsToCollect({ ...delivery({ feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }), cashAtPickup: -5, cashAtDelivery: null });
+    expect(bad).toMatchObject({ atPickup: 1700, atDropoff: 8000 });
+  });
+
+  it('espèces d’une offre : détail retrait / livraison de l’API, sinon le total seul', () => {
+    expect(offerCash({ cashToCollect: 16500, cashAtPickup: 0, cashAtDelivery: 16500 })).toEqual({ atPickup: 0, atDelivery: 16500, total: 16500 });
+    expect(offerCash({ cashToCollect: 9700, cashAtPickup: 1700, cashAtDelivery: 8000 })).toEqual({ atPickup: 1700, atDelivery: 8000, total: 9700 });
+    expect(offerCash({ cashToCollect: 6600 })).toEqual({ atPickup: null, atDelivery: null, total: 6600 });
+    expect(offerCash({ cashToCollect: 6600, cashAtPickup: 1100 })).toEqual({ atPickup: null, atDelivery: null, total: 6600 });
+  });
+
+  it('retrait envoyé à l’API : l’établissement choisi (adresse, repère, coordonnées arrondies)', () => {
+    expect(pickupFromStore({ lat: 12.36861234, lng: -1.52751234, address: ' Avenue Kwame Nkrumah ', landmark: 'BCEAO' })).toEqual({
+      lat: 12.368612,
+      lng: -1.527512,
+      address: 'Avenue Kwame Nkrumah',
+      landmark: 'BCEAO',
+    });
+    expect(pickupFromStore(null)).toBeNull();
+    expect(pickupFromStore({ lat: Number.NaN, lng: 1, address: 'x', landmark: '' })).toBeNull();
   });
 
   it('ancienne commande client : le total en espèces', () => {
@@ -117,6 +147,13 @@ describe('nouvelle livraison : validation', () => {
     });
     const bad = buildDeliveryInput({ ...filled, recipientName: 'x'.repeat(81) });
     expect(bad).toEqual({ ok: false, error: expect.stringMatching(/^Nom du destinataire : /) });
+  });
+
+  it('retrait de l’établissement choisi envoyé avec la demande (prix et livreur du bon point de retrait)', () => {
+    const pickup = { lat: 12.3712, lng: -1.5301, address: 'Boutique 2, Zogona', landmark: 'Face au marché' };
+    const built = buildDeliveryInput(filled, pickup);
+    expect(built.ok && built.input.pickup).toEqual(pickup);
+    expect(buildDeliveryInput(filled, null).ok && 'pickup' in (buildDeliveryInput(filled, null) as { input: object }).input).toBe(false);
   });
 
   it('véhicule par défaut : le choix courant s’il reste disponible, sinon la moto, sinon le premier', () => {

@@ -1,5 +1,5 @@
 import { addressLine, isAddressComplete, isPinAtDefault, toAddressInput } from './address';
-import { formatFcfaShort, formatKm, initials, summarizeItems, timeAgo } from './format';
+import { formatFcfa, formatKm, initials, summarizeItems, timeAgo } from './format';
 import { externalDirectionsUrl, webDirectionsUrl } from './navigation';
 import { formatPhone, normalizePhone, telUrl } from './phone';
 import { blockedAccountMessage, CLIENT_ACCOUNT_MESSAGE, homePathForRole, isSignupRole, roleLabel, spaceForRole } from './roles';
@@ -8,8 +8,18 @@ import { pickVehicle } from './delivery';
 import type { QuoteResponse } from '@yaar/shared';
 
 describe('format', () => {
-  it('formate les montants et distances', () => {
-    expect(formatFcfaShort(6500)).toBe('6\u202f500 F');
+  it('un seul format de montant : « 1 000 FCFA », espaces fines insécables (milliers et unité)', () => {
+    expect(formatFcfa(1000)).toBe('1\u202f000\u202fFCFA');
+    expect(formatFcfa(6500)).toBe('6\u202f500\u202fFCFA');
+    expect(formatFcfa(16500)).toBe('16\u202f500\u202fFCFA');
+    expect(formatFcfa(1234567)).toBe('1\u202f234\u202f567\u202fFCFA');
+    expect(formatFcfa(500)).toBe('500\u202fFCFA');
+    expect(formatFcfa(0)).toBe('0\u202fFCFA');
+    expect(formatFcfa(1280.4)).toBe('1\u202f280\u202fFCFA');
+    expect(formatFcfa(-1500)).toBe('-1\u202f500\u202fFCFA');
+    expect(formatFcfa(Number.NaN)).toBe('0\u202fFCFA');
+    // Aucune espace sécable : le montant n'est jamais coupé en fin de ligne.
+    expect(formatFcfa(16500)).not.toMatch(/ /);
     expect(formatKm(6.2)).toBe('6,2 km');
   });
   it('résume les articles', () => {

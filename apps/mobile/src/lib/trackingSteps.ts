@@ -12,19 +12,23 @@ export interface TrackingStep {
 /** Point de vue : destinataire (page publique) ou entreprise expéditrice. */
 export type Perspective = 'recipient' | 'business';
 
+/** Libellés courts, sur une ligne même sur un petit téléphone (le détail est dans le titre de la feuille). */
 const LABELS: Record<Perspective, [string, string, string, string]> = {
-  recipient: ['Commande confirmée', 'Livreur en route vers l’expéditeur', 'En route vers vous', 'Livrée'],
-  business: ['Demande envoyée', 'Livreur en route vers vous', 'En route vers le destinataire', 'Livrée'],
+  recipient: ['Confirmée', 'Retrait', 'En route', 'Livrée'],
+  business: ['Demandée', 'Retrait', 'En route', 'Livrée'],
 };
 
 const KEYS: TrackingStep['key'][] = ['confirmed', 'toPickup', 'toDropoff', 'delivered'];
 
-/** Index de l'étape en cours (0 à 3), 4 = tout est fait, -1 = annulée. */
+/**
+ * Index de l'étape en cours (0 à 3), 4 = tout est fait, -1 = annulée. Recherche d'un livreur : seule la première
+ * étape est en cours (aucun livreur n'est encore en route vers le retrait).
+ */
 function currentIndex(stage: DeliveryStage): number {
   switch (stage) {
     case 'pending':
-      return 0;
     case 'searching':
+      return 0;
     case 'toPickup':
       return 1;
     case 'toDropoff':
@@ -36,7 +40,7 @@ function currentIndex(stage: DeliveryStage): number {
   }
 }
 
-/** Les 4 étapes : Commande confirmée → Livreur en route vers l'expéditeur → En route vers vous → Livrée. */
+/** Les 4 étapes : Confirmée (recherche d'un livreur) → Retrait → En route → Livrée. */
 export function trackingSteps(status: OrderStatus, perspective: Perspective = 'recipient'): TrackingStep[] {
   const idx = currentIndex(stageOf(status));
   return KEYS.map((key, i) => ({
