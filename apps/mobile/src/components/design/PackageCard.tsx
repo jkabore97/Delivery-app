@@ -4,7 +4,7 @@ import { avatarInitials } from '../map/markerArt';
 import { formatFcfa } from '../../lib/format';
 import { colors, dark, spacing } from '../../theme';
 import { CallRoundButton, WhatsAppRoundButton } from './ContactButtons';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { StatusChip, type ChipTone } from './Pill';
 import type { Surface } from './RoundButton';
 
@@ -18,8 +18,10 @@ export interface PackageCardProps {
   address?: string | null;
   /** Point de repère, affiché « Repère : … ». */
   landmark?: string | null;
-  /** Colis (« 2 boîtes de médicaments »). */
+  /** Colis (« 2 boîtes de médicaments »), ou autre ligne d'information avec `descriptionIcon`. */
   description?: string | null;
+  /** Pictogramme de la ligne `description` (colis par défaut ; ex. « cash » pour « Encaissé … »). */
+  descriptionIcon?: IconName;
   /** Instructions de l'expéditeur. */
   notes?: string | null;
   /** Ligne discrète (date, distance…). */
@@ -52,6 +54,7 @@ export function PackageCard({
   address,
   landmark,
   description,
+  descriptionIcon = 'package',
   notes,
   meta,
   amount,
@@ -106,7 +109,7 @@ export function PackageCard({
       </View>
       {description ? (
         <View style={styles.infoRow}>
-          <Icon name="package" size={16} color={c.muted} strokeWidth={2.2} />
+          <Icon name={descriptionIcon} size={16} color={c.muted} strokeWidth={2.2} />
           <Text style={[styles.info, { color: c.text }]}>{description}</Text>
         </View>
       ) : null}

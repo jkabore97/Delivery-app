@@ -27,6 +27,8 @@ export function OnlineStatusPill() {
         floating
         live
         numberOfLines={2}
+        style={styles.statusPill}
+        textStyle={styles.statusText}
         leading={<View style={[styles.dot, { backgroundColor: STATUS_DOT[status.tone] }]} />}
         testID="online-status"
       />
@@ -47,7 +49,7 @@ export function GoOnlineButton({ onError }: { onError: (msg: string | null) => v
   const { togglingOnline, setOnline } = useDriver();
   return (
     <RoundButton
-      label="Passer en ligne"
+      label={'Passer\nen ligne'}
       icon="power"
       diameter={116}
       tone="primary"
@@ -60,6 +62,7 @@ export function GoOnlineButton({ onError }: { onError: (msg: string | null) => v
         const err = await setOnline(true);
         if (err) onError(err);
       }}
+      accessibilityLabel="Passer en ligne"
       accessibilityHint="Votre position sera suivie tant que vous êtes en ligne."
       testID="online-switch"
     />
@@ -140,6 +143,8 @@ export function SosButton({ size = 64 }: { size?: number }) {
 
 const styles = StyleSheet.create({
   statusWrap: { alignItems: 'center', gap: 4, maxWidth: '100%' },
+  statusPill: { paddingHorizontal: 12, gap: 7 },
+  statusText: { fontSize: 13, letterSpacing: 0 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   gpsError: {
     color: '#FFFFFF',

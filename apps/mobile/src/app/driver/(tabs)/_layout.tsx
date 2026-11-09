@@ -1,5 +1,6 @@
 import type { ColorValue } from 'react-native';
 import { Tabs } from 'expo-router/tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, type IconName } from '../../../components/design/Icon';
 import { dark } from '../../../theme';
 
@@ -9,15 +10,22 @@ function tabIcon(name: IconName) {
   };
 }
 
-/** Onglets du livreur : barre sombre (comme ses feuilles), onglet actif en vert vif. */
+/** Onglets du livreur : barre sombre (comme ses feuilles), onglet actif en vert vif, libellés jamais coupés. */
 export default function DriverTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: dark.green,
         tabBarInactiveTintColor: dark.textFaint,
-        tabBarStyle: { backgroundColor: dark.surface, borderTopColor: dark.border },
+        tabBarStyle: {
+          backgroundColor: dark.surface,
+          borderTopColor: dark.border,
+          height: 60 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 8),
+        },
         tabBarLabelStyle: { fontWeight: '800', fontSize: 11.5 },
       }}
     >

@@ -221,8 +221,8 @@ const shadow = {
   elevation: 6,
 } as const;
 
-/** Écart entre le haut de la feuille et l'élément `aboveSheet`. */
-const ABOVE_SHEET_GAP = 16;
+/** Écart entre le haut de la feuille et l'élément `aboveSheet` (la mention des données de la carte reste visible dessous). */
+const ABOVE_SHEET_GAP = 30;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },

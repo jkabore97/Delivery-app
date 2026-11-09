@@ -210,14 +210,13 @@ describe('OfferModal (plein écran)', () => {
 
   it('anneau du compte à rebours : normal, puis « dernières secondes » (rouge) pendant les 10 dernières secondes', async () => {
     const r = await show();
-    expect(r.getByTestId('offer-countdown').props.accessibilityValue).toEqual(expect.objectContaining({ now: 30, text: '30 s' }));
+    const ring = () => r.getByTestId('offer-countdown').props as Record<string, unknown>;
+    expect([ring()['aria-valuenow'], ring()['aria-valuetext'], ring()['aria-valuemax']]).toEqual([30, '30 s', 30]);
     await act(async () => {
       jest.advanceTimersByTime(21_500);
     });
     expect(r.getByText('9 s')).toBeTruthy();
-    expect(r.getByTestId('offer-countdown').props.accessibilityValue).toEqual(
-      expect.objectContaining({ now: 9, text: '9 s, dernières secondes' }),
-    );
+    expect([ring()['aria-valuenow'], ring()['aria-valuetext']]).toEqual([9, '9 s, dernières secondes']);
     expect(r.getByTestId('offer-countdown-arc')).toBeTruthy();
   });
 

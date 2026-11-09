@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View, type TextInputInst
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import type { FileUploadInput, OrderDto } from '@yaar/shared';
-import { Icon } from '../../components/design/Icon';
+import { Icon, type IconName } from '../../components/design/Icon';
 import { Pill } from '../../components/design/Pill';
 import { AmountRow, DarkHeader, DarkProgress, DarkScreen } from '../../components/design/Surfaces';
 import { RatingCard } from '../../components/Rating';
@@ -22,12 +22,14 @@ const CODE_LENGTH = 4;
 /** Grand bouton d'action pleine largeur (vert vif) des écrans sombres. */
 function PrimaryAction({
   title,
+  icon,
   onPress,
   disabled,
   loading,
   testID,
 }: {
   title: string;
+  icon: IconName;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
@@ -36,7 +38,7 @@ function PrimaryAction({
   return (
     <Pill
       label={title}
-      icon="check"
+      icon={icon}
       tone="green"
       size="lg"
       onPress={onPress}
@@ -75,7 +77,7 @@ export default function DeliverScreen() {
 
   if (delivered) {
     return (
-      <DarkScreen edges={['top', 'bottom']} footer={<PrimaryAction title="Retour aux courses" onPress={goHome} testID="back-to-home" />} testID="delivery-success">
+      <DarkScreen edges={['top', 'bottom']} footer={<PrimaryAction title="Retour aux courses" icon="map" onPress={goHome} testID="back-to-home" />} testID="delivery-success">
         <StatusBar style="light" />
         <View style={styles.success}>
           <View style={styles.bigCheck}>
@@ -170,6 +172,7 @@ export default function DeliverScreen() {
       footer={
         <PrimaryAction
           title="Valider la livraison"
+          icon="check"
           onPress={submit}
           loading={busy}
           disabled={code.length !== CODE_LENGTH}

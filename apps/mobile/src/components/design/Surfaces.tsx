@@ -153,7 +153,7 @@ export function AmountRow({
 export function DarkProgress({ value, color = dark.amber }: { value: number; color?: string }) {
   const pct = Math.round(Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)) * 100);
   return (
-    <View style={styles.track} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: pct }}>
+    <View style={styles.track} accessibilityRole="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
       <View style={[styles.fill, { width: `${pct}%`, backgroundColor: color }]} />
     </View>
   );

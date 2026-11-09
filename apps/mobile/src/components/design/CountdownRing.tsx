@@ -65,7 +65,11 @@ export function CountdownRing({
     <View
       style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
       accessibilityRole="progressbar"
-      accessibilityValue={{ min: 0, max: total, now: secs, text: warning ? `${secs} s, dernières secondes` : `${secs} s` }}
+      // aria-value* : compris par Android / iOS (accessibilityValue) et par le navigateur (react-native-web).
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={secs}
+      aria-valuetext={warning ? `${secs} s, dernières secondes` : `${secs} s`}
       testID={testID}
     >
       <View style={StyleSheet.absoluteFill} pointerEvents="none">

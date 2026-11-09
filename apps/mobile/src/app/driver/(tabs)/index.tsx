@@ -218,17 +218,14 @@ export default function DriverHome() {
       {currentOrder ? (
         <CurrentOrderCard order={currentOrder} />
       ) : online ? (
-        <View style={styles.headRow}>
-          <View style={styles.flex}>
-            <View style={styles.waitTitleRow}>
-              <View style={styles.liveDot} />
-              <Text style={styles.title} accessibilityRole="header">
-                En attente de courses…
-              </Text>
-            </View>
-            <Text style={styles.muted}>Les nouvelles courses apparaissent ici avec 30 secondes pour accepter.</Text>
+        <View style={{ gap: 4 }}>
+          <View style={styles.waitTitleRow}>
+            <View style={styles.liveDot} />
+            <Text style={styles.title} accessibilityRole="header">
+              En attente de courses…
+            </Text>
           </View>
-          <GoOfflinePill onError={setError} />
+          <Text style={styles.muted}>Les nouvelles courses apparaissent ici avec 30 secondes pour accepter.</Text>
         </View>
       ) : (
         <View style={{ gap: 4 }}>
@@ -247,16 +244,20 @@ export default function DriverHome() {
       )}
 
       <TodayBlock profile={profile} earnings={today} />
+      {online && !currentOrder ? (
+        <View style={styles.offline}>
+          <GoOfflinePill onError={setError} />
+        </View>
+      ) : null}
     </LiveTrackingLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, gap: 4 },
   stretch: { alignSelf: 'stretch' },
   heavyTitle: { fontWeight: '900', letterSpacing: -0.4 },
   sosInline: { alignItems: 'center', marginTop: spacing.lg },
-  headRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  offline: { alignItems: 'center', paddingTop: 2 },
   waitTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: dark.green },
   title: { ...typeScale.subtitle, color: dark.text, fontSize: 20, fontWeight: '900' },

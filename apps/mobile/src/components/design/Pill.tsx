@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { colors, dark } from '../../theme';
 import { Icon, type IconName } from './Icon';
 import type { Surface } from './RoundButton';
@@ -39,6 +39,8 @@ export interface PillProps {
   /** Lignes du libellé (1 par défaut) ; 2 pour un texte qui ne doit jamais être coupé (indicateur légal). */
   numberOfLines?: number;
   style?: StyleProp<ViewStyle>;
+  /** Ajustement du libellé (taille…). */
+  textStyle?: StyleProp<TextStyle>;
   testID?: string;
 }
 
@@ -57,6 +59,7 @@ export function Pill({
   leading,
   numberOfLines = 1,
   style,
+  textStyle,
   testID,
 }: PillProps) {
   const t = PILL_TONES[tone];
@@ -80,7 +83,7 @@ export function Pill({
     >
       {leading}
       {loading ? <ActivityIndicator color={t.fg} size="small" /> : iconNode}
-      <Text style={[styles.text, lg && styles.textLg, numberOfLines > 1 && styles.textWrap, { color: t.fg }]} numberOfLines={numberOfLines}>
+      <Text style={[styles.text, lg && styles.textLg, numberOfLines > 1 && styles.textWrap, { color: t.fg }, textStyle]} numberOfLines={numberOfLines}>
         {label}
       </Text>
     </View>

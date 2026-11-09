@@ -7,7 +7,7 @@ import { useExpired } from '../hooks/useCountdown';
 import { errorMessage, isApiError } from '../lib/api';
 import { offerCash } from '../lib/delivery';
 import { formatOfferEta, offerPlaces, offerScene, visibleOffer, type OfferScene } from '../lib/offer';
-import { formatFcfa, formatKm, formatOrderNumber } from '../lib/format';
+import { formatFcfa, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
 import { dark, MAX_APP_WIDTH, spacing, typeScale } from '../theme';
@@ -72,11 +72,12 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
   const [busy, setBusy] = useState<'accept' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bottomHeight, setBottomHeight] = useState(0);
+  const [topHeight, setTopHeight] = useState(0);
   const places = offerPlaces(offer);
   const cash = offerCash(offer);
   const eta = formatOfferEta(offer);
   const compact = height < 720;
-  const ring = compact ? 128 : 150;
+  const ring = compact ? 120 : 136;
 
   // Nouvelle offre : vibration (téléphone uniquement).
   useEffect(() => {
@@ -96,9 +97,15 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
   const me = position ?? profile?.lastLocation ?? null;
   const meKey = me ? `${me.lat.toFixed(4)},${me.lng.toFixed(4)}` : '';
   const scene = useMemo(() => offerScene(offer, me ? { lat: me.lat, lng: me.lng } : null), [offer.id, meKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cadrage dans la fenêtre de carte laissée libre entre la pastille du haut et le bloc du bas (mesurés).
   const padding = useMemo<MapPadding>(
-    () => ({ top: insets.top + 84, right: 56, bottom: (bottomHeight || Math.round(height * 0.55)) + 16, left: 56 }),
-    [insets.top, bottomHeight, height],
+    () => ({
+      top: insets.top + spacing.md + (topHeight || 40) + 28,
+      right: 48,
+      bottom: (bottomHeight || Math.round(height * 0.55)) + 20,
+      left: 48,
+    }),
+    [insets.top, topHeight, bottomHeight, height],
   );
 
   const accept = async () => {
@@ -153,9 +160,13 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
 
   return (
     <View style={styles.root} accessibilityViewIsModal testID="offer-screen">
-      <OfferMap scene={scene} padding={padding} recenterKey={bottomHeight > 0 ? 1 : 0} />
+      <OfferMap scene={scene} padding={padding} recenterKey={bottomHeight > 0 && topHeight > 0 ? 1 : 0} />
 
-      <View style={[styles.top, { top: insets.top + spacing.md }]} pointerEvents="box-none">
+      <View
+        style={[styles.top, { top: insets.top + spacing.md }]}
+        pointerEvents="box-none"
+        onLayout={(e) => setTopHeight(Math.round(e.nativeEvent.layout.height))}
+      >
         <Pill
           label={`Nouvelle course · ${LABELS.vehicleType[offer.vehicleType]}`}
           icon={<ArtView rects={vehicleSideGlyph(offer.vehicleType, dark.text, dark.surface)} size={22} />}
@@ -164,18 +175,20 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           accessibilityLabel={`Nouvelle course, ${LABELS.vehicleType[offer.vehicleType]}`}
           testID="offer-title"
         />
-        {eta ? <Pill label={eta} icon="clock" tone="dark" floating accessibilityLabel={`Retrait à ${eta.replace('≈', 'environ')}`} testID="offer-eta" /> : null}
       </View>
 
       <View style={styles.bottom} onLayout={(e) => setBottomHeight(Math.round(e.nativeEvent.layout.height))}>
         <View style={styles.actions}>
+          {eta ? (
+            <Pill label={eta} icon="clock" tone="dark" floating accessibilityLabel={`Retrait à ${eta.replace('≈', 'environ')}`} testID="offer-eta" />
+          ) : null}
           <CountdownRing startAt={offer.offeredAt} endAt={offer.expiresAt} size={ring} strokeWidth={compact ? 7 : 8} testID="offer-countdown">
             {({ secondsLeft }) => (
               <RoundButton
                 label={expired ? 'Expirée' : 'Accepter'}
                 caption={expired ? null : `${secondsLeft} s`}
                 icon="check"
-                diameter={ring - 24}
+                diameter={ring - 22}
                 tone="primary"
                 surface="dark"
                 labelInside
@@ -208,7 +221,9 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
               <Text style={[typeScale.kicker, styles.kicker]} accessibilityRole="header">
                 Détails de la course
               </Text>
-              <Text style={styles.number}>{formatOrderNumber(offer.orderNumber)}</Text>
+              <Text style={styles.facts} testID="offer-vehicle" numberOfLines={1}>
+                {LABELS.vehicleType[offer.vehicleType]} · {formatKm(offer.distanceKm)} de course
+              </Text>
             </View>
             {error ? (
               <Text style={styles.error} accessibilityRole="alert">
@@ -219,7 +234,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
             <View style={styles.money}>
               <View style={[styles.moneyBox, styles.earning]} testID="offer-earning">
                 <Text style={styles.moneyLabel}>Votre gain</Text>
-                <Text style={[styles.earningValue, compact && { fontSize: 24 }]} numberOfLines={1} adjustsFontSizeToFit>
+                <Text style={[styles.earningValue, compact && { fontSize: 22 }]} numberOfLines={1} adjustsFontSizeToFit>
                   {formatFcfa(offer.driverEarning)}
                 </Text>
               </View>
@@ -265,13 +280,6 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
                 </Text>
               </View>
             </View>
-
-            <View style={styles.facts}>
-              <Icon name="route" size={16} color={dark.textMuted} />
-              <Text style={styles.factsText} testID="offer-vehicle">
-                {LABELS.vehicleType[offer.vehicleType]} · {formatKm(offer.distanceKm)} de course
-              </Text>
-            </View>
           </ScrollView>
         </SheetSurface>
       </View>
@@ -285,23 +293,14 @@ const styles = StyleSheet.create({
   // Sur le web, la fenêtre modale couvre tout l'écran : la colonne garde la largeur de l'application.
   frame: { flex: 1, width: '100%', maxWidth: MAX_APP_WIDTH, overflow: 'hidden' },
   root: { flex: 1, backgroundColor: dark.background },
-  top: {
-    position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
+  top: { position: 'absolute', left: spacing.md, right: spacing.md, alignItems: 'center' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: spacing.md },
-  actions: { alignItems: 'center', gap: spacing.md },
+  actions: { alignItems: 'center', gap: 10 },
   sheet: { paddingTop: spacing.lg },
   details: { gap: spacing.md },
-  detailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  detailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   kicker: { color: dark.textMuted },
-  number: { color: dark.textFaint, fontWeight: '800', fontSize: 13, fontVariant: ['tabular-nums'] },
+  facts: { flexShrink: 1, color: dark.textMuted, fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
   error: {
     color: dark.red,
     backgroundColor: dark.redSoft,
@@ -315,8 +314,8 @@ const styles = StyleSheet.create({
   earning: { backgroundColor: dark.greenSoft },
   cash: { backgroundColor: dark.amberSoft },
   moneyLabel: { color: dark.textMuted, fontSize: 12.5, fontWeight: '800' },
-  earningValue: { color: dark.green, fontSize: 28, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
-  cashValue: { color: dark.amber, fontSize: 20, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 4 },
+  earningValue: { color: dark.green, fontSize: 26, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
+  cashValue: { color: dark.amber, fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 3 },
   cashSplit: { color: dark.amber, fontSize: 11.5, fontWeight: '700', fontVariant: ['tabular-nums'], opacity: 0.9 },
   stop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   stopIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
@@ -325,6 +324,4 @@ const styles = StyleSheet.create({
   stopTitle: { color: dark.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
   stopLine: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },
   connector: { width: 2, height: 10, marginLeft: 17, marginVertical: -6, borderRadius: 1, backgroundColor: dark.border },
-  facts: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: 2 },
-  factsText: { color: dark.textMuted, fontSize: 13, fontWeight: '800' },
 });

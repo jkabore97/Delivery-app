@@ -26,7 +26,7 @@ export default function DriverEarnings() {
       {!e ? <Loading /> : null}
       {e ? (
         <>
-          <Row>
+          <Row style={styles.stats}>
             <Stat value={formatFcfa(e.today.earnings)} label={`Gains du jour · ${e.today.deliveries} course(s)`} color={colors.green} />
             <Stat value={formatFcfa(e.allTime.earnings)} label={`Total · ${e.allTime.deliveries} course(s)`} />
           </Row>
@@ -62,4 +62,8 @@ export default function DriverEarnings() {
   );
 }
 
-const styles = StyleSheet.create({ title: { fontWeight: '900', letterSpacing: -0.4 } });
+const styles = StyleSheet.create({
+  title: { fontWeight: '900', letterSpacing: -0.4 },
+  // Cartes de même hauteur, même si un libellé passe sur deux lignes.
+  stats: { alignItems: 'stretch' },
+});

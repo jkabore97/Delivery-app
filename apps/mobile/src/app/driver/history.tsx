@@ -44,6 +44,7 @@ export default function DriverHistory() {
             name={o.store?.name ?? 'Colis'}
             meta={[o.deliveredAt ? formatDateTime(o.deliveredAt) : null, formatKm(o.distanceKm)].filter(Boolean).join(' · ')}
             description={o.cashCollected !== null && o.cashCollected > 0 ? `Encaissé ${formatFcfa(o.cashCollected)}` : null}
+            descriptionIcon="cash"
             amount={o.driverEarning !== null ? { label: 'Votre gain', value: o.driverEarning, tone: 'green' } : null}
             testID={`history-${o.id}`}
           />
