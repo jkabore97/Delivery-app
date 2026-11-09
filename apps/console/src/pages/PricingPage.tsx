@@ -138,7 +138,7 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
               setDraft((d) => ({ ...d, isActive: e.target.checked }));
             }}
           />
-          Proposé aux clients
+          Proposé aux entreprises
         </label>
         <div className="preview" aria-live="polite">
           {parsed.ok ? (
@@ -152,7 +152,7 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
           )}
         </div>
         <ErrorBanner message={error} />
-        {saved && !dirty && <div className="alert alert-success">Tarif enregistré (nouvelles commandes uniquement).</div>}
+        {saved && !dirty && <div className="alert alert-success">Tarif enregistré (nouvelles livraisons uniquement).</div>}
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" disabled={!dirty || busy} onClick={() => setDraft(draftFromRule(rule))}>
             Annuler
@@ -176,7 +176,7 @@ export function PricingPage() {
       <h1>Tarifs</h1>
       <p className="muted">
         Prix de livraison = max(minimum, prise en charge + prix/km × distance routière estimée), arrondi aux 50 FCFA
-        supérieurs. Les changements s’appliquent aux nouveaux devis et commandes.
+        supérieurs. Les changements s’appliquent aux nouveaux devis et livraisons.
       </p>
       <ErrorBanner message={rules.error} onRetry={() => rules.reload()} />
       {rules.loading && !rules.data ? (

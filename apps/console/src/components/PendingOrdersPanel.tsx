@@ -30,7 +30,7 @@ export function PendingOrdersPanel({
 
   return (
     <Card
-      title="Commandes en attente"
+      title="Livraisons en attente"
       aside={
         <span className="muted">
           {orders.length > 0 ? `${orders.length} en attente · ` : ''}Affectation auto activée
@@ -38,7 +38,7 @@ export function PendingOrdersPanel({
       }
     >
       {orders.length === 0 ? (
-        <Empty>Aucune commande en attente de livreur.</Empty>
+        <Empty>Aucune livraison en attente de livreur.</Empty>
       ) : (
         <table className="table table-compact">
           <thead>
@@ -96,7 +96,7 @@ export function PendingOrdersPanel({
       )}
       {limit && orders.length > limit && (
         <p className="card-foot">
-          <Link to="/courses?status=SEARCHING_DRIVER">Voir les {orders.length} commandes en attente →</Link>
+          <Link to="/courses?status=SEARCHING_DRIVER">Voir les {orders.length} livraisons en attente →</Link>
         </p>
       )}
       {assigning && (

@@ -12,14 +12,14 @@ export const MAP_SAFETY_REFRESH_MS = 60_000;
  * (docs/API.md, « Mode polling (Vercel) »). Jamais plus rapide que `pollIntervalMs` de GET /config.
  * Budget (offre Hobby de Vercel : 1 M d'appels de fonction par mois) : une console ouverte sur la carte
  * en direct, sans activité, fait ≈ 0,32 requête/s (carte 0,1 + file 0,1 + alertes 0,067 + indicateurs
- * 0,033 + boutiques à valider 0,017), les préflights CORS étant mis en cache 2 h ; puis plus rien après
- * IDLE_PAUSE_MS d'inactivité.
+ * 0,033 + entreprises à valider 0,017), les préflights CORS étant mis en cache 2 h ; puis plus rien après
+ * IDLE_PAUSE_MS d'inactivité. Les cartes animent les livreurs entre deux réponses, sans requête de plus.
  */
 export const POLL_MS = {
   map: 10_000,
   pendingOrders: 10_000,
   dashboard: 30_000,
-  /** Compteur des boutiques à valider (pastille « Vendeurs ») : rarement modifié. */
+  /** Compteur des entreprises à valider (pastille « Entreprises ») : rarement modifié. */
   pendingStores: 60_000,
   /** Alertes partagées (SOS de l'en-tête + panneau de la carte) : une seule requête OPEN,IN_PROGRESS. */
   incidents: 15_000,

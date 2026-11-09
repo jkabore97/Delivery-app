@@ -8,7 +8,7 @@ import { Badge, Empty, ErrorBanner, Loading, Modal } from './ui';
 
 /** Raison pour laquelle un livreur ne peut pas être affecté (null = affectable). */
 export function candidateBlocker(c: DriverCandidateDto): string | null {
-  // L'API refuse l'affectation d'un livreur hors ligne (409 DRIVER_OFFLINE) : il ne voit pas la course.
+  // L'API refuse l'affectation d'un livreur hors ligne (409 DRIVER_OFFLINE) : il ne voit pas la livraison.
   if (!c.isOnline) return 'Hors ligne : appelez-le pour qu’il se connecte';
   if (c.isBusy) return 'Déjà en course';
   if (c.cashBlocked) return 'Plafond de cash atteint';
@@ -19,7 +19,7 @@ export interface AssignDialogProps {
   orderId: string;
   orderNumber: number;
   vehicleType: VehicleType;
-  /** Réaffectation d'une course déjà ASSIGNED. */
+  /** Réaffectation d'une livraison déjà ASSIGNED. */
   reassign?: boolean;
   onClose: () => void;
   onAssigned: () => void;
@@ -48,7 +48,7 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
 
   return (
     <Modal
-      title={`${reassign ? 'Réaffecter' : 'Affecter'} la course #${orderNumber} · ${LABELS.vehicleType[vehicleType]}`}
+      title={`${reassign ? 'Réaffecter' : 'Affecter'} la livraison #${orderNumber} · ${LABELS.vehicleType[vehicleType]}`}
       onClose={onClose}
       wide
     >

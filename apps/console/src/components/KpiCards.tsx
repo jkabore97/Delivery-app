@@ -20,7 +20,7 @@ export function buildKpis(d: DashboardDto): Kpi[] {
       tone: 'green',
     },
     {
-      label: 'Courses en cours',
+      label: 'Livraisons en cours',
       value: String(d.activeOrders),
       sub: `${d.cancelledToday} annulée${d.cancelledToday > 1 ? 's' : ''} aujourd'hui`,
       tone: 'muted',

@@ -19,6 +19,7 @@ import {
   isTerminal,
   roadDistanceKm,
   type AddressDto,
+  type BusinessBalanceDto,
   type OrderDto,
   type OrderListQuery,
   type Paginated,
@@ -61,20 +62,6 @@ export const TRACKING_NOT_FOUND = 'Lien de suivi introuvable ou expiré';
 
 export function newTrackingToken(): string {
   return randomBytes(TRACKING_TOKEN_BYTES).toString('base64url');
-}
-
-/** Solde dû à une entreprise (marchandise encaissée par les livreurs pour son compte). */
-export interface BusinessBalanceDto {
-  storeId: string;
-  storeName: string;
-  ownerId: string;
-  ownerName: string | null;
-  phone: string | null;
-  /** Somme des montants encaissés pour l'entreprise sur les livraisons livrées (FCFA). */
-  owedTotal: number;
-  /** Livraisons livrées avec de la marchandise encaissée. */
-  deliveries: number;
-  lastDeliveredAt: string | null;
 }
 
 export interface DeliveryServiceOptions {

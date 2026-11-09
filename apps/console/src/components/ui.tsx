@@ -8,6 +8,7 @@ import {
   type VehicleType,
 } from '@yaar/shared';
 import { errorMessage } from '../api/client';
+import { statusLabel } from '../lib/delivery';
 
 export type Tone = 'green' | 'orange' | 'red' | 'blue' | 'grey';
 
@@ -30,8 +31,9 @@ const ORDER_TONE: Record<OrderStatus, Tone> = {
   CANCELLED: 'grey',
 };
 
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
-  return <Badge tone={ORDER_TONE[status]}>{LABELS.orderStatus[status]}</Badge>;
+/** `business` : livraison d'entreprise (l'étape PENDING n'attend pas de vendeur). */
+export function OrderStatusBadge({ status, business = false }: { status: OrderStatus; business?: boolean }) {
+  return <Badge tone={ORDER_TONE[status]}>{statusLabel(status, business)}</Badge>;
 }
 
 const DRIVER_TONE: Record<DriverStatus, Tone> = {

@@ -150,8 +150,8 @@ describe('Session', () => {
 
 /* ------------------------------ Courses ------------------------------ */
 
-describe('Fiche course', () => {
-  it('annule une course avec motif', async () => {
+describe('Fiche livraison', () => {
+  it('annule une livraison avec motif', async () => {
     const u = userEvent.setup();
     const r = onRoute('/courses/ord-1', <OrderDetailPage />, '/courses/:id');
     const { calls } = renderWithProviders(r.ui, {
@@ -161,17 +161,17 @@ describe('Fiche course', () => {
         'POST /orders/ord-1/cancel': order({ status: 'CANCELLED', cancelReason: 'Client injoignable' }),
       },
     });
-    await u.click(await screen.findByRole('button', { name: 'Annuler la course' }));
+    await u.click(await screen.findByRole('button', { name: 'Annuler la livraison' }));
     const dialog = screen.getByRole('dialog');
     await u.type(within(dialog).getByRole('textbox'), 'Client injoignable');
-    await u.click(within(dialog).getByRole('button', { name: 'Annuler la course' }));
+    await u.click(within(dialog).getByRole('button', { name: 'Annuler la livraison' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(posts(calls)).toEqual([
       expect.objectContaining({ method: 'POST', path: '/orders/ord-1/cancel', body: { reason: 'Client injoignable' } }),
     ]);
   });
 
-  it('réaffecte une course déjà affectée', async () => {
+  it('réaffecte une livraison déjà affectée', async () => {
     const u = userEvent.setup();
     const r = onRoute('/courses/ord-1', <OrderDetailPage />, '/courses/:id');
     const assigned = order({

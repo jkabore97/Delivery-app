@@ -675,3 +675,29 @@ export interface TrackingDto {
   cancelledAt: IsoDateString | null;
   updatedAt: IsoDateString;
 }
+
+/* ------------------------------------------------------------------ */
+/* Soldes dus aux entreprises (console)                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /controller/cash/businesses (back office) : ce que la plateforme doit à une entreprise, c'est-à-dire la
+ * marchandise encaissée par les livreurs pour son compte (`cashToCollect` des livraisons livrées). Liste triée du
+ * montant le plus élevé au plus bas. Pas encore de suivi des reversements : `owedTotal` est un cumul depuis le
+ * début, les sommes déjà reversées à l'entreprise n'en sont pas déduites.
+ */
+export interface BusinessBalanceDto {
+  /** Boutique validée qui sert de profil d'entreprise. */
+  storeId: string;
+  storeName: string;
+  /** Compte de l'entreprise (rôle SELLER). */
+  ownerId: string;
+  ownerName: string | null;
+  /** Téléphone de l'entreprise (boutique), sinon celui du compte. */
+  phone: string | null;
+  /** Somme des montants encaissés pour l'entreprise sur les livraisons livrées (FCFA). */
+  owedTotal: number;
+  /** Livraisons livrées avec de la marchandise encaissée. */
+  deliveries: number;
+  lastDeliveredAt: IsoDateString | null;
+}

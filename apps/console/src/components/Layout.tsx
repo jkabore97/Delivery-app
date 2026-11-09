@@ -18,7 +18,7 @@ interface NavItem {
 
 /**
  * Destination de la recherche globale : une plaque d'immatriculation mène aux livreurs ;
- * le reste (n° de course, nom, téléphone client) aux courses, qui proposent aussi
+ * le reste (n° de livraison, nom ou téléphone du compte demandeur) aux livraisons, qui proposent aussi
  * « chercher parmi les livreurs ».
  */
 export function searchTarget(q: string): string {
@@ -68,15 +68,15 @@ export function Layout() {
 
   const items: NavItem[] = [
     { to: '/', icon: '🗺️', label: 'Carte en direct', end: true },
-    { to: '/courses', icon: '📦', label: 'Courses', badge: dashboard?.waitingForDriver },
+    { to: '/courses', icon: '📦', label: 'Livraisons', badge: dashboard?.waitingForDriver },
+    { to: '/entreprises', icon: '🏢', label: 'Entreprises', badge: pendingStores ?? undefined },
     { to: '/livreurs', icon: '🛵', label: 'Livreurs' },
     { to: '/kyc', icon: '🪪', label: 'Validation KYC', badge: dashboard?.pendingKyc },
-    { to: '/vendeurs', icon: '🏪', label: 'Vendeurs', badge: pendingStores ?? undefined },
-    { to: '/clients', icon: '👥', label: 'Clients' },
     { to: '/incidents', icon: '⚠️', label: 'Litiges & SOS', badge: dashboard?.openIncidents },
-    { to: '/caisse', icon: '💵', label: 'Caisse livreurs', badge: dashboard?.driversAtCashLimit },
+    { to: '/caisse', icon: '💵', label: 'Caisse', badge: dashboard?.driversAtCashLimit },
     { to: '/tarifs', icon: '🏷️', label: 'Tarifs' },
     { to: '/audit', icon: '🔐', label: "Journal d'audit" },
+    { to: '/clients', icon: '👥', label: 'Anciens comptes clients' },
     { to: '/equipe', icon: '🧑‍💼', label: 'Équipe', adminOnly: true },
   ];
 
@@ -135,7 +135,7 @@ export function Layout() {
             <input
               type="search"
               aria-label="Rechercher"
-              placeholder="🔍 Rechercher une course (n°), un livreur (téléphone, plaque)…"
+              placeholder="🔍 Rechercher une livraison (n°, compte demandeur), un livreur (plaque)…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

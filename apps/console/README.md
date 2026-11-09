@@ -1,11 +1,16 @@
 # Yaar Console (contrôleurs)
 
-Console web du back office Yaar Livraison : supervision en temps réel des livreurs et des courses,
-affectation manuelle, validation des dossiers KYC, caisse livreurs, tarifs, litiges/SOS et journal d'audit.
-Interface en français, montants en FCFA. Maquette de référence : `docs/mockups/2-console-controleur.png`.
+Console web du back office Yaar Livraison (modèle B2B, docs/API.md « Livraisons d'entreprise ») : des entreprises
+demandent des livraisons vers des destinataires sans compte, qui suivent le livreur par un lien public. La console
+supervise en temps réel les livreurs et les livraisons, affecte à la main, valide les entreprises et les dossiers KYC,
+tient la caisse (espèces des livreurs, montants dus aux entreprises), les tarifs, les litiges/SOS et le journal
+d'audit. Interface en français, montants en FCFA. Maquette de référence : `docs/mockups/2-console-controleur.png`.
+L'ancien parcours de commande client (repas, produits, panier) est abandonné : ses commandes restent lisibles
+(articles affichés seulement pour elles).
 
-Stack : React 19 + Vite 8 + TypeScript strict, react-router 7, Leaflet + tuiles OpenStreetMap,
-socket.io-client 4, `@yaar/shared` (types, enums, libellés, schémas zod, calcul de prix).
+Stack : React 19 + Vite 8 + TypeScript strict, react-router 7, MapLibre GL JS 5 (style OpenFreeMap « positron »,
+chargé à la demande), socket.io-client 4, `@yaar/shared` (types, enums, libellés, schémas zod, calcul de prix,
+géométrie des cartes `map.ts`).
 Contrat d'API : [`docs/API.md`](../../docs/API.md).
 
 ## Lancer en local
@@ -36,28 +41,48 @@ Seuls les comptes `CONTROLLER` et `ADMIN` sont acceptés ; les autres rôles son
 | `npm run build` | vérification de types puis build de production dans `dist/` |
 | `npm run preview` | sert le build |
 
-Configuration (variables Vite, lues au build) : `VITE_API_URL`, URL de l'API REST et Socket.IO.
-En production, mettre l'origine de la console dans `CORS_ORIGINS` côté API.
+Configuration (variables Vite, lues au build) : `VITE_API_URL`, URL de l'API REST et Socket.IO ; facultatif
+`VITE_MAP_STYLE_URL` (style MapLibre, défaut `https://tiles.openfreemap.org/styles/positron`) et `VITE_MAP_ATTRIBUTION`
+(mention des données pour un autre style). En production, mettre l'origine de la console dans `CORS_ORIGINS` côté API.
+
+## Cartes (MapLibre)
+
+Même apparence que l'application mobile (`apps/mobile/src/lib/map`, `components/map`) : style vectoriel gratuit
+OpenFreeMap « positron » ; s'il échoue ou n'est pas chargé après 6 s, **fond de secours embarqué** (fond clair, noms
+des quartiers de Ouagadougou ; marqueurs et itinéraires toujours affichés) et mention « Fond de carte indisponible ».
+Mention des données toujours visible. MapLibre (≈ 1 Mo, 275 Ko gzip, + 10 Ko de CSS) est un bloc séparé chargé par la
+première carte affichée (`src/lib/map/engine.ts` → `maplibreModule.ts`) : l'écran de connexion ne le télécharge pas.
+
+- Marqueurs : entreprise = carré orange arrondi (estompé si fermée) ; destinataire d'une livraison en cours = épingle
+  verte ; livreur = pastille ronde, véhicule (vélo, moto, voiture) toujours droit et petite flèche séparée orientée
+  selon `heading`, anneau vert = libre, bleu = en livraison ; livraison en attente d'un livreur = anneaux rouges
+  pulsés au retrait + numéro cliquable ; SOS = point rouge pulsé + nom.
+- Étape en cours d'un livreur occupé : `MapOrderDto.route` en vert à liseré blanc, rogné à la position du livreur ;
+  pointillés jusqu'à la cible sans itinéraire ou avec la ligne droite de secours (`source: straight`).
+- Entre deux rafraîchissements (10 s), les livreurs glissent vers leur nouvelle position en 1,5 s (requestAnimationFrame,
+  `src/lib/map/motion.ts`) ; la caméra ne bouge jamais d'elle-même (cadrage initial et bouton « Recentrer »). Aucune
+  requête de plus : le budget de polling est inchangé.
+- Fiche de livraison : petite carte (retrait, destinataire, livreur, itinéraire), recadrée à chaque changement d'étape.
 
 ## Écrans
 
 | Route | Écran |
 |---|---|
 | `/connexion` | téléphone + code SMS (OTP) |
-| `/` | **Carte en direct** : 6 cartes KPI, carte Leaflet (livreurs libres en vert, en course en bleu avec trait vers la destination, vendeurs en orange, commandes en attente en rouge, SOS clignotants), filtre Vélo/Moto/Voiture, commandes en attente avec compteur d'attente et bouton « Affecter », dossiers KYC à valider (lien « Vérifier » vers la fiche : aucune validation en un clic), alertes (incidents `OPEN` + `IN_PROGRESS`) |
-| `/courses`, `/courses/:id` | liste filtrable (statut, type, recherche n°/téléphone/nom) ; fiche avec trajet + repères, intervenants, montants (commission, gain livreur, reversement vendeur), chronologie des statuts, affecter/réaffecter, annuler avec motif, photo de livraison |
+| `/` | **Carte en direct** : 6 cartes KPI, carte MapLibre (cf. « Cartes »), filtre Vélo/Moto/Voiture, légende, livraisons en attente avec compteur d'attente et bouton « Affecter », dossiers KYC à valider (lien « Vérifier » vers la fiche : aucune validation en un clic), alertes (incidents `OPEN` + `IN_PROGRESS`) |
+| `/courses`, `/courses/:id` | **Livraisons** : liste filtrable (statut, type, recherche n° / nom ou téléphone du compte demandeur) avec entreprise, destinataire, statut, véhicule, montant, arrivée estimée, création ; fiche avec carte (itinéraire + livreur), entreprise expéditrice, retrait, destinataire (étiquette « entreprise »), colis, véhicule, frais et qui les paie (entreprise au retrait / destinataire à la livraison), marchandise à encaisser, dû à l'entreprise, lien de suivi du destinataire (ouvrir / copier), chronologie, affecter/réaffecter, annuler, valider sans code, réinitialiser le code, photo de livraison. Ancienne commande repas : articles, client et vendeur |
+| `/entreprises` | **Entreprises** (ancienne adresse `/vendeurs` redirigée) : file de validation des profils d'entreprise (une entreprise doit être validée avant de demander des livraisons), refus / suspension avec motif, comptes des entreprises (suspendre / réactiver) |
 | `/livreurs`, `/livreurs/:id` | liste (statut, véhicule, en ligne, recherche) ; fiche avec pièces, visionneuse, valider (fenêtre de confirmation qui signale les pièces non ouvertes) / refuser / suspendre / réintégrer, liens vers le journal d'audit |
 | `/kyc`, `/kyc/:id` | file des dossiers `PENDING` (FIFO) avec pastilles ✓ / expirée / manquante ; même fiche de revue |
-| `/vendeurs` | boutiques (ouvrir/fermer, commission %) et comptes vendeurs (suspendre/réactiver) |
-| `/clients` | comptes clients (suspendre avec motif / réactiver) |
+| `/clients` | anciens comptes clients du parcours de commande abandonné (suspendre avec motif / réactiver) |
 | `/incidents` | SOS, litiges (filtre « Ouvert » par défaut) : prise en charge, résolution avec note, appel du déclarant |
-| `/caisse` | cash détenu, livreurs au plafond, enregistrement d'un versement, grand livre par livreur |
+| `/caisse` | cash détenu, livreurs au plafond, enregistrement d'un versement, grand livre par livreur ; **à reverser aux entreprises** (`GET /controller/cash/businesses`, lecture seule : pas encore de reversement dans l'API) |
 | `/tarifs` | grille par véhicule (prise en charge, prix/km, minimum, commission, actif) avec aperçu `computeDeliveryPrice` |
 | `/audit` | journal d'audit filtrable (action, objet, n° d'objet ; filtres repris de l'URL, libellés français) |
 | `/equipe` | (ADMIN) création de comptes contrôleur/administrateur |
 
-La recherche du bandeau ouvre `/courses?q=…` (une plaque d'immatriculation ouvre `/livreurs?q=…`, et la liste des courses propose « chercher parmi les livreurs »). Les filtres lus dans l'URL sont validés : une valeur inconnue est ignorée. Les pastilles du menu viennent de `GET /controller/dashboard`
-(courses en attente, dossiers KYC, incidents ouverts, livreurs au plafond).
+La recherche du bandeau ouvre `/courses?q=…` (une plaque d'immatriculation ouvre `/livreurs?q=…`, et la liste des livraisons propose « chercher parmi les livreurs »). Les filtres lus dans l'URL sont validés : une valeur inconnue est ignorée. Les pastilles du menu viennent de `GET /controller/dashboard`
+(livraisons en attente, dossiers KYC, incidents ouverts, livreurs au plafond) et de `GET /controller/stores?approvalStatus=PENDING` (entreprises à valider).
 
 ## Temps réel
 
@@ -78,8 +103,8 @@ Quand `GET /config` répond `realtime: "poll"`, aucun socket n'est ouvert : chaq
 (docs/API.md, « Mode polling (Vercel) »), jamais plus vite que `pollIntervalMs`, et plus du tout quand l'onglet est
 masqué. Rythmes (`src/config.ts`, `POLL_MS`) : carte et file d'attente 10 s, alertes 15 s (une seule requête
 `status=OPEN,IN_PROGRESS` partagée par les toasts SOS de l'en-tête et le panneau de la carte, `IncidentsProvider`),
-indicateurs 30 s, boutiques à valider 60 s, fiche de course 10 s ; la file KYC de la carte n'est rechargée que
-quand sa pastille change. Une console inactive sur la carte coûte ≈ 0,32 requête/s (quota Vercel Hobby : 1 M
+indicateurs 30 s, entreprises à valider 60 s, fiche de livraison 10 s, caisse 30 s ; la file KYC de la carte n'est
+rechargée que quand sa pastille change, et « à reverser aux entreprises » quand le cash détenu change (ou « Actualiser »). Une console inactive sur la carte coûte ≈ 0,32 requête/s (quota Vercel Hobby : 1 M
 d'appels par mois). Après **15 min sans interaction** (souris, clavier, toucher, changement d'onglet), plus aucune
 requête et un bandeau « Actualisation en pause (inactivité) — cliquez pour reprendre » ; toute interaction relance
 aussitôt un rafraîchissement (`src/realtime/idle.ts`). Tests de bout en bout uniquement : `window.__YAAR_IDLE_PAUSE_MS__`
@@ -101,11 +126,14 @@ src/
   auth/AuthContext.tsx   session (jeton + utilisateur), contrôle du rôle
   realtime/              RealtimeProvider (socket.io), useSocketEvent, bus mémoire pour les tests
   hooks/                 useAsync (chargement + anti-course), anti-rebond, DashboardProvider
-  lib/                   formatage FR, état de carte (fonctions pures), règles KYC
-  components/            Layout, KPI, LiveMap (Leaflet), panneaux, dialogues, visionneuse
+  lib/                   formatage FR, état de carte, règles KYC, livraisons d'entreprise (delivery.ts)
+  lib/map/               MapLibre : style et secours, scène (fonctions pures), marqueurs DOM, animation, contrôleur
+  components/            Layout, KPI, LiveMap et DeliveryMap (MapLibre), panneaux, dialogues, visionneuse
   pages/                 un fichier par écran
-test/                    vitest + Testing Library (fetch simulé, bus temps réel en mémoire, Leaflet simulé)
+test/                    vitest + Testing Library (fetch simulé, bus temps réel en mémoire, MapLibre simulé)
 ```
 
-Les tests n'ont besoin ni de l'API ni du réseau : `fetch` est simulé (`test/helpers.tsx`) et la carte Leaflet est
-remplacée par un composant de substitution dans les tests de pages.
+Les tests n'ont besoin ni de l'API ni du réseau : `fetch` est simulé (`test/helpers.tsx`) ; la carte en direct est
+remplacée par un composant de substitution dans les tests de pages (jsdom n'a pas WebGL), la logique des cartes est
+testée sans navigateur (`test/map.test.ts` : scènes, itinéraires, marqueurs, contrôleur avec un MapLibre simulé ;
+`test/motion.test.ts` : glissement des livreurs avec des minuteries simulées).

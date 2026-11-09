@@ -22,6 +22,7 @@ import {
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
+import { roleLabel } from '../lib/delivery';
 import { formatDateTime, formatPhone, formatRelative } from '../lib/format';
 import { POLL_MS } from '../config';
 import { usePolling, useSocketEvent } from '../realtime/RealtimeContext';
@@ -120,13 +121,13 @@ export function IncidentsPage() {
                   </span>
                   {i.orderId && (
                     <Link to={`/courses/${i.orderId}`} className="small">
-                      Course #{i.orderNumber}
+                      Livraison #{i.orderNumber}
                     </Link>
                   )}
                 </div>
                 <p className="incident-desc">{i.description || <span className="muted">Sans description</span>}</p>
                 <div className="incident-meta small">
-                  {LABELS.role[i.reporter.role]} : {i.reporter.name ?? 'Sans nom'} ·{' '}
+                  {roleLabel(i.reporter.role)} : {i.reporter.name ?? 'Sans nom'} ·{' '}
                   <a href={`tel:${i.reporter.phone}`}>{formatPhone(i.reporter.phone)}</a>
                   {i.lat !== null && i.lng !== null && (
                     <>
@@ -180,7 +181,7 @@ export function IncidentsPage() {
         <ReasonDialog
           title={`Résoudre : ${LABELS.incidentType[resolving.type]}`}
           label="Note de résolution"
-          placeholder="Ex. : livreur dépanné, client remboursé"
+          placeholder="Ex. : livreur dépanné, entreprise remboursée"
           confirmLabel="Marquer résolu"
           danger={false}
           required={false}

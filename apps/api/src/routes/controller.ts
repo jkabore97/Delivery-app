@@ -20,6 +20,7 @@ import {
   userListQuerySchema,
   vehicleTypeSchema,
   type AuditLogDto,
+  type BusinessBalanceDto,
   type CashLedgerEntryDto,
   type CashOverviewDto,
   type DashboardDto,
@@ -43,7 +44,6 @@ import { sendFile } from '../lib/files';
 import { iso, isoOrNull, startOfDayUtc } from '../lib/time';
 import { pageArgs, paginated, parse } from '../lib/validation';
 import { AuditAction, writeAudit } from '../services/audit';
-import type { BusinessBalanceDto } from '../services/deliveries';
 import { headingForDto } from '../services/heading';
 import { ratingStats } from '../services/ratings';
 import { currentRoute, toRouteDto } from '../services/routes';

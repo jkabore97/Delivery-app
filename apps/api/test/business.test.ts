@@ -5,6 +5,7 @@ import {
   formatFcfa,
   roadDistanceKm,
   type ApiErrorBody,
+  type BusinessBalanceDto,
   type CashLedgerEntryDto,
   type DriverEarningsDto,
   type OfferDto,
@@ -12,7 +13,6 @@ import {
   type Paginated,
   type QuoteResponse,
 } from '@yaar/shared';
-import type { BusinessBalanceDto } from '../src/services/deliveries';
 import {
   call,
   createBusiness,

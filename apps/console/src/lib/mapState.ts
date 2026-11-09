@@ -22,7 +22,14 @@ export function applyDriverLocation(state: MapDataDto, e: DriverLocationEvent): 
   if (idx === -1) return { state, needsRefetch: true };
   const drivers = state.drivers.slice();
   const prev = drivers[idx] as MapDriverDto;
-  drivers[idx] = { ...prev, lat: e.lat, lng: e.lng, lastLocationAt: e.at, activeOrderId: e.orderId };
+  drivers[idx] = {
+    ...prev,
+    lat: e.lat,
+    lng: e.lng,
+    lastLocationAt: e.at,
+    activeOrderId: e.orderId,
+    heading: e.heading ?? prev.heading ?? null,
+  };
   return { state: { ...state, drivers }, needsRefetch: false };
 }
 
@@ -51,9 +58,4 @@ export type VehicleFilter = 'ALL' | VehicleType;
 
 export function filterDrivers(drivers: readonly MapDriverDto[], filter: VehicleFilter): MapDriverDto[] {
   return filter === 'ALL' ? drivers.slice() : drivers.filter((d) => d.vehicleType === filter);
-}
-
-/** Couleur du marqueur livreur (légende de la maquette : vert = libre, bleu = en course). */
-export function driverColor(d: Pick<MapDriverDto, 'isBusy'>): string {
-  return d.isBusy ? '#2563EB' : '#0B7A4B';
 }

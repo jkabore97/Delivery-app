@@ -9,7 +9,7 @@ import { DriverDetailPage } from '../src/pages/DriverDetailPage';
 import { controllerUser, renderWithProviders } from './helpers';
 import { dashboard, driverProfile, mapData, pendingOrder, sos } from './fixtures';
 
-// Leaflet a besoin d'un vrai moteur de rendu : la carte est remplacée par un résumé testable.
+// MapLibre a besoin de WebGL : la carte est remplacée par un résumé testable.
 vi.mock('../src/components/LiveMap', () => ({
   LiveMap: ({ data, filter }: { data: { drivers: unknown[]; openSos: Array<{ id: string }> }; filter: string }) => (
     <div data-testid="map">

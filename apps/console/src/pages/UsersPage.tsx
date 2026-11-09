@@ -12,6 +12,7 @@ import { useApi, useAuth } from '../auth/AuthContext';
 import { Badge, Card, Empty, ErrorBanner, Loading, Pagination, ReasonDialog, type Tone } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync } from '../hooks/useAsync';
+import { roleLabel } from '../lib/delivery';
 import { formatDate, formatPhone } from '../lib/format';
 
 const PAGE_SIZE = 20;
@@ -114,7 +115,7 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
                   <td>
                     <a href={`tel:${u.phone}`}>{formatPhone(u.phone)}</a>
                   </td>
-                  <td>{LABELS.role[u.role]}</td>
+                  <td>{roleLabel(u.role)}</td>
                   <td>{formatDate(u.createdAt)}</td>
                   <td>
                     {u.isSuspended ? (
@@ -159,10 +160,18 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
   );
 }
 
+/**
+ * Comptes clients de l'ancien parcours de commande (abandonné) : les destinataires des livraisons d'entreprise
+ * n'ont pas de compte. L'écran sert encore à suspendre / réactiver ces comptes.
+ */
 export function ClientsPage() {
   return (
     <div className="page">
-      <h1>Clients</h1>
+      <h1>Anciens comptes clients</h1>
+      <p className="muted">
+        Comptes créés par l’ancien parcours de commande (repas, colis client), qui n’est plus proposé. Les destinataires
+        des livraisons d’entreprise n’ont pas de compte : ils suivent leur livraison par un lien.
+      </p>
       <UsersTable role="CLIENT" title="Comptes clients" />
     </div>
   );
@@ -178,8 +187,10 @@ const STORE_FILTERS: Array<{ value: StoreApprovalStatus | ''; label: string }> =
 ];
 
 /**
- * Boutiques (§8.5) : file de validation des nouvelles boutiques (dossier vendeur), validation /
- * suspension avec motif (auditées), ouverture et commission.
+ * Entreprises (§8.5, modèle B2B) : la boutique d'un compte SELLER est son profil d'entreprise. File de validation
+ * des nouvelles entreprises, validation / refus / suspension avec motif (audités). Une entreprise doit être validée
+ * avant de demander des livraisons (403 STORE_NOT_APPROVED sinon). Ouverture et commission de boutique ne servent
+ * qu'à l'ancien parcours de commande : elles ne sont plus affichées.
  */
 export function StoresTable() {
   const api = useApi();
@@ -190,7 +201,6 @@ export function StoresTable() {
     () => api.listStores({ approvalStatus: approval || undefined, page, pageSize: PAGE_SIZE }),
     [api, approval, page],
   );
-  const [editing, setEditing] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [suspending, setSuspending] = useState<StoreDto | null>(null);
@@ -202,7 +212,7 @@ export function StoresTable() {
     );
   }
 
-  /** Après validation / suspension : la boutique quitte éventuellement le filtre courant. */
+  /** Après validation / suspension : l'entreprise quitte éventuellement le filtre courant. */
   function afterApprovalChange(updated: StoreDto, message: string) {
     replace(updated);
     setNotice(message);
@@ -210,27 +220,12 @@ export function StoresTable() {
     stores.reload(true);
   }
 
-  async function save(s: StoreDto, input: { commissionPercent?: number; isOpen?: boolean }) {
-    setError(null);
-    setNotice(null);
-    try {
-      replace(await api.updateStore(s.id, input));
-      setEditing((prev) => {
-        const next = { ...prev };
-        delete next[s.id];
-        return next;
-      });
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  }
-
   async function approve(s: StoreDto) {
     setError(null);
     setNotice(null);
     setBusyId(s.id);
     try {
-      afterApprovalChange(await api.approveStore(s.id), `Boutique « ${s.name} » validée : elle est visible des clients.`);
+      afterApprovalChange(await api.approveStore(s.id), `Entreprise « ${s.name} » validée : elle peut demander des livraisons.`);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -246,11 +241,11 @@ export function StoresTable() {
 
   return (
     <Card
-      title="Boutiques et restaurants"
+      title="Profils d’entreprise"
       aside={
         pendingStores ? (
           <Badge tone="orange">
-            {pendingStores} boutique{pendingStores > 1 ? 's' : ''} à valider
+            {pendingStores} entreprise{pendingStores > 1 ? 's' : ''} à valider
           </Badge>
         ) : undefined
       }
@@ -278,77 +273,37 @@ export function StoresTable() {
       {stores.loading && !stores.data ? (
         <Loading />
       ) : !stores.data || stores.data.items.length === 0 ? (
-        <Empty>{approval === 'PENDING' ? 'Aucune boutique en attente de validation.' : 'Aucune boutique.'}</Empty>
+        <Empty>{approval === 'PENDING' ? 'Aucune entreprise en attente de validation.' : 'Aucune entreprise.'}</Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Boutique</th>
-                <th>Adresse</th>
+                <th>Entreprise</th>
+                <th>Adresse de retrait</th>
                 <th>Téléphone</th>
                 <th>Validation</th>
-                <th>État</th>
-                <th>Commission</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {stores.data.items.map((s) => {
-                const draft = editing[s.id];
-                const value = draft ?? (s.commissionPercent === null ? '' : String(s.commissionPercent));
-                const parsed = Number(value.replace(',', '.'));
-                const valid = value.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100;
                 const status = s.approvalStatus ?? 'APPROVED';
                 return (
                   <tr key={s.id}>
                     <td>
                       <div className="strong">{s.name}</div>
-                      <div className="muted small">{s.description}</div>
-                      <div className="muted small">Créée le {formatDate(s.createdAt)}</div>
+                      {s.description && <div className="muted small">{s.description}</div>}
+                      <div className="muted small">Inscrite le {formatDate(s.createdAt)}</div>
                     </td>
                     <td>
                       {s.address}
                       {s.landmark && <div className="muted small">Repère : {s.landmark}</div>}
                     </td>
-                    <td>{formatPhone(s.phone)}</td>
+                    <td>{s.phone ? <a href={`tel:${s.phone}`}>{formatPhone(s.phone)}</a> : '-'}</td>
                     <td>
                       <Badge tone={STORE_APPROVAL_TONE[status]}>{LABELS.storeApprovalStatus[status]}</Badge>
                       {s.approvalNote && <div className="muted small">Motif : {s.approvalNote}</div>}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className={`btn btn-small ${s.isOpen ? 'btn-soft' : 'btn-ghost'}`}
-                        title={s.isOpen ? 'Fermer la boutique' : 'Ouvrir la boutique'}
-                        disabled={!s.isOpen && status !== 'APPROVED'}
-                        onClick={() => void save(s, { isOpen: !s.isOpen })}
-                      >
-                        {s.isOpen ? '● Ouverte' : '○ Fermée'}
-                      </button>
-                    </td>
-                    <td>
-                      <span className="inline-form">
-                        <input
-                          aria-label={`Commission ${s.name}`}
-                          className="input-small"
-                          inputMode="decimal"
-                          placeholder="défaut"
-                          value={value}
-                          onChange={(e) => setEditing((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                        />
-                        %
-                        {draft !== undefined && (
-                          <button
-                            type="button"
-                            className="btn btn-small btn-primary"
-                            disabled={!valid}
-                            onClick={() => void save(s, { commissionPercent: parsed })}
-                          >
-                            OK
-                          </button>
-                        )}
-                      </span>
                     </td>
                     <td>
                       <span className="inline-form">
@@ -389,14 +344,17 @@ export function StoresTable() {
       )}
       {suspending && (
         <ReasonDialog
-          title={`${suspending.approvalStatus === 'PENDING' ? 'Refuser' : 'Suspendre'} la boutique « ${suspending.name} »`}
+          title={`${suspending.approvalStatus === 'PENDING' ? 'Refuser' : 'Suspendre'} l’entreprise « ${suspending.name} »`}
           confirmLabel={suspending.approvalStatus === 'PENDING' ? 'Refuser' : 'Suspendre'}
-          placeholder="Ex. : hygiène, adresse introuvable, documents manquants"
-          description="La boutique est fermée et masquée aux clients ; les commandes en cours continuent. Le vendeur voit le motif dans son application. Action enregistrée dans le journal d’audit."
+          placeholder="Ex. : adresse introuvable, activité non vérifiée, documents manquants"
+          description="L’entreprise ne peut plus demander de livraisons ; celles en cours continuent. Elle voit le motif dans son application. Action enregistrée dans le journal d’audit."
           onClose={() => setSuspending(null)}
           onConfirm={async (reason) => {
             const s = suspending;
-            afterApprovalChange(await api.suspendStore(s.id, reason), `Boutique « ${s.name} » suspendue.`);
+            afterApprovalChange(
+              await api.suspendStore(s.id, reason),
+              `Entreprise « ${s.name} » ${s.approvalStatus === 'PENDING' ? 'refusée' : 'suspendue'}.`,
+            );
           }}
         />
       )}
@@ -404,12 +362,18 @@ export function StoresTable() {
   );
 }
 
-export function SellersPage() {
+/** Entreprises clientes de Yaar (modèle B2B) : validation des profils et comptes de connexion. */
+export function BusinessesPage() {
   return (
     <div className="page">
-      <h1>Vendeurs</h1>
+      <h1>Entreprises</h1>
+      <p className="muted">
+        Les entreprises demandent des livraisons depuis l’application Yaar. Chaque nouvelle entreprise doit être validée
+        par Yaar avant sa première demande ; tant qu’elle ne l’est pas (ou si elle est suspendue), l’application lui répond
+        « Votre entreprise doit être validée par Yaar avant de demander une livraison ».
+      </p>
       <StoresTable />
-      <UsersTable role="SELLER" title="Comptes vendeurs" />
+      <UsersTable role="SELLER" title="Comptes des entreprises" />
     </div>
   );
 }

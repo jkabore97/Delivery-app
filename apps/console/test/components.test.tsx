@@ -96,7 +96,7 @@ describe('PendingOrdersPanel + affectation manuelle', () => {
     expect(screen.getByTestId('wait-1052')).toHaveTextContent(/^6:1\d$/);
 
     await user.click(screen.getByRole('button', { name: 'Affecter' }));
-    const dialog = await screen.findByRole('dialog', { name: /Affecter la course #1052 · Moto/ });
+    const dialog = await screen.findByRole('dialog', { name: /Affecter la livraison #1052 · Moto/ });
     const busyRow = (await within(dialog).findByText('Issouf S.')).closest('tr') as HTMLElement;
     expect(within(busyRow).getByRole('button', { name: 'Affecter' })).toBeDisabled();
     const freeRow = within(dialog).getByText('Karim D.').closest('tr') as HTMLElement;

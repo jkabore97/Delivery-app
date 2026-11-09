@@ -4,11 +4,11 @@ import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 
 const FILENAMES: Record<CsvExportKind, string> = {
-  orders: 'yaar-commandes',
+  orders: 'yaar-livraisons',
   'cash-ledger': 'yaar-caisse',
 };
 
-/** Nom du fichier téléchargé : yaar-commandes_2026-11-01_2026-11-07.csv */
+/** Nom du fichier téléchargé : yaar-livraisons_2026-11-01_2026-11-07.csv */
 export function exportFilename(kind: CsvExportKind, from?: string, to?: string): string {
   return `${FILENAMES[kind]}${from ? `_${from}` : ''}${to ? `_${to}` : ''}.csv`;
 }
@@ -66,7 +66,7 @@ export function CsvExport({ kind, label }: { kind: CsvExportKind; label: string 
       <button type="button" className="btn btn-ghost" disabled={busy || invalid} onClick={() => void run()}>
         {busy ? 'Export…' : `⬇ ${label}`}
       </button>
-      <span className="muted small">Sans adresses ni téléphones clients · export enregistré dans le journal d’audit</span>
+      <span className="muted small">Sans adresses ni numéros de téléphone · export enregistré dans le journal d’audit</span>
       {error && (
         <div className="alert alert-error" role="alert">
           {error}

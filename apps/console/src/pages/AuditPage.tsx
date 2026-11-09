@@ -17,12 +17,17 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   USER_UNSUSPENDED: 'Compte réactivé',
   STAFF_CREATED: 'Membre de l’équipe créé',
   PRICING_RULE_UPDATED: 'Tarif modifié',
-  STORE_UPDATED_BY_CONTROLLER: 'Boutique modifiée',
+  STORE_UPDATED_BY_CONTROLLER: 'Entreprise modifiée',
+  STORE_APPROVED: 'Entreprise validée',
+  STORE_SUSPENDED: 'Entreprise refusée ou suspendue',
   CASH_DEPOSIT_RECORDED: 'Versement enregistré',
-  ORDER_MANUALLY_ASSIGNED: 'Course affectée manuellement',
-  ORDER_CANCELLED_BY_CONTROLLER: 'Course annulée par un contrôleur',
+  ORDER_MANUALLY_ASSIGNED: 'Livraison affectée manuellement',
+  ORDER_CANCELLED_BY_CONTROLLER: 'Livraison annulée par un contrôleur',
+  ORDER_FORCE_DELIVERED: 'Livraison validée sans code',
+  ORDER_DELIVERY_CODE_RESET: 'Code de livraison réinitialisé',
   ORDER_PROOF_VIEWED: 'Consultation d’une photo de livraison',
   INCIDENT_UPDATED: 'Incident mis à jour',
+  DATA_EXPORTED: 'Export de données',
 };
 
 /** Libellés français des objets audités (noms d'entités côté API). */
@@ -30,9 +35,9 @@ export const AUDIT_ENTITY_LABELS: Record<string, string> = {
   DriverDocument: 'Pièce livreur',
   DriverProfile: 'Dossier livreur',
   User: 'Compte',
-  Order: 'Course',
+  Order: 'Livraison',
   PricingRule: 'Tarif',
-  Store: 'Boutique',
+  Store: 'Entreprise',
   Incident: 'Incident',
 };
 

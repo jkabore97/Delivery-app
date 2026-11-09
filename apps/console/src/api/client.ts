@@ -1,6 +1,7 @@
 import type {
   AuditLogDto,
   AuthResponse,
+  BusinessBalanceDto,
   CashDepositInput,
   CashLedgerEntryDto,
   CashOverviewDto,
@@ -213,7 +214,7 @@ export class ApiClient {
     return this.request('GET', '/controller/map');
   }
 
-  /* ------------------------------ Commandes ------------------------------ */
+  /* ------------------------------ Livraisons (commandes) ------------------------------ */
 
   listOrders(params: OrderListParams = {}): Promise<Paginated<OrderDto>> {
     return this.request('GET', `/orders${buildQuery({ ...params })}`);
@@ -305,18 +306,18 @@ export class ApiClient {
     return this.request('POST', '/controller/staff', input);
   }
 
-  /* ------------------------------ Boutiques ------------------------------ */
+  /* ------------------------------ Entreprises (boutiques validées) ------------------------------ */
 
   listStores(params: StoreListParams = {}): Promise<Paginated<StoreDto>> {
     return this.request('GET', `/controller/stores${buildQuery({ ...params })}`);
   }
 
-  /** Validation d'une boutique (dossier vendeur) : elle devient visible des clients (§8.5). */
+  /** Validation d'une entreprise (sa boutique) : elle peut alors demander des livraisons (§8.5). */
   approveStore(id: string): Promise<StoreDto> {
     return this.request('POST', `/controller/stores/${encodeURIComponent(id)}/approve`, {});
   }
 
-  /** Suspension (motif obligatoire) : boutique fermée et masquée, les commandes en cours continuent. */
+  /** Refus / suspension (motif obligatoire) : plus de nouvelles livraisons, celles en cours continuent. */
   suspendStore(id: string, reason: string): Promise<StoreDto> {
     return this.request('POST', `/controller/stores/${encodeURIComponent(id)}/suspend`, { reason });
   }
@@ -349,6 +350,11 @@ export class ApiClient {
     return this.request('POST', `/controller/drivers/${encodeURIComponent(driverId)}/cash-deposits`, input);
   }
 
+  /** Marchandise encaissée pour chaque entreprise et qui lui est due (lecture seule : pas encore de reversement). */
+  businessBalances(): Promise<BusinessBalanceDto[]> {
+    return this.request('GET', '/controller/cash/businesses');
+  }
+
   /* ------------------------------ Incidents ------------------------------ */
 
   listIncidents(params: IncidentListParams = {}): Promise<Paginated<IncidentDto>> {
@@ -379,16 +385,16 @@ export class ApiClient {
  */
 export const ERROR_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
   DRIVER_OFFLINE:
-    'Ce livreur est hors ligne : il ne voit pas la course et n’envoie pas sa position. Choisissez un livreur en ligne (ou appelez-le pour qu’il se connecte).',
+    'Ce livreur est hors ligne : il ne voit pas la livraison et n’envoie pas sa position. Choisissez un livreur en ligne (ou appelez-le pour qu’il se connecte).',
   DRIVER_BUSY:
-    'Ce livreur est en course : réaffectez, validez (livraison forcée) ou annulez sa course en cours avant de continuer.',
+    'Ce livreur est en course : réaffectez, validez (livraison forcée) ou annulez sa livraison en cours avant de continuer.',
   CONSENT_REQUIRED:
     'Le livreur n’a pas accepté le suivi GPS : il doit l’accepter dans l’application avant de passer en ligne.',
   UNSUPPORTED_FILE: 'Fichier refusé : son contenu ne correspond pas à une image JPEG, PNG, WebP ou à un PDF.',
   PAYLOAD_TOO_LARGE: 'Fichier trop volumineux (5 Mo maximum).',
   DELIVERY_CODE_LOCKED:
-    'Code de livraison bloqué après 5 essais : réinitialisez le code ou validez la livraison depuis la fiche de la course.',
-  STORE_NOT_APPROVED: 'Cette boutique n’est pas encore validée.',
+    'Code de livraison bloqué après 5 essais : réinitialisez le code ou validez la livraison depuis sa fiche.',
+  STORE_NOT_APPROVED: 'Cette entreprise n’est pas encore validée par Yaar.',
   RATE_LIMITED: 'Trop de tentatives : patientez quelques minutes avant de réessayer.',
   OTP_RATE_LIMITED: 'Trop de codes demandés pour ce numéro : réessayez dans une heure.',
 };

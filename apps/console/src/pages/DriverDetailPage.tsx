@@ -231,7 +231,7 @@ export function DriverDetailPage() {
             )}
             <p>
               Vous confirmez avoir vérifié les pièces (identité, permis, carte grise, assurance, selfie) de ce livreur.
-              Une fois validé, il pourra se mettre en ligne et recevoir des courses.
+              Une fois validé, il pourra se mettre en ligne et recevoir des livraisons.
             </p>
             <div className="form-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setDialog(null)} disabled={busy}>
@@ -269,7 +269,7 @@ export function DriverDetailPage() {
           confirmLabel="Suspendre"
           description={
             d.isBusy
-              ? 'Ce livreur est en course : réaffectez, validez ou annulez sa course avant de le suspendre (sinon l’API refuse).'
+              ? 'Ce livreur est en course : réaffectez, validez ou annulez sa livraison avant de le suspendre (sinon l’API refuse).'
               : undefined
           }
           onClose={() => setDialog(null)}

@@ -82,13 +82,13 @@ describe('ApiClient : routes ajoutées par la correction de l’API', () => {
   it('exports : borne de fin incluse pour l’utilisateur, exclue pour l’API', () => {
     expect(nextDay('2026-11-30')).toBe('2026-12-01');
     expect(nextDay('2026-12-31')).toBe('2027-01-01');
-    expect(exportFilename('orders', '2026-11-01', '2026-11-07')).toBe('yaar-commandes_2026-11-01_2026-11-07.csv');
+    expect(exportFilename('orders', '2026-11-01', '2026-11-07')).toBe('yaar-livraisons_2026-11-01_2026-11-07.csv');
     expect(exportFilename('cash-ledger')).toBe('yaar-caisse.csv');
   });
 });
 
-describe('Validation des boutiques', () => {
-  it('affiche la file « À valider » et valide une boutique', async () => {
+describe('Validation des entreprises', () => {
+  it('affiche la file « À valider » et valide une entreprise', async () => {
     const u = userEvent.setup();
     const { calls } = renderWithProviders(<StoresTable />, {
       routes: {
@@ -100,11 +100,13 @@ describe('Validation des boutiques', () => {
     });
     expect(await screen.findByText('Grillades de Pissy')).toBeInTheDocument();
     expect(calls.find((c) => c.path.startsWith('/controller/stores'))?.path).toContain('approvalStatus=PENDING');
-    expect(screen.getByLabelText('Commission Grillades de Pissy')).toHaveValue('');
-    // Une boutique non validée ne peut pas être ouverte.
-    expect(screen.getByRole('button', { name: '○ Fermée' })).toBeDisabled();
+    // Ouverture et commission de boutique (ancien parcours de commande) : plus affichées.
+    expect(screen.queryByLabelText('Commission Grillades de Pissy')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Fermée|Ouverte/ })).not.toBeInTheDocument();
     await u.click(screen.getByRole('button', { name: 'Valider' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Boutique « Grillades de Pissy » validée');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Entreprise « Grillades de Pissy » validée : elle peut demander des livraisons.',
+    );
     expect(writes(calls)).toEqual([expect.objectContaining({ method: 'POST', path: '/controller/stores/st-1/approve' })]);
   });
 
@@ -131,7 +133,7 @@ describe('Validation des boutiques', () => {
   it('filtre « Suspendues »', async () => {
     const u = userEvent.setup();
     const { calls } = renderWithProviders(<StoresTable />, { routes: { 'GET /controller/stores': page([]) } });
-    expect(await screen.findByText('Aucune boutique en attente de validation.')).toBeInTheDocument();
+    expect(await screen.findByText('Aucune entreprise en attente de validation.')).toBeInTheDocument();
     await u.click(screen.getByRole('button', { name: 'Suspendues' }));
     await waitFor(() =>
       expect(calls.some((c) => c.path.startsWith('/controller/stores?approvalStatus=SUSPENDED'))).toBe(true),
@@ -139,7 +141,7 @@ describe('Validation des boutiques', () => {
   });
 });
 
-describe('Course récupérée (PICKED_UP) : reprise par la console', () => {
+describe('Livraison récupérée (PICKED_UP) : reprise par la console', () => {
   const pickedUp = order({
     status: 'PICKED_UP',
     driver: { id: 'drv-1', name: 'Issouf S.', phone: '+22673000001', vehicleType: 'MOTO', plate: '11 JJ 4521', ratingAvg: 4.9, lastLocation: null },
@@ -193,10 +195,10 @@ describe('Course récupérée (PICKED_UP) : reprise par la console', () => {
       path: '/courses/ord-1',
       routes: { 'GET /orders/ord-1': pickedUp, 'POST /orders/ord-1/cancel': order({ status: 'CANCELLED' }) },
     });
-    await u.click(await screen.findByRole('button', { name: 'Annuler la course' }));
+    await u.click(await screen.findByRole('button', { name: 'Annuler la livraison' }));
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(/récupérer la marchandise auprès du livreur/)).toBeInTheDocument();
-    await u.click(within(dialog).getByRole('button', { name: 'Annuler la course' }));
+    await u.click(within(dialog).getByRole('button', { name: 'Annuler la livraison' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(writes(calls)).toEqual([expect.objectContaining({ path: '/orders/ord-1/cancel', body: {} })]);
   });

@@ -15,7 +15,7 @@ import { LoginPage } from './pages/LoginPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { PricingPage } from './pages/PricingPage';
-import { ClientsPage, SellersPage, StaffPage } from './pages/UsersPage';
+import { BusinessesPage, ClientsPage, StaffPage } from './pages/UsersPage';
 
 function Protected({ children, socketUrl, busOverride }: { children: ReactNode; socketUrl: string; busOverride?: RealtimeBus }) {
   const { token, logout } = useAuth();
@@ -67,7 +67,9 @@ export function App({ socketUrl, busOverride }: { socketUrl: string; busOverride
         <Route path="livreurs/:id" element={<DriverDetailPage />} />
         <Route path="kyc" element={<KycQueuePage />} />
         <Route path="kyc/:id" element={<DriverDetailPage />} />
-        <Route path="vendeurs" element={<SellersPage />} />
+        <Route path="entreprises" element={<BusinessesPage />} />
+        {/* Ancienne adresse de l'écran (« Vendeurs ») : liens et favoris existants. */}
+        <Route path="vendeurs" element={<Navigate to="/entreprises" replace />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="caisse" element={<CashPage />} />

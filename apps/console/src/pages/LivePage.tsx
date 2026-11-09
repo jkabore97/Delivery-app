@@ -15,6 +15,35 @@ import { applyDriverLocation, applyDriverStatus, applyIncident, type VehicleFilt
 import { MAP_SAFETY_REFRESH_MS, POLL_MS } from '../config';
 import { usePolling, useRealtime, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
+/** Légende de la carte (mêmes formes que les marqueurs, cf. styles.css « Marqueurs des cartes »). */
+export function MapLegend() {
+  return (
+    <div className="map-legend" aria-label="Légende">
+      <span>
+        <i className="lg lg-driver lg-free" aria-hidden="true" /> Livreur libre
+      </span>
+      <span>
+        <i className="lg lg-driver lg-busy" aria-hidden="true" /> En livraison
+      </span>
+      <span>
+        <i className="lg lg-business" aria-hidden="true" /> Entreprise
+      </span>
+      <span>
+        <i className="lg lg-dropoff" aria-hidden="true" /> Destinataire
+      </span>
+      <span>
+        <i className="lg lg-search" aria-hidden="true" /> En attente d’un livreur
+      </span>
+      <span>
+        <i className="lg lg-route" aria-hidden="true" /> Itinéraire
+      </span>
+      <span>
+        <i className="lg lg-sos" aria-hidden="true" /> SOS
+      </span>
+    </div>
+  );
+}
+
 const FILTERS: Array<{ value: VehicleFilter; label: string }> = [
   { value: 'ALL', label: 'Tous' },
   { value: 'BIKE', label: '🚲 Vélo' },
@@ -148,20 +177,7 @@ export function LivePage() {
           ) : (
             !map.error && <Loading label="Chargement de la carte…" />
           )}
-          <div className="map-legend" aria-label="Légende">
-            <span>
-              <i className="dot dot-green" /> Livreur libre
-            </span>
-            <span>
-              <i className="dot dot-blue" /> En course
-            </span>
-            <span>
-              <i className="dot dot-orange square" /> Vendeur
-            </span>
-            <span>
-              <i className="dot dot-red" /> Commande en attente
-            </span>
-          </div>
+          <MapLegend />
         </div>
         <div className="side-panels">
           <ErrorBanner message={pending.error} onRetry={() => pending.reload()} />
