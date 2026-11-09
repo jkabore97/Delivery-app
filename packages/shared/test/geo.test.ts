@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { haversineKm, roadDistanceKm, OUAGADOUGOU_CENTER } from '../src';
+import { approximateZone, approximateZoneCenter, haversineKm, roadDistanceKm, OUAGADOUGOU_CENTER } from '../src';
+
+describe('approximateZoneCenter', () => {
+  it('renvoie le centroïde du quartier le plus proche, cohérent avec approximateZone', () => {
+    const p = { lat: 12.3421, lng: -1.5143 };
+    expect(approximateZone(p)).toBe('Secteur Patte d’Oie');
+    expect(approximateZoneCenter(p)).toEqual({ lat: 12.3395, lng: -1.517 });
+    // Deux adresses du même quartier : le même point.
+    expect(approximateZoneCenter({ lat: 12.3371, lng: -1.5199 })).toEqual(approximateZoneCenter(p));
+  });
+
+  it('hors des quartiers connus : point arrondi à 0,02°, jamais la position exacte', () => {
+    const far = { lat: 11.1771, lng: -4.2979 };
+    expect(approximateZone(far)).toBe('Hors des quartiers connus');
+    expect(approximateZoneCenter(far)).toEqual({ lat: 11.18, lng: -4.3 });
+  });
+});
 
 describe('haversineKm', () => {
   it('vaut 0 pour un même point', () => {

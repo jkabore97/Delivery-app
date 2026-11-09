@@ -15,6 +15,7 @@ import {
   AVERAGE_SPEED_KMH,
   DRIVER_ACTIVE_STATUSES,
   approximateZone,
+  approximateZoneCenter,
   haversineKm,
   isTerminal,
   roadDistanceKm,
@@ -495,8 +496,16 @@ export function toOfferDto(o: OfferWithOrder): OfferDto {
       name: o.order.store?.name ?? null,
       distanceFromDriverKm: o.distanceKm !== null ? round1(o.distanceKm) : null,
       zone: pickupZone,
+      // Lieu professionnel : position exacte (comme son adresse) ; sinon centre de la zone seulement.
+      ...(isFood
+        ? { location: { lat: o.order.pickupLat, lng: o.order.pickupLng } }
+        : { approxLocation: approximateZoneCenter({ lat: o.order.pickupLat, lng: o.order.pickupLng }) }),
     },
-    dropoff: { address: dropoffZone, zone: dropoffZone },
+    dropoff: {
+      address: dropoffZone,
+      zone: dropoffZone,
+      approxLocation: approximateZoneCenter({ lat: o.order.dropoffLat, lng: o.order.dropoffLng }),
+    },
     distanceKm: o.order.distanceKm,
     cashToCollect: atPickup + atDelivery,
     cashAtPickup: atPickup,

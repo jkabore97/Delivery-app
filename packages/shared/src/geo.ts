@@ -51,11 +51,33 @@ export const OUAGADOUGOU_NEIGHBOURHOODS: ReadonlyArray<{ name: string } & LatLng
  * Utilisé dans les offres de course envoyées aux livreurs avant acceptation.
  */
 export function approximateZone(p: LatLng): string {
-  let best: { name: string; d: number } | null = null;
+  const best = nearestNeighbourhood(p);
+  if (!best) return 'Hors des quartiers connus';
+  return `Secteur ${best.name}`;
+}
+
+/** Au-delà de cette distance du centroïde le plus proche, le point est « hors des quartiers connus ». */
+const NEIGHBOURHOOD_MAX_KM = 6;
+/** Pas de la grille utilisée hors des quartiers connus (0,02° ≈ 2,2 km). */
+const APPROX_GRID_DEG = 0.02;
+
+function nearestNeighbourhood(p: LatLng): ({ name: string; d: number } & LatLng) | null {
+  let best: ({ name: string; d: number } & LatLng) | null = null;
   for (const n of OUAGADOUGOU_NEIGHBOURHOODS) {
     const d = haversineKm(p, n);
-    if (!best || d < best.d) best = { name: n.name, d };
+    if (!best || d < best.d) best = { name: n.name, lat: n.lat, lng: n.lng, d };
   }
-  if (!best || best.d > 6) return 'Hors des quartiers connus';
-  return `Secteur ${best.name}`;
+  return best && best.d <= NEIGHBOURHOOD_MAX_KM ? best : null;
+}
+
+/**
+ * Centre approximatif de la zone d'un point, pour une carte d'offre AVANT acceptation : le centroïde du quartier
+ * le plus proche (le même point pour toutes les adresses du quartier, cohérent avec `approximateZone`), ou, hors
+ * des quartiers connus, le point arrondi à une grille de 0,02° (≈ 2,2 km). Jamais la position exacte.
+ */
+export function approximateZoneCenter(p: LatLng): LatLng {
+  const best = nearestNeighbourhood(p);
+  if (best) return { lat: best.lat, lng: best.lng };
+  const snap = (v: number) => Number((Math.round(v / APPROX_GRID_DEG) * APPROX_GRID_DEG).toFixed(2));
+  return { lat: snap(p.lat), lng: snap(p.lng) };
 }

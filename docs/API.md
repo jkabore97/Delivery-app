@@ -1003,6 +1003,13 @@ still names the business). `dropoff.address` is always an approximate zone ("Sec
 Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zone. Exact addresses are in the
 `OrderDto` returned by `accept`.
 
+Positions for the offer map: `pickup.location` = exact position of the pickup **only when it is a business place**
+(the same case where `pickup.address` is the business address); otherwise `pickup.approxLocation` = centre of the
+pickup zone. `dropoff.approxLocation` = centre of the drop-off zone. A zone centre is the centroid of the nearest known
+neighbourhood (`approximateZoneCenter()` in shared: the same point for every address of the neighbourhood, consistent
+with `zone`), or the point rounded to a 0.02° grid (≈ 2 km) outside known neighbourhoods; never the recipient's exact
+position. Draw it as an area (soft circle), not as a pin on an address.
+
 Cash of the job: `cashAtPickup` = what the driver collects from the business at pickup (the fee when the business pays
 it, `feePaidBy: SENDER`; else 0), `cashAtDelivery` = what he collects from the recipient (goods + the fee when the
 recipient pays it; the whole amount for a former client order), `cashToCollect` = the total of both (unchanged meaning:
@@ -1019,8 +1026,9 @@ all the cash of the job, not the goods only as in `OrderDto.cashToCollect`). Sho
   "vehicleType": "MOTO",
   "offeredAt": "2026-11-06T09:43:00.000Z",
   "expiresAt": "2026-11-06T09:43:30.000Z",
-  "pickup": { "address": "Avenue Kwame Nkrumah, centre-ville", "name": "Le Verdoyant", "distanceFromDriverKm": 1.1, "zone": "Secteur Centre-ville" },
-  "dropoff": { "address": "Secteur Patte d’Oie", "zone": "Secteur Patte d’Oie" },
+  "pickup": { "address": "Avenue Kwame Nkrumah, centre-ville", "name": "Le Verdoyant", "distanceFromDriverKm": 1.1, "zone": "Secteur Centre-ville",
+              "location": { "lat": 12.3686, "lng": -1.5275 } },
+  "dropoff": { "address": "Secteur Patte d’Oie", "zone": "Secteur Patte d’Oie", "approxLocation": { "lat": 12.3395, "lng": -1.517 } },
   "distanceKm": 6.2,
   "cashToCollect": 6500,
   "cashAtPickup": 0,

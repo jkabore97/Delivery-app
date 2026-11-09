@@ -345,8 +345,25 @@ export interface OfferDto {
    * Avant acceptation, aucune adresse du client n'est transmise : `address` vaut l'adresse de la boutique
    * (FOOD) ou une zone approximative « Secteur … » (colis, livraison). `zone` reprend cette zone.
    */
-  pickup: { address: string; name: string | null; distanceFromDriverKm: number | null; zone?: string };
-  dropoff: { address: string; zone?: string };
+  pickup: {
+    address: string;
+    name: string | null;
+    distanceFromDriverKm: number | null;
+    zone?: string;
+    /** Position exacte du retrait quand c'est un lieu professionnel (adresse de l'entreprise) ; absent sinon. */
+    location?: { lat: number; lng: number };
+    /** Centre approximatif de la zone de retrait (centroïde du quartier) quand ce n'est pas un lieu professionnel. */
+    approxLocation?: { lat: number; lng: number };
+  };
+  dropoff: {
+    address: string;
+    zone?: string;
+    /**
+     * Centre approximatif de la zone de livraison (centroïde du quartier, voir `approximateZoneCenter`) pour la
+     * carte de l'offre : jamais la position exacte du destinataire avant acceptation.
+     */
+    approxLocation?: { lat: number; lng: number };
+  };
   distanceKm: number;
   /** Total des espèces que le livreur encaissera sur cette course (retrait + livraison). */
   cashToCollect: number;

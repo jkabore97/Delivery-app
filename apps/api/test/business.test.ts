@@ -130,6 +130,24 @@ describe('devis et demande de livraison', () => {
     expect(off.json<ApiErrorBody>().error.code).toBe('PRICING_UNAVAILABLE');
   });
 
+  it('offre : position de l’entreprise pour la carte, centre du quartier seulement pour la livraison', async () => {
+    const { business } = await createBusiness(t, P.centre, { name: 'Pharmacie du Centre' });
+    const driver = await createDriver(t, 'MOTO', near);
+    // Adresse du destinataire proche de Patte d'Oie, mais pas sur le centroïde du quartier.
+    const exact = { lat: 12.3421, lng: -1.5143 };
+    await create(business.accessToken, { dropoff: { ...exact, address: 'Rue 15.42, porte 7' } });
+    const [offer] = await offersOf(driver.accessToken);
+    expect(offer!.pickup.location).toEqual(P.centre);
+    expect(offer!.pickup.approxLocation).toBeUndefined();
+    expect(offer!.dropoff).toEqual({
+      address: 'Secteur Patte d’Oie',
+      zone: 'Secteur Patte d’Oie',
+      approxLocation: { lat: P.patteDOie.lat, lng: P.patteDOie.lng },
+    });
+    const json = JSON.stringify(offer);
+    for (const leak of ['12.3421', '-1.5143', 'Rue 15.42']) expect(json).not.toContain(leak);
+  });
+
   it('création : recherche de livreur immédiate, offre au plus proche, lien de suivi, code jamais montré à l’entreprise', async () => {
     const { business, storeId } = await createBusiness(t, P.centre, { name: 'Pharmacie du Centre' });
     const nearDriver = await createDriver(t, 'MOTO', near);

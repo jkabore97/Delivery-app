@@ -182,14 +182,21 @@ describe('confidentialité des adresses', () => {
   it('une offre ne contient pas l’adresse du client, seulement des zones approximatives', async () => {
     const client = await login(t.app, 'CLIENT');
     const driver = await createDriver(t, 'MOTO', near);
-    await call(t.app, 'POST', '/orders', client.accessToken, parcel);
+    // Adresses de particuliers hors des centroïdes des quartiers : aucune de ces coordonnées ne doit sortir.
+    await call(t.app, 'POST', '/orders', client.accessToken, {
+      ...parcel,
+      pickup: { ...parcel.pickup, lat: 12.3702, lng: -1.5291 },
+      dropoff: { ...parcel.dropoff, lat: 12.3822, lng: -1.4958 },
+    });
     const [offer] = (await call(t.app, 'GET', '/driver/offers', driver.accessToken)).json<OfferDto[]>();
     expect(offer).toBeDefined();
     const text = JSON.stringify(offer);
-    for (const secret of ['Rue 12.34', 'villa 45', 'Chez ma tante', 'école', 'Fatou', '99 88 77', '12.3686', '12.3805'])
+    for (const secret of ['Rue 12.34', 'villa 45', 'Chez ma tante', 'école', 'Fatou', '99 88 77', '12.3702', '-1.5291', '12.3822', '-1.4958'])
       expect(text).not.toContain(secret);
-    expect(offer!.dropoff).toEqual({ address: 'Secteur Zogona', zone: 'Secteur Zogona' });
-    expect(offer!.pickup.address).toBe('Secteur Centre-ville');
+    // Carte de l'offre : centres des quartiers seulement (pas de position exacte d'un particulier).
+    expect(offer!.dropoff).toEqual({ address: 'Secteur Zogona', zone: 'Secteur Zogona', approxLocation: { lat: P.zogona.lat, lng: P.zogona.lng } });
+    expect(offer!.pickup).toMatchObject({ address: 'Secteur Centre-ville', approxLocation: { lat: P.centre.lat, lng: P.centre.lng } });
+    expect(offer!.pickup.location).toBeUndefined();
   });
 
   it('offre FOOD : adresse de la boutique, zone de livraison seulement', async () => {
@@ -205,7 +212,7 @@ describe('confidentialité des adresses', () => {
     await call(t.app, 'POST', `/orders/${o.id}/accept`, seller.accessToken, {});
     await call(t.app, 'POST', `/orders/${o.id}/ready`, seller.accessToken, {});
     const [offer] = (await call(t.app, 'GET', '/driver/offers', driver.accessToken)).json<OfferDto[]>();
-    expect(offer!.pickup).toMatchObject({ address: 'Avenue Kwame Nkrumah', name: 'Le Verdoyant' });
+    expect(offer!.pickup).toMatchObject({ address: 'Avenue Kwame Nkrumah', name: 'Le Verdoyant', location: P.centre });
     expect(offer!.dropoff.address).toBe('Secteur Patte d’Oie');
     // Ancienne commande payée à la livraison : tout est encaissé auprès du client.
     expect(offer).toMatchObject({ cashToCollect: o.total, cashAtPickup: 0, cashAtDelivery: o.total });
