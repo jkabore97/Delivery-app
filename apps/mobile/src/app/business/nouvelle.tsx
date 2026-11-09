@@ -562,7 +562,9 @@ function SummaryStep({
       ) : null}
       <View style={styles.collectBox} testID="summary-recipient-pays">
         <Text style={styles.collectLabel}>Le destinataire paie à la livraison</Text>
-        <Text style={styles.collectValue}>{formatFcfa(recipientPays(fee, form.feePaidBy, cash))}</Text>
+        <Text style={styles.collectValue} testID="summary-recipient-pays-value">
+          {formatFcfa(recipientPays(fee, form.feePaidBy, cash))}
+        </Text>
       </View>
       <Muted>
         Après la demande, envoyez au destinataire son lien de suivi : il verra le livreur en direct et le code à lui donner.
@@ -645,7 +647,7 @@ const styles = StyleSheet.create({
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border },
   radioOn: { borderColor: colors.green, borderWidth: 6 },
   payerTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  payerFee: { fontSize: 15, fontWeight: '900', color: colors.text },
+  payerFee: { fontSize: 15, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
   collectBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -656,7 +658,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenLight,
   },
   collectLabel: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.text },
-  collectValue: { fontSize: 18, fontWeight: '900', color: colors.text },
+  collectValue: { fontSize: 18, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
   trip: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   tripRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   tripDot: { width: 14, height: 14, borderRadius: 7, marginTop: 4 },

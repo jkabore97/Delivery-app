@@ -21,6 +21,12 @@
 //      Aucune requête Socket.IO (mode poll).
 //   6. Avertissement « démonstration publique » sur l'écran des pièces KYC d'un livreur.
 //
+// Montants comparés EXACTEMENT (pas de « se termine par ») : ce que le destinataire paiera (récapitulatif de la
+// demande) = montant affiché sur sa page de suivi = espèces de l'offre du livreur = montant à encaisser à la livraison.
+// Cartes : marqueurs MapLibre du livreur et du destinataire présents sur la page de suivi.
+// Connexions de démonstration sans demande de code (le code 123456 est accepté en mode démo) : le script peut être
+// relancé plusieurs fois par heure sans buter sur la limite de 5 codes par numéro.
+//
 // Effets sur la base de démonstration : une livraison de test est créée et livrée ; Karim D. (livreur moto de démo)
 // est remis hors ligne et sans consentement GPS au début, puis hors ligne à la fin.
 // Les appels directs à l'API passent par le navigateur (proxy et certificats du navigateur, CORS réel).
@@ -91,27 +97,55 @@ async function api(page, method, p, body, token) {
   );
 }
 
+/** Bouton de l'écran de connexion : « Continuer » en démo (aucun code demandé), « Recevoir le code » sinon. */
+async function submitPhone(page) {
+  const byId = page.getByTestId('login-submit');
+  if (await byId.count()) await V(byId).click();
+  else await V(page.getByText(/^(Continuer|Recevoir le code)$/)).click();
+}
+
 async function demoLogin(page, label) {
   await page.goto(`${APP}/login`);
   await V(page.getByText('Mode démo : utilisez le code 123456')).waitFor({ timeout: 45000 });
   await V(page.getByText(WARNING, { exact: false })).waitFor({ timeout: 10000 });
   results.checks.appLoginWarning = true;
   await V(page.getByText(label, { exact: false })).click();
-  await V(page.getByText('Recevoir le code', { exact: true })).click();
+  await submitPhone(page);
   await V(page.getByText('Mode démo : le code 123456 est accepté')).waitFor({ timeout: 30000 });
   await V(page.getByText('Valider', { exact: true })).click();
 }
 
 async function tilesLoaded(page) {
   await page.waitForTimeout(3000);
-  // Console : tuiles Leaflet (img) ; application : MapLibre (canvas WebGL, pas de tuile <img> à compter).
-  return page.evaluate(() => document.querySelectorAll('img.leaflet-tile-loaded').length);
+  // Leaflet : tuiles <img> ; MapLibre : canevas WebGL (pas de tuile <img> à compter, on compte les canevas).
+  return page.evaluate(
+    () => document.querySelectorAll('img.leaflet-tile-loaded').length || document.querySelectorAll('canvas.maplibregl-canvas').length,
+  );
 }
 
 const digits = (t) => (t ?? '').replace(/\D/g, '');
 
+/** Montant exact (chiffres) d'un élément de valeur (`<testID>-value`), sinon de l'élément lui-même. */
+async function amountOf(page, testID) {
+  const value = page.getByTestId(`${testID}-value`);
+  if (await value.count()) return digits(await V(value).textContent());
+  const el = page.getByTestId(testID);
+  return (await el.count()) ? digits(await V(el).textContent()) : '0';
+}
+
+function sameAmount(what, a, b) {
+  if (a !== b) throw new Error(`montant ${what} : ${a} ≠ ${b}`);
+}
+
+/** Marqueurs MapLibre (marqueurs HTML de l'application) présents sur la carte de suivi. */
+async function mapMarkers(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="live-map"] .maplibregl-marker')].map((e) => e.getAttribute('data-kind') ?? '?'),
+  );
+}
+
 async function karimToken(page) {
-  await api(page, 'POST', '/auth/otp/request', { phone: KARIM });
+  // Démonstration : le code 123456 est accepté sans demande préalable (aucun code consommé sur la limite horaire).
   const r = await api(page, 'POST', '/auth/otp/verify', { phone: KARIM, code: '123456' });
   if (r.status !== 200) throw new Error(`connexion API de Karim impossible (${r.status} ${JSON.stringify(r.json)})`);
   return r.json.accessToken;
@@ -196,8 +230,9 @@ async function karimToken(page) {
     await shot(bp, 'b12-new-delivery-package-price');
     await bp.getByTestId('wizard-next').click();
     await bp.getByTestId('request-driver').waitFor({ timeout: 15000 });
-    const toPay = digits(await bp.getByTestId('summary-recipient-pays').textContent());
+    const toPay = await amountOf(bp, 'summary-recipient-pays');
     results.checks.recipientPays = toPay;
+    if (!/^\d+$/.test(toPay) || Number(toPay) <= 5000) throw new Error(`montant du récapitulatif inattendu : ${toPay}`);
     await bp.getByTestId('request-driver').click();
     await bp.getByTestId('share-tracking').waitFor({ timeout: 45000 });
     const orderNo = digits(await bp.getByTestId('order-chip').textContent());
@@ -217,10 +252,13 @@ async function karimToken(page) {
     if (results.checks.trackingTitle !== 'Suivi de livraison · Yaar Livraison') throw new Error(`titre inattendu : ${results.checks.trackingTitle}`);
     await rp.getByTestId('delivery-code').waitFor({ timeout: 30000 });
     const code = digits(await rp.getByTestId('delivery-code').getAttribute('aria-label'));
-    const pageAmount = (await rp.getByTestId('amount-to-pay').count()) ? digits(await rp.getByTestId('amount-to-pay').textContent()) : '0';
+    const pageAmount = await amountOf(rp, 'amount-to-pay');
     results.checks.trackingAmount = pageAmount;
+    sameAmount('payé par le destinataire (récapitulatif / page de suivi)', toPay, pageAmount);
+    await rp.waitForSelector('[data-testid="live-map"] .maplibregl-marker[data-kind="dropoff"]', { timeout: 30000 });
+    results.checks.trackingMarkersSearching = await mapMarkers(rp);
     await shot(rp, 'r20-recipient-searching');
-    step(`destinataire : page de suivi sans compte (code lu, ${pageAmount} FCFA à payer à la réception)`);
+    step(`destinataire : page de suivi sans compte (code lu, ${pageAmount} FCFA à payer à la réception = récapitulatif)`);
 
     // ---------- 5. Livreur ----------
     const driver = await phone(browser, 'driver', {
@@ -247,7 +285,9 @@ async function karimToken(page) {
       await dp.waitForTimeout(1500);
       if (i > 5) throw new Error('offre de la livraison de test jamais reçue');
     }
-    results.checks.offerCash = digits(await dp.getByTestId('offer-cash').textContent());
+    results.checks.offerCash = await amountOf(dp, 'offer-cash-total');
+    // Espèces de la course : frais au retrait (payés ici par le destinataire, donc 0) + montant à la livraison.
+    sameAmount('espèces de l’offre / page de suivi', results.checks.offerCash, pageAmount);
     step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie)`);
     await shot(dp, 'd31-driver-offer');
     await dp.getByTestId('accept-offer').click();
@@ -257,6 +297,12 @@ async function karimToken(page) {
       const t = Date.now();
       await V(rp.getByText('Le livreur récupère votre colis')).waitFor({ timeout: 45000 });
       step(`destinataire : « Le livreur récupère votre colis » affiché en ${((Date.now() - t) / 1000).toFixed(1)} s`);
+      await rp.waitForSelector('[data-testid="live-map"] .maplibregl-marker[data-kind="driver"]', { timeout: 45000 });
+      const kinds = await mapMarkers(rp);
+      results.checks.trackingMarkersAssigned = kinds;
+      if (!kinds.includes('driver') || !kinds.includes('dropoff') || !kinds.includes('pickup'))
+        throw new Error(`marqueurs de la carte de suivi incomplets : ${kinds.join(', ')}`);
+      step(`destinataire : carte MapLibre avec les marqueurs ${kinds.join(', ')}`);
     }
     await dp.getByTestId('pickup-button').click();
     await dp.getByTestId('go-deliver').waitFor({ timeout: 45000 });
@@ -269,9 +315,9 @@ async function karimToken(page) {
     await shot(rp, 'r21-recipient-en-route');
     await dp.getByTestId('go-deliver').click();
     await dp.getByTestId('delivery-code-input').waitFor({ timeout: 30000 });
-    const collect = (await dp.getByTestId('amount-to-collect').count()) ? digits(await dp.getByTestId('amount-to-collect').textContent()) : '0';
+    const collect = await amountOf(dp, 'amount-to-collect');
     results.checks.driverCollects = collect;
-    if (pageAmount !== '0' && !collect.endsWith(pageAmount)) throw new Error(`montant livreur ${collect} ≠ page de suivi ${pageAmount}`);
+    sameAmount('encaissé par le livreur / page de suivi', collect, pageAmount);
     await shot(dp, 'd33-driver-amount-and-code');
     await dp.getByTestId('delivery-code-input').fill(code);
     await dp.getByTestId('deliver-button').click();
@@ -302,7 +348,7 @@ async function karimToken(page) {
     await kg.goto(`${APP}/login`);
     await V(kg.getByText('Mode démo : utilisez le code 123456')).waitFor({ timeout: 45000 });
     await kg.getByTestId('phone-input').fill('73000007');
-    await V(kg.getByText('Recevoir le code', { exact: true })).click();
+    await submitPhone(kg);
     await V(kg.getByText('Mode démo : le code 123456 est accepté')).waitFor({ timeout: 30000 });
     await V(kg.getByText('Valider', { exact: true })).click();
     await kg.waitForTimeout(3000);

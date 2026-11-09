@@ -1,4 +1,5 @@
-import { base64Length, VERCEL_MAX_UPLOAD_BYTES, type FileUploadInput } from '@yaar/shared';
+import type { FileUploadInput } from '@yaar/shared';
+import { base64Length, VERCEL_MAX_UPLOAD_BYTES } from '@yaar/shared/schemas';
 
 /** Taille décodée (octets) d'une chaîne base64. */
 export function base64DecodedSize(b64: string): number {

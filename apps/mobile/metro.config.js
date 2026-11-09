@@ -12,8 +12,10 @@ const config = getDefaultConfig(projectRoot);
 config.watchFolders = [...(config.watchFolders ?? []), sharedRoot];
 config.resolver.nodeModulesPaths = [path.resolve(projectRoot, 'node_modules')];
 
+// `@yaar/shared` sans les schémas zod (shims/yaar-shared.ts) ; les schémas à la demande (`@yaar/shared/schemas`).
 const aliases = {
-  '@yaar/shared': path.join(sharedRoot, 'src/index.ts'),
+  '@yaar/shared': path.join(projectRoot, 'shims/yaar-shared.ts'),
+  '@yaar/shared/schemas': path.join(sharedRoot, 'src/schemas.ts'),
 };
 
 // Toutes les langues de zod (zod/locales, z.locales) : remplacées par le français et l'anglais seulement

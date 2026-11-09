@@ -6,7 +6,8 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["jest", "node"],
     "paths": {
-      "@yaar/shared": ["../../packages/shared/src/index.ts"],
+      "@yaar/shared": ["./shims/yaar-shared.ts"],
+      "@yaar/shared/schemas": ["../../packages/shared/src/schemas.ts"],
       "zod": ["./node_modules/zod"],
       "zod/*": ["./node_modules/zod/*"],
       "@/*": ["./src/*"]

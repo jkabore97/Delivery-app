@@ -112,5 +112,5 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 26 },
   label: { fontSize: 16, fontWeight: '800', color: colors.text },
   hint: { fontSize: 12, color: colors.textMuted },
-  price: { fontSize: 16, fontWeight: '900', color: colors.text },
+  price: { fontSize: 16, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
 });

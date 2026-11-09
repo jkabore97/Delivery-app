@@ -118,7 +118,9 @@ function OfferSheet({ offer }: { offer: OfferDto }) {
       <Row gap={spacing.sm}>
         <View style={[styles.money, { backgroundColor: colors.orangeLight }]} testID="offer-cash">
           <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
-          <Text style={[styles.moneyValue, { color: '#9A4F00' }]}>{formatFcfa(cash.total)}</Text>
+          <Text style={[styles.moneyValue, { color: '#9A4F00' }]} testID="offer-cash-total">
+            {formatFcfa(cash.total)}
+          </Text>
           {cash.atPickup !== null && cash.atDelivery !== null && cash.total > 0 ? (
             <Text style={styles.moneySplit} testID="offer-cash-split">
               {[
@@ -180,6 +182,6 @@ const styles = StyleSheet.create({
   vehicleText: { color: colors.blue, fontWeight: '800', fontSize: 13 },
   money: { flex: 1, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   moneyLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
-  moneyValue: { fontSize: 18, fontWeight: '900' },
-  moneySplit: { fontSize: 11, fontWeight: '700', color: '#9A4F00' },
+  moneyValue: { fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  moneySplit: { fontSize: 11, fontWeight: '700', color: '#9A4F00', fontVariant: ['tabular-nums'] },
 });

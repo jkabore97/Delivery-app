@@ -1,11 +1,9 @@
 import {
   AVERAGE_SPEED_KMH,
-  createDeliverySchema,
   distanceM,
   formatDistanceFr,
   formatDurationFr,
   minutesFromSeconds,
-  normalizePhone,
   OrderStatus,
   roadDistanceKm,
   routeProgress,
@@ -19,6 +17,7 @@ import {
   type StoreDto,
   type VehicleType,
 } from '@yaar/shared';
+import { createDeliverySchema, normalizePhone } from '@yaar/shared/schemas';
 import { isPinAtDefault, toAddressInput } from './address';
 import { formatFcfa } from './format';
 

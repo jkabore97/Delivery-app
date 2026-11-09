@@ -1,5 +1,5 @@
 import { Linking, Platform, Share } from 'react-native';
-import { normalizePhone } from '@yaar/shared';
+import { normalizePhone } from '@yaar/shared/schemas';
 
 /**
  * Envoi du lien de suivi au destinataire (il n'a pas de compte) :

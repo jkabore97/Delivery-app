@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { arrivalClockFr, formatDurationFr, LABELS, type VehicleType } from '@yaar/shared';
 import { formatFcfa, initials } from '../../lib/format';
-import { telUrl } from '../../lib/phone';
+import { telUrl } from '../../lib/tel';
 import type { Headline, TrackingStep } from '../../lib/trackingSteps';
 import { colors, radius, spacing } from '../../theme';
 import { VEHICLE_EMOJI } from '../VehicleOptions';
@@ -164,7 +164,9 @@ export function AmountBox({ label, amount, detail, testID }: { label: string; am
         <Text style={styles.amountLabel}>{label}</Text>
         {detail ? <Text style={styles.amountDetail}>{detail}</Text> : null}
       </View>
-      <Text style={styles.amountValue}>{formatFcfa(amount)}</Text>
+      <Text style={styles.amountValue} testID={testID ? `${testID}-value` : undefined}>
+        {formatFcfa(amount)}
+      </Text>
     </View>
   );
 }
@@ -270,7 +272,8 @@ const styles = StyleSheet.create({
   },
   amountLabel: { fontSize: 14, fontWeight: '800', color: '#9A4F00' },
   amountDetail: { fontSize: 12, color: '#9A4F00' },
-  amountValue: { fontSize: 20, fontWeight: '900', color: '#9A4F00' },
+  // Chiffres tabulaires : les espaces fines des milliers restent visibles (« 1 000 », pas « 1000 »).
+  amountValue: { fontSize: 20, fontWeight: '900', color: '#9A4F00', fontVariant: ['tabular-nums'] },
   info: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   infoIcon: { fontSize: 18, width: 24, textAlign: 'center' },
   infoTitle: { fontSize: 15, fontWeight: '700', color: colors.text },

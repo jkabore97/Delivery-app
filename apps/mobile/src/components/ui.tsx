@@ -318,7 +318,7 @@ export function KeyValue({
   return (
     <View style={styles.kv}>
       <Text style={[styles.body, strong && styles.bold]}>{label}</Text>
-      <Text style={[styles.body, styles.bold, strong && { fontSize: 18 }, valueColor ? { color: valueColor } : null]}>
+      <Text style={[styles.body, styles.bold, styles.tabular, strong && { fontSize: 18 }, valueColor ? { color: valueColor } : null]}>
         {value}
       </Text>
     </View>
@@ -384,7 +384,7 @@ export const styles = StyleSheet.create({
   buttonSmall: { minHeight: 40, paddingHorizontal: spacing.md },
   buttonDisabled: { opacity: 0.45 },
   buttonPressed: { opacity: 0.8 },
-  buttonText: { fontSize: 16, fontWeight: '700' },
+  buttonText: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   buttonTextSmall: { fontSize: 14 },
   chip: {
     paddingHorizontal: spacing.md,
@@ -422,7 +422,9 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  statValue: { fontSize: 20, fontWeight: '800', color: colors.text },
+  statValue: { fontSize: 20, fontWeight: '800', color: colors.text, fontVariant: ['tabular-nums'] },
+  /** Montants : chiffres tabulaires (espaces fines des milliers bien visibles, colonnes alignées). */
+  tabular: { fontVariant: ['tabular-nums'] },
   kv: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
   dot: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
   progressTrack: { height: 8, borderRadius: 4, backgroundColor: '#E9EDF1', overflow: 'hidden' },
