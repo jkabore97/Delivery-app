@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   brandText: { fontSize: 27, lineHeight: 30, fontWeight: '800', letterSpacing: -1.2, color: palette.ink },
   brandDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: palette.cobalt, marginBottom: 6 },
   nav: { marginTop: 36, gap: 4 },
-  item: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 48, paddingHorizontal: 14, borderRadius: 24 },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 48, paddingHorizontal: 12, borderRadius: 24 },
   itemOn: { backgroundColor: palette.cobaltTint },
   itemHover: { backgroundColor: palette.raised },
   itemText: { flex: 1, fontSize: 14, lineHeight: 18, fontWeight: '600', color: palette.ink },

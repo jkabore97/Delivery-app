@@ -15,7 +15,10 @@ jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual<typeof import('react')>('react');
   return {
     useLocalSearchParams: () => mockParams,
-    router: mockRouter,
+    // Lu au moment de l'appel (la fabrique du mock est remontée avant la déclaration de mockRouter).
+    get router() {
+      return mockRouter;
+    },
     useFocusEffect: (cb: () => void) => useEffect(cb, [cb]),
     useIsFocused: () => true,
     usePathname: () => '/business',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { LABELS, type BusinessSummaryDto, type OrderDto, type StoreDto } from '@yaar/shared';
 import { Text } from '../../Text';
@@ -352,6 +352,32 @@ export function EmptyHeroTile({ stores, store, style }: { stores: readonly Store
 /* Listes                                                                                                              */
 /* ------------------------------------------------------------------------------------------------------------------ */
 
+/**
+ * Zone qui défile d'une tuile de liste, haute d'un nombre entier de lignes (`pitch` = hauteur d'une ligne + écart) : la
+ * dernière ligne visible n'est jamais coupée en deux au bas de la tuile ; la suite se lit en faisant défiler.
+ */
+function RowsViewport({ pitch, gap, children, contentStyle }: { pitch: number; gap: number; children: ReactNode; contentStyle: StyleProp<ViewStyle> }) {
+  const [room, setRoom] = useState<number | null>(null);
+  const rows = room === null ? null : Math.max(1, Math.floor((room - ROWS_INSET * 2 + gap) / pitch));
+  const height = rows === null ? undefined : ROWS_INSET * 2 + rows * pitch - gap;
+  return (
+    <View
+      style={styles.rowsRoom}
+      onLayout={(e) => {
+        const h = Math.round(e.nativeEvent.layout.height);
+        if (h > 0 && h !== room) setRoom(h);
+      }}
+    >
+      <ScrollView style={height === undefined ? styles.flexFill : { height, flexGrow: 0 }} contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Marge autour des lignes d'une liste (l'anneau de focus du clavier n'est pas rogné par la zone qui défile). */
+const ROWS_INSET = 3;
+
 function TileHead({ title, count, action }: { title: string; count?: number | null; action?: { label: string; onPress: () => void; testID?: string } }) {
   return (
     <View style={styles.head}>
@@ -405,7 +431,7 @@ export function LiveListTile({
           {query.trim() ? `Aucune livraison en cours ne correspond à « ${query.trim()} ».` : 'Aucune livraison en cours pour le moment.'}
         </Text>
       ) : (
-        <ScrollView style={styles.rows} contentContainerStyle={styles.rowsContent} showsVerticalScrollIndicator={false}>
+        <RowsViewport pitch={68} gap={4} contentStyle={styles.rowsContent}>
           {list.map((o) => {
             const selected = o.id === selectedId;
             const eta = liveEta(o, now);
@@ -455,7 +481,7 @@ export function LiveListTile({
               </View>
             );
           })}
-        </ScrollView>
+        </RowsViewport>
       )}
     </View>
   );
@@ -487,7 +513,7 @@ export function RecentTile({
       ) : list.length === 0 ? (
         <Text style={styles.listEmpty}>{query.trim() ? `Aucune livraison du jour ne correspond à « ${query.trim()} ».` : 'Pas encore de livraison livrée aujourd’hui.'}</Text>
       ) : (
-        <ScrollView style={styles.rows} contentContainerStyle={styles.doneContent} showsVerticalScrollIndicator={false}>
+        <RowsViewport pitch={64} gap={0} contentStyle={styles.doneContent}>
           {list.map((o, i) => {
             const minutes = deliveryMinutes(o);
             const area = dropoffArea(o);
@@ -525,7 +551,7 @@ export function RecentTile({
               </Pressable>
             );
           })}
-        </ScrollView>
+        </RowsViewport>
       )}
     </View>
   );
@@ -555,7 +581,8 @@ const styles = StyleSheet.create({
   heroId: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.onCobalt2, ...tabular },
   heroOpen: { marginLeft: 'auto' },
   heroOpenInner: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 32, paddingLeft: 12, paddingRight: 8, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.16)' },
-  heroOpenHover: { backgroundColor: 'rgba(255, 255, 255, 0.26)' },
+  // Survol : fond plus sombre (blanc 7,4:1), jamais plus clair (un voile blanc plus fort tomberait sous 4,5:1).
+  heroOpenHover: { backgroundColor: ON_HERO_CARD },
   heroOpenText: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: palette.onCobalt },
   etaLabel: { marginTop: 18, fontSize: 14, lineHeight: 18, fontWeight: '600', color: palette.onCobalt2 },
   etaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 12, marginTop: 2 },
@@ -587,18 +614,20 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4, color: palette.ink },
   emptyBody: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted, maxWidth: 420 },
   emptyCta: { marginTop: 8 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28, paddingHorizontal: 4 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28, paddingHorizontal: 7 },
   headTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.25, color: palette.ink, flexShrink: 1 },
   count: { minWidth: 24, height: 22, paddingHorizontal: 7, borderRadius: 11, backgroundColor: palette.cobaltTint, alignItems: 'center', justifyContent: 'center' },
   countText: { fontSize: 12, lineHeight: 16, fontWeight: '800', color: palette.cobaltText, ...tabular },
   headBtnWrap: { marginLeft: 'auto', padding: 10, margin: -10 },
   headBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: palette.canvas, alignItems: 'center', justifyContent: 'center' },
   headBtnHover: { backgroundColor: palette.raisedHigh },
-  listTile: { paddingTop: 18, paddingHorizontal: 16, paddingBottom: 12 },
-  doneTile: { paddingTop: 18, paddingLeft: 16, paddingRight: 20, paddingBottom: 8 },
-  listEmpty: { marginTop: 14, paddingHorizontal: 4, fontSize: 13, lineHeight: 19, fontWeight: '500', color: palette.inkMuted },
-  rows: { flex: 1, marginTop: 10 },
-  rowsContent: { gap: 4, paddingBottom: 4 },
+  listTile: { paddingTop: 18, paddingHorizontal: 13, paddingBottom: 12 },
+  doneTile: { paddingTop: 18, paddingLeft: 13, paddingRight: 17, paddingBottom: 8 },
+  listEmpty: { marginTop: 14, paddingHorizontal: 7, fontSize: 13, lineHeight: 19, fontWeight: '500', color: palette.inkMuted },
+  rowsRoom: { flex: 1, marginTop: 10, minHeight: 0 },
+  flexFill: { flex: 1 },
+  // 3 px autour des lignes : l'anneau de focus du clavier n'est pas rogné par la zone qui défile.
+  rowsContent: { gap: 4, padding: 3 },
   row: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, minHeight: 64 },
   rowOn: { backgroundColor: palette.cobaltTint },
   rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingHorizontal: 12, borderRadius: 18 },
@@ -612,7 +641,7 @@ const styles = StyleSheet.create({
   rowTime: { fontSize: 15, lineHeight: 19, fontWeight: '800', letterSpacing: -0.15, color: palette.ink, ...tabular },
   rowWait: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: palette.inkMuted },
   rowAmount: { marginTop: 4, fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.inkMuted, ...tabular },
-  doneContent: { paddingBottom: 4 },
+  doneContent: { padding: 3 },
   done: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, borderRadius: 14 },
   doneHover: { backgroundColor: palette.raised },
   doneSep: { position: 'absolute', left: 38, right: 0, top: 0, height: 1, backgroundColor: palette.line },

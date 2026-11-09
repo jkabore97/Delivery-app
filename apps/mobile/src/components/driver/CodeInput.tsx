@@ -43,8 +43,8 @@ export function CodeInput({
   const gap = length > 4 ? 8 : 12;
   // Cases de 64 × 76 (4 chiffres) ou 52 × 64 (6 chiffres), réduites pour tenir dans la largeur disponible.
   const ideal = length > 4 ? 52 : 64;
-  // 8 px de marge de chaque côté au moins : les cases ne touchent jamais le bord de la carte.
-  const box = width > 0 ? Math.min(ideal, Math.floor((width - 16 - gap * (length - 1)) / length)) : ideal;
+  // 2 px de marge de chaque côté : l'anneau de la case active n'est jamais rogné par le bord de la carte.
+  const box = width > 0 ? Math.min(ideal, Math.floor((width - 4 - gap * (length - 1)) / length)) : ideal;
   const boxHeight = Math.round(box * (length > 4 ? 1.24 : 1.2));
   const digitSize = Math.round(box * (length > 4 ? 0.55 : 0.56));
   return (

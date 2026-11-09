@@ -22,11 +22,30 @@ export function zoomWebMap(root: unknown, direction: 1 | -1): boolean {
   return true;
 }
 
-function MapButton({ icon, label, onPress, color = palette.ink, style, testID }: { icon: IconName; label: string; onPress: () => void; color?: string; style?: StyleProp<ViewStyle>; testID?: string }) {
+/**
+ * Bouton de la carte (48 px). Ses coins sont les siens (`shape`) : le groupe qui le porte ne rogne rien, l'anneau de
+ * focus du clavier reste visible.
+ */
+function MapButton({
+  icon,
+  label,
+  onPress,
+  color = palette.ink,
+  shape = 'round',
+  testID,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  color?: string;
+  shape?: 'round' | 'top' | 'bottom';
+  testID?: string;
+}) {
+  const corners = shape === 'top' ? styles.btnTop : shape === 'bottom' ? styles.btnBottom : styles.btnRound;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[POINTER, style]} testID={testID}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[POINTER, corners]} testID={testID}>
       {(s: WebPressState) => (
-        <View style={[styles.btn, (s.hovered || s.pressed) && styles.btnHover]}>
+        <View style={[styles.btn, corners, (s.hovered || s.pressed) && styles.btnHover]}>
           <Icon name={icon} size={18} color={color} strokeWidth={2.4} />
         </View>
       )}
@@ -94,9 +113,9 @@ export function MapTile({
       <View style={styles.controls} pointerEvents="box-none">
         {web ? (
           <View style={[styles.zoom, shadows.float]}>
-            <MapButton icon="plus" label="Zoomer" onPress={() => zoomWebMap(root.current, 1)} testID="map-zoom-in" />
+            <MapButton icon="plus" label="Zoomer" shape="top" onPress={() => zoomWebMap(root.current, 1)} testID="map-zoom-in" />
             <View style={styles.zoomSep} />
-            <MapButton icon="minus" label="Dézoomer" onPress={() => zoomWebMap(root.current, -1)} testID="map-zoom-out" />
+            <MapButton icon="minus" label="Dézoomer" shape="bottom" onPress={() => zoomWebMap(root.current, -1)} testID="map-zoom-out" />
           </View>
         ) : null}
         <View style={[styles.round, shadows.float]}>
@@ -121,9 +140,12 @@ const styles = StyleSheet.create({
   blank: { backgroundColor: '#F3F5F8' },
   pill: { position: 'absolute', left: 16, top: 16, right: 76, alignItems: 'flex-start' },
   controls: { position: 'absolute', right: 16, top: 16, alignItems: 'center', gap: 8 },
-  zoom: { borderRadius: 24, backgroundColor: palette.card, overflow: 'hidden' },
+  zoom: { borderRadius: 24, backgroundColor: palette.card },
   zoomSep: { height: 1, backgroundColor: palette.line },
-  round: { borderRadius: 24, backgroundColor: palette.card, overflow: 'hidden' },
+  round: { borderRadius: 24, backgroundColor: palette.card },
   btn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.card },
+  btnRound: { borderRadius: 24 },
+  btnTop: { borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  btnBottom: { borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   btnHover: { backgroundColor: palette.raised },
 });

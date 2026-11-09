@@ -244,6 +244,7 @@ export default function BusinessDeliveryScreen() {
         driverPhone={driverPhone}
         cancelButton={cancelButton}
         shareCard={terminal ? null : shareCard}
+        promptShare={promptShare}
         extra={
           <>
             {errorNode}
@@ -352,6 +353,7 @@ function DesktopDelivery({
   driverPhone,
   cancelButton,
   shareCard,
+  promptShare,
   extra,
 }: {
   order: OrderDto;
@@ -369,6 +371,8 @@ function DesktopDelivery({
   driverPhone: string | null;
   cancelButton: ReactNode;
   shareCard: ReactNode;
+  /** Juste après la demande : le lien de suivi à envoyer passe en tête de colonne. */
+  promptShare: boolean;
   extra: ReactNode;
 }) {
   const chip = deliveryChip(o.status);
@@ -431,10 +435,7 @@ function DesktopDelivery({
             </View>
           ) : null}
           <CancelReason order={o} />
-          {shareCard ? <View style={[styles.tile, shadows.tile, styles.tilePad]}>{shareCard}</View> : null}
-          <View style={[styles.tile, shadows.tile, styles.tilePad]}>
-            <RecipientBlock order={o} terminal={isTerminal(o.status)} />
-          </View>
+          {shareCard && promptShare ? <View style={[styles.tile, shadows.tile, styles.tilePad]}>{shareCard}</View> : null}
           {o.driver && liveStage ? (
             <View style={[styles.tile, shadows.tile, styles.tilePad]}>
               <DriverCard
@@ -447,6 +448,10 @@ function DesktopDelivery({
               />
             </View>
           ) : null}
+          <View style={[styles.tile, shadows.tile, styles.tilePad]}>
+            <RecipientBlock order={o} terminal={isTerminal(o.status)} />
+          </View>
+          {shareCard && !promptShare ? <View style={[styles.tile, shadows.tile, styles.tilePad]}>{shareCard}</View> : null}
           <View style={[styles.tile, shadows.tile, styles.tilePad]}>
             <Text style={styles.tileTitle}>Montants</Text>
             <AmountsBlock order={o} />

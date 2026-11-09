@@ -39,23 +39,23 @@ export function MapSummaryPill({ total, searching, style }: { total: number; sea
  * Chiffres du jour (spec : « 3 en cours », « 14 livrées », et la pastille soleil « 87 500 FCFA à reverser ») : remplis
  * canvas dans la feuille blanche, chiffres 800 tabulaires. Résumé pas encore lu : « … » à la place des nombres.
  */
-export function KpiChips({ active, summary }: { active: number; summary: BusinessSummaryDto | null }) {
+export function KpiChips({ active, summary, dense = false }: { active: number; summary: BusinessSummaryDto | null; dense?: boolean }) {
   const goods = summary ? formatAmount(summary.today.goodsCollected) : null;
   const big = (goods?.length ?? 0) > 7;
   return (
     <View style={styles.kpis} testID="kpi-chips">
-      <View style={styles.kpi} accessible accessibilityLabel={`${active} livraison${active > 1 ? 's' : ''} en cours`}>
+      <View style={[styles.kpi, dense && styles.kpiDense]} accessible accessibilityLabel={`${active} livraison${active > 1 ? 's' : ''} en cours`}>
         <Text style={styles.kpiValue}>{active}</Text>
         <Text style={styles.kpiLabel}>en cours</Text>
       </View>
-      <View style={styles.kpi} accessible accessibilityLabel={summary ? `${summary.today.delivered} livrée${summary.today.delivered > 1 ? 's' : ''} aujourd’hui` : 'Livrées aujourd’hui : chargement'}>
+      <View style={[styles.kpi, dense && styles.kpiDense]} accessible accessibilityLabel={summary ? `${summary.today.delivered} livrée${summary.today.delivered > 1 ? 's' : ''} aujourd’hui` : 'Livrées aujourd’hui : chargement'}>
         <Text style={styles.kpiValue}>{summary ? summary.today.delivered : '…'}</Text>
         <Text style={styles.kpiLabel} numberOfLines={1}>
           {summary && summary.today.delivered === 1 ? 'livrée' : 'livrées'}
         </Text>
       </View>
       <View
-        style={[styles.kpi, styles.kpiSun]}
+        style={[styles.kpi, styles.kpiSun, dense && styles.kpiDense]}
         accessible
         accessibilityLabel={goods ? `${goods} FCFA à reverser, encaissés pour vous aujourd’hui` : 'À reverser : chargement'}
         testID="kpi-goods"
@@ -301,6 +301,7 @@ const styles = StyleSheet.create({
   pillSub: { fontWeight: '600', color: palette.inkMuted, flexShrink: 1 },
   kpis: { flexDirection: 'row', gap: 8 },
   kpi: { height: 56, borderRadius: 18, backgroundColor: palette.canvas, paddingHorizontal: 12, justifyContent: 'center', minWidth: 84 },
+  kpiDense: { height: 50, borderRadius: 16 },
   kpiSun: { flex: 1, backgroundColor: palette.sun },
   kpiValue: { fontSize: 19, lineHeight: 23, fontWeight: '800', letterSpacing: -0.6, color: palette.ink, ...tabular },
   kpiValueSmall: { fontSize: 16, lineHeight: 21 },

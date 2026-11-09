@@ -114,7 +114,7 @@ function PhoneHome() {
       stageKey={stageKey}
       animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
       // La carte garde le haut de l'écran (~40 %) ; sans livraison, la feuille reste courte.
-      sheetMaxRatio={list.length > 0 ? 0.62 : 0.56}
+      sheetMaxRatio={list.length > 0 ? (short ? 0.66 : 0.62) : 0.56}
       // Cadrage : les épingles tiennent au-dessus de la mention des données (la carte est courte ici).
       fitBottomMargin={44}
       insetBottom={false}
@@ -138,8 +138,9 @@ function PhoneHome() {
         <DarkBanner message={storeError} action={{ label: 'Réessayer', onPress: () => void retry(), loading: retrying, testID: 'retry-store' }} />
       ) : null}
       {store ? <StoreApprovalBanner store={store} /> : <Text style={styles.muted}>Créez le profil de votre entreprise pour demander des livraisons.</Text>}
-      {store ? <KpiChips active={items ? list.length : (summary?.active ?? 0)} summary={summary} /> : null}
-      {store ? (
+      {store ? <KpiChips active={items ? list.length : (summary?.active ?? 0)} summary={summary} dense={short} /> : null}
+      {/* Petit téléphone : pas de titre de liste (la pastille « 3 en cours » le dit), la tuile héros remonte. */}
+      {store && !short ? (
         <View style={styles.sectionRow}>
           <Text style={styles.section} accessibilityRole="header">
             Livraisons en cours
