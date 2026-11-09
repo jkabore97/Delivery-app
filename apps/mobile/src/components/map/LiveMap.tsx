@@ -14,7 +14,8 @@ import { clampBasePadding, nativeFitPadding, withDefaultPadding } from '../../li
 import { activeLegPoints, pointsKey, resolveLines, type DrawnLine } from '../../lib/map/lines';
 import { DriverMotion } from '../../lib/map/motion';
 import { radarRings, RADAR_PERIOD_MS, RADAR_STEP_MS } from '../../lib/map/radar';
-import { ANDROID_MAP_STYLE, ANDROID_MAP_STYLE_DARK, MAP_COLORS, MAP_PALETTES, type MapPalette } from '../../lib/map/style';
+import { ANDROID_MAP_STYLE_DARK } from '../../lib/map/androidDarkStyle';
+import { ANDROID_MAP_STYLE, MAP_COLORS, MAP_PALETTES, type MapPalette } from '../../lib/map/style';
 import {
   AVATAR_VIEW,
   AvatarPinView,

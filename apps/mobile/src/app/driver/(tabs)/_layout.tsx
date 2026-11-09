@@ -19,12 +19,13 @@ export default function DriverTabs() {
         headerShown: false,
         tabBarActiveTintColor: dark.green,
         tabBarInactiveTintColor: dark.textFaint,
+        // Onglet : 5 + icône 28 + libellé ~15 + 5 px ; la barre par défaut (49 px) coupe le bas des libellés.
         tabBarStyle: {
           backgroundColor: dark.surface,
           borderTopColor: dark.border,
-          height: 60 + insets.bottom,
-          paddingTop: 6,
-          paddingBottom: Math.max(insets.bottom, 8),
+          height: 58 + insets.bottom,
+          paddingTop: 2,
+          paddingBottom: 2 + insets.bottom,
         },
         tabBarLabelStyle: { fontWeight: '800', fontSize: 11.5 },
       }}

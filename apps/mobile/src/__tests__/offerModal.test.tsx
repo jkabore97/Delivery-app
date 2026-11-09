@@ -55,7 +55,9 @@ describe('OfferModal (plein écran)', () => {
   it('affiche l’offre avec le compte à rebours, le véhicule et le gain', async () => {
     const r = await show();
     expect(r.getByTestId('offer-screen')).toBeTruthy();
-    expect(r.getByTestId('offer-title')).toHaveTextContent('Nouvelle course · Moto');
+    expect(r.getByTestId('offer-title')).toHaveTextContent('Nouvelle course');
+    expect(r.getByLabelText('Nouvelle course, Moto')).toBeTruthy();
+    expect(r.getByTestId('offer-vehicle')).toHaveTextContent('Moto · 4,1 km de course');
     expect(r.getByText('30 s')).toBeTruthy();
     expect(r.getByText(/Maquis Le Verdoyant/)).toBeTruthy();
     expect(r.getByTestId('offer-earning')).toHaveTextContent(/Votre gain.*1 200 FCFA/);

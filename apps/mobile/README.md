@@ -10,7 +10,7 @@ rôle du compte après la connexion par code, et une page publique :
 | Espace | Rôle API | Couleur | Fonctions |
 |---|---|---|---|
 | **Entreprise** | `SELLER` (profil d’entreprise = boutique validée par Yaar) | orange `#F28C1B` | onglet **Livraisons** : carte d’ensemble des livraisons en cours avec les livreurs en direct + liste ; onglet **Nouvelle** : demande en 3 étapes (destination sur une carte à épingle centrale avec bulle du quartier, adresse, repère, destinataire, « destinataire entreprise », suggestions de quartiers ; colis, véhicule avec prix du devis, qui paie la livraison, montant à encaisser ; récapitulatif → « Demander un livreur ») ; **suivi** façon Uber (carte plein écran, heure d’arrivée, étapes, livreur à appeler, destinataire, montants, « Envoyer le lien de suivi au destinataire », annulation avant le retrait ; jamais le code) ; **Historique** ; **Profil** (entreprise, adresse de retrait, bandeau de validation, compte) |
-| **Livreur** | `DRIVER` | bleu `#2D6CDF` | inscription KYC (véhicule, immatriculation, photos des pièces), écran d’attente de validation, en ligne / hors ligne avec l’indicateur « En ligne : suivi GPS actif », offres avec compte à rebours de 30 s (entreprise, zones, véhicule, montants), course sur carte (itinéraire vers l’entreprise puis le destinataire, position animée, carte « Récupérer chez … · 1,2 km · 4 min »), montants à encaisser (au retrait / à la livraison), code du destinataire + photo facultative, cash détenu / plafond, gains, bouton SOS |
+| **Livreur** | `DRIVER` | vert de marque, vert vif `#2FD38A` sur ses feuilles et écrans sombres | inscription KYC (véhicule, immatriculation, photos des pièces), écran d’attente de validation, écran « Vous êtes prêt ! » (une fois, dossier validé et jamais passé en ligne), accueil carte plein écran avec l’indicateur « En ligne : suivi GPS actif », grand bouton rond « Passer en ligne », feuille sombre « En attente de courses… » (gains du jour, espèces / plafond) ; offre **plein écran** (carte sombre : livreur, entreprise, zone de livraison en cercle doux ; « ≈ N min · X km » ; grand bouton rond « Accepter » dans l’anneau du compte à rebours de 30 s, rouge les 10 dernières secondes ; « Refuser » ; détail : gain, espèces au retrait / à la livraison) ; course sur carte claire (itinéraire, destinataire en épingle à ses initiales) et feuille sombre : étape, « Colis pour … », adresse et repère, colis, instructions, montants, boutons ronds Récupéré / Livré, WhatsApp, Appeler, « Itinéraire », SOS ; saisie du code (montant à encaisser d’abord) + photo facultative ; historique en cartes de colis ; gains |
 | **Suivi public** | aucun (lien `/suivi/<jeton>`, sans connexion) | vert `#0B7A4B` | carte plein écran, « Arrivée vers 14:32 · dans 12 min », 4 étapes (Commande confirmée → Livreur en route vers l’expéditeur → En route vers vous → Livrée), entreprise expéditrice, livreur (prénom, véhicule, plaque, note, « Appeler »), code à donner au livreur, montant à payer, adresse et repère ; états recherche, livrée (merci), annulée, lien expiré |
 
 Pas d’inscription client : l’écran de connexion ne propose que **Entreprise** et **Livreur**. Un ancien compte
@@ -68,11 +68,15 @@ livreur, à la carte d’ensemble et au choix d’adresse :
   passe au style vectoriel gratuit OpenFreeMap « positron » (`https://tiles.openfreemap.org/styles/positron`, sans
   clé, remplaçable par `EXPO_PUBLIC_MAP_STYLE_URL`) dès qu’il arrive : il est redemandé avec un délai croissant
   (2 s, 4 s… 60 s) tant qu’il n’est pas chargé, et aussitôt au retour du réseau (`online`) — jamais abandonné
-  (`src/lib/map/styleLoader.ts`). Seules les règles utiles de `maplibre-gl.css` sont injectées avec la carte (la
+  (`src/lib/map/styleLoader.ts`). Fond sombre sur demande (`<LiveMap theme="dark">`, offre du livreur) : OpenFreeMap
+  « dark » (`https://tiles.openfreemap.org/styles/dark`, remplaçable par `EXPO_PUBLIC_MAP_STYLE_DARK_URL`), même
+  chargement, style de secours sombre ; chaque style reçu est gardé pendant la session, par URL (un fond ne remplace
+  jamais l’autre) : une carte rouverte l’affiche aussitôt. Seules les règles utiles de `maplibre-gl.css` sont injectées avec la carte (la
   feuille complète bloquait le premier affichage). Mention « © OpenFreeMap © OpenMapTiles © OpenStreetMap
   contributors » toujours visible au-dessus de la feuille, dans la marge de cadrage (jamais sur un marqueur cadré).
 - **Android / iOS** : `react-native-maps` ; Google Maps (Android) avec un style « argenté » discret
-  (`customMapStyle`), Apple Plans `mutedStandard` (iOS) ; marqueurs en vues personnalisées STATIQUES, capturées une
+  (`customMapStyle`), Apple Plans `mutedStandard` (iOS) ; fond sombre : style Google de nuit
+  (`src/lib/map/androidDarkStyle.ts`) et `userInterfaceStyle="dark"` (iOS) ; marqueurs en vues personnalisées STATIQUES, capturées une
   seule fois (`tracksViewChanges` coupé après le premier rendu : aucune image redessinée à chaque image) ; radar
   « recherche d’un livreur » en cercles natifs (5 images/s) ; `mapPadding` garde le logo Google et le lien
   « Mentions légales » d’Apple au-dessus de la feuille ; marges de cadrage bornées à la taille de la carte.
@@ -82,7 +86,9 @@ livreur, à la carte d’ensemble et au choix d’adresse :
   le cap est inconnu, le livreur arrêté ou sa position ancienne ; seul le chevron tourne (web : élément enfant,
   corrigé de l’orientation de la carte ; natif : marqueur plat séparé avec `rotation`). Livreur arrivé chez
   l’entreprise : marqueur décalé de quelques pixels pour ne pas la cacher. Mêmes pictogrammes sur le web (SVG) et en
-  natif (vues) : `markerArt.ts`.
+  natif (vues) : `markerArt.ts`. En option (`initials` d’un marqueur, `SceneInput.initials`) : épingle « avatar »
+  aux initiales de l’entreprise (orange) ou du destinataire (vert), utilisée par les écrans du livreur. Zones
+  approximatives (`zones`) : cercles doux à contour pointillé (offre : quartier de livraison, jamais l’adresse).
 - **Itinéraire** : `route` de l’API (`OrderDto` / `TrackingDto`) en vert `#0B7A4B` avec liseré blanc ; ligne droite en
   pointillés sans itinéraire (ou `source: "straight"`) ; la partie parcourue est rognée au point de la ligne le plus
   proche du livreur (fonctions de `packages/shared/src/map.ts`).
@@ -116,6 +122,20 @@ Clé Google Maps (build Android) :
   MapLibre Native (tuiles OpenFreeMap) est l’option pour retirer cette dépendance (nouvelle dépendance native).
 - Build de production : `npx eas-cli build -p android` (la clé peut aussi être fournie comme secret EAS).
   Si l’API de test est en `http://` (non chiffré), un build de production Android la bloque : utiliser une URL `https://`.
+
+## Système de design « coursier » (`src/components/design/`)
+
+Écrans du livreur (et, à venir, de l’entreprise et du destinataire) : surfaces sombres et vert vif (`dark` de
+`src/theme.ts`, contrastes mesurés), titres 800–900, montants en chiffres tabulaires (`formatFcfa`), une action
+évidente par écran, cibles tactiles de 56 px au moins. Composants : `RoundButton` (rond, big / medium / small,
+icône + libellé, inactif / chargement), `CountdownRing` (anneau SVG qui se vide de `offeredAt` à `expiresAt`, rouge
+les 10 dernières secondes, horloge propre à ~15 images/s : l’écran et sa carte ne sont pas redessinés),
+`Pill` / `StatusChip` / `MapIconButton`, `PackageCard` (nom, adresse, état, colis, instructions, montant, WhatsApp /
+Appeler), `CallRoundButton` / `WhatsAppRoundButton` (`telUrl`, `whatsappUrl` → `https://wa.me/<chiffres>`),
+`SheetSurface`, `DarkScreen`, `AmountRow` (testID `<id>-value` des montants exacts), `Icon` (pictogrammes dessinés
+pour Yaar : aucun logo de marque) et `CourierIllustration`. `LiveTrackingLayout` accepte `sheetTheme="dark"`,
+`mapTheme`, `zones`, `aboveSheet`, `insetBottom` et `mapVisible` (sans ces options : écran inchangé). Le dossier
+s’appuie sur `react-native-svg` (inclus dans Expo Go) ; la page publique de suivi ne le télécharge pas.
 
 ## Code partagé
 

@@ -15,10 +15,11 @@
 //   3. Entreprise (Le Verdoyant) : nouvelle livraison en 3 étapes (destination sur la carte, colis et prix, demande)
 //      → écran de suivi avec le lien à envoyer au destinataire.
 //   4. Destinataire : ouvre le lien de suivi SANS compte (titre de la page, « Recherche d'un livreur », code).
-//   5. Livreur (Karim D.) : consentement GPS, en ligne, reçoit l'offre par polling (entreprise + zone), l'accepte,
-//      récupère le colis, voit le montant à encaisser et saisit le code lu sur la page de suivi → livré ; la page de
-//      suivi affiche « Colis livré », l'entreprise « Livrée », la console la course « Livrée » et la caisse du livreur.
-//      Aucune requête Socket.IO (mode poll).
+//   5. Livreur (Karim D.) : écran « Vous êtes prêt ! » (jamais passé en ligne), « Passer en ligne » → consentement GPS,
+//      en ligne, reçoit l'offre plein écran par polling (entreprise + zone ; carte sombre sans aucun marqueur du
+//      destinataire), l'accepte, récupère le colis, voit le montant à encaisser et saisit le code lu sur la page de
+//      suivi → livré ; la page de suivi affiche « Colis livré », l'entreprise « Livrée », la console la course
+//      « Livrée » et la caisse du livreur. Aucune requête Socket.IO (mode poll).
 //   6. Avertissement « démonstration publique » sur l'écran des pièces KYC d'un livreur.
 //
 // Montants comparés EXACTEMENT (pas de « se termine par ») : ce que le destinataire paiera (récapitulatif de la
@@ -267,28 +268,47 @@ async function karimToken(page) {
     });
     const dp = driver.page;
     await demoLogin(dp, 'Livreur · Karim D.');
-    await dp.getByTestId('online-switch').waitFor({ timeout: 45000 });
-    await dp.getByTestId('online-switch').click();
+    // Dossier validé, jamais passé en ligne (consentement retiré à la préparation) : écran « Vous êtes prêt ! ».
+    await dp.getByTestId('ready-screen').waitFor({ timeout: 45000 });
+    await V(dp.getByText('Vous êtes prêt !', { exact: true })).waitFor({ timeout: 10000 });
+    results.checks.readyScreen = true;
+    await shot(dp, 'd29-driver-ready');
+    step('livreur : écran « Vous êtes prêt ! » (dossier validé, jamais passé en ligne)');
+    await dp.getByTestId('ready-go-online').click();
     await dp.getByTestId('tracking-consent').waitFor({ timeout: 30000 });
     await shot(dp, 'd30-driver-consent');
     await dp.getByTestId('accept-tracking-consent').click();
-    await V(dp.getByText(/En ligne/)).waitFor({ timeout: 45000 });
+    // Indicateur légal de l'accueil (« En ligne : suivi GPS actif ») ; le texte du consentement contient aussi
+    // « En ligne » : on attend la pastille d'état elle-même.
+    await V(dp.getByTestId('online-status').filter({ hasText: /^En ligne/ })).waitFor({ timeout: 45000 });
+    results.checks.readyScreenClosedAfterOnline = !(await dp.getByTestId('ready-screen').isVisible().catch(() => false));
+    if (!results.checks.readyScreenClosedAfterOnline) throw new Error('l’écran « Vous êtes prêt ! » reste affiché après le passage en ligne');
     step('livreur : consentement GPS donné, en ligne');
     for (let i = 0; ; i++) {
       await dp.getByTestId('accept-offer').waitFor({ timeout: 120000 });
       await dp.waitForTimeout(500);
-      const sheet = await V(dp.getByText(/^Récupérer /)).textContent();
-      const zone = await V(dp.getByText(/^Livrer : /)).textContent();
+      const sheet = await V(dp.getByTestId('offer-pickup')).textContent();
+      const zone = await V(dp.getByTestId('offer-dropoff')).textContent();
       if (sheet.includes('Le Verdoyant') && zone.includes('Patte d’Oie')) break;
       step(`livreur : offre d’une autre livraison de démo (${sheet} → ${zone}) → refusée`);
-      await V(dp.getByText('Refuser', { exact: true })).click();
+      await V(dp.getByTestId('reject-offer')).click();
       await dp.waitForTimeout(1500);
       if (i > 5) throw new Error('offre de la livraison de test jamais reçue');
     }
     results.checks.offerCash = await amountOf(dp, 'offer-cash-total');
     // Espèces de la course : frais au retrait (payés ici par le destinataire, donc 0) + montant à la livraison.
     sameAmount('espèces de l’offre / page de suivi', results.checks.offerCash, pageAmount);
-    step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie)`);
+    // Avant acceptation : carte sombre, entreprise et livreur, zone de livraison en cercle, jamais le destinataire.
+    await dp.waitForSelector('[data-testid="offer-screen"] canvas.maplibregl-canvas', { timeout: 30000 });
+    results.checks.offerMap = await dp.evaluate(() => {
+      const root = document.querySelector('[data-testid="offer-screen"]');
+      return {
+        theme: root?.querySelector('[data-testid="live-map"]')?.getAttribute('data-theme') ?? null,
+        markers: [...(root?.querySelectorAll('.maplibregl-marker') ?? [])].map((e) => e.getAttribute('data-kind') ?? '?'),
+      };
+    });
+    if (results.checks.offerMap.markers.includes('dropoff')) throw new Error('offre : marqueur du destinataire sur la carte avant acceptation');
+    step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie), carte ${results.checks.offerMap.theme}`);
     await shot(dp, 'd31-driver-offer');
     await dp.getByTestId('accept-offer').click();
     await dp.getByTestId('next-step').waitFor({ timeout: 45000 });
@@ -321,7 +341,9 @@ async function karimToken(page) {
     await shot(dp, 'd33-driver-amount-and-code');
     await dp.getByTestId('delivery-code-input').fill(code);
     await dp.getByTestId('deliver-button').click();
-    await V(dp.getByText('Livraison confirmée ✅')).waitFor({ timeout: 45000 });
+    await dp.getByTestId('delivery-success').waitFor({ timeout: 45000 });
+    await V(dp.getByText('Livraison confirmée', { exact: true })).waitFor({ timeout: 10000 });
+    await shot(dp, 'd34-driver-delivered');
     step('livreur : montant encaissé, code saisi → livraison validée');
     {
       const t = Date.now();

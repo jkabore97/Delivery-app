@@ -76,8 +76,9 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
   const places = offerPlaces(offer);
   const cash = offerCash(offer);
   const eta = formatOfferEta(offer);
+  // Petit téléphone (≤ 720 px de haut, ex. 360 × 640) : « Refuser » à côté de l'anneau, pour garder de la carte.
   const compact = height < 720;
-  const ring = compact ? 120 : 136;
+  const ring = compact ? 108 : 136;
 
   // Nouvelle offre : vibration (téléphone uniquement).
   useEffect(() => {
@@ -157,31 +158,58 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           .join(' · ')
       : null;
   const pickupInitials = avatarInitials(offer.pickup.name);
+  const refuse = (
+    <Pill
+      label="Refuser"
+      icon="close"
+      tone="red"
+      size="lg"
+      onPress={reject}
+      loading={busy === 'reject'}
+      disabled={busy !== null}
+      accessibilityLabel="Refuser la course"
+      testID="reject-offer"
+    />
+  );
 
   return (
     <View style={styles.root} accessibilityViewIsModal testID="offer-screen">
-      <OfferMap scene={scene} padding={padding} recenterKey={bottomHeight > 0 && topHeight > 0 ? 1 : 0} />
+      {/* Recadrage une fois les blocs mesurés, puis à chaque changement de leur taille (message d'erreur…). */}
+      <OfferMap scene={scene} padding={padding} recenterKey={bottomHeight > 0 && topHeight > 0 ? bottomHeight * 1000 + topHeight : 0} />
 
       <View
         style={[styles.top, { top: insets.top + spacing.md }]}
         pointerEvents="box-none"
         onLayout={(e) => setTopHeight(Math.round(e.nativeEvent.layout.height))}
       >
+        {/* Le véhicule : son pictogramme dans la pastille (son nom dans le détail et pour les lecteurs d'écran). */}
         <Pill
-          label={`Nouvelle course · ${LABELS.vehicleType[offer.vehicleType]}`}
+          label="Nouvelle course"
           icon={<ArtView rects={vehicleSideGlyph(offer.vehicleType, dark.text, dark.surface)} size={22} />}
           tone="dark"
           floating
+          style={styles.topPill}
+          textStyle={styles.topPillText}
           accessibilityLabel={`Nouvelle course, ${LABELS.vehicleType[offer.vehicleType]}`}
           testID="offer-title"
         />
+        {eta ? (
+          <Pill
+            label={eta}
+            icon="clock"
+            tone="dark"
+            floating
+            style={styles.topPill}
+            textStyle={styles.topPillText}
+            accessibilityLabel={`Retrait à ${eta.replace('≈', 'environ')}`}
+            testID="offer-eta"
+          />
+        ) : null}
       </View>
 
       <View style={styles.bottom} onLayout={(e) => setBottomHeight(Math.round(e.nativeEvent.layout.height))}>
-        <View style={styles.actions}>
-          {eta ? (
-            <Pill label={eta} icon="clock" tone="dark" floating accessibilityLabel={`Retrait à ${eta.replace('≈', 'environ')}`} testID="offer-eta" />
-          ) : null}
+        <View style={[styles.actions, compact && styles.actionsRow]}>
+          {compact ? refuse : null}
           <CountdownRing startAt={offer.offeredAt} endAt={offer.expiresAt} size={ring} strokeWidth={compact ? 7 : 8} testID="offer-countdown">
             {({ secondsLeft }) => (
               <RoundButton
@@ -202,17 +230,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
               />
             )}
           </CountdownRing>
-          <Pill
-            label="Refuser"
-            icon="close"
-            tone="red"
-            size="lg"
-            onPress={reject}
-            loading={busy === 'reject'}
-            disabled={busy !== null}
-            accessibilityLabel="Refuser la course"
-            testID="reject-offer"
-          />
+          {compact ? null : refuse}
         </View>
 
         <SheetSurface style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]} testID="offer-details">
@@ -293,9 +311,21 @@ const styles = StyleSheet.create({
   // Sur le web, la fenêtre modale couvre tout l'écran : la colonne garde la largeur de l'application.
   frame: { flex: 1, width: '100%', maxWidth: MAX_APP_WIDTH, overflow: 'hidden' },
   root: { flex: 1, backgroundColor: dark.background },
-  top: { position: 'absolute', left: spacing.md, right: spacing.md, alignItems: 'center' },
+  top: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  topPill: { paddingHorizontal: 12, gap: 7 },
+  topPillText: { fontSize: 13.5 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: spacing.md },
-  actions: { alignItems: 'center', gap: 10 },
+  actions: { alignItems: 'center', gap: 12 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xl },
   sheet: { paddingTop: spacing.lg },
   details: { gap: spacing.md },
   detailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
