@@ -79,7 +79,7 @@ export default function DeliverScreen() {
   if (delivered) {
     return (
       <DarkScreen edges={['top', 'bottom']} footer={<PrimaryAction title="Retour aux courses" icon="map" onPress={goHome} testID="back-to-home" />} testID="delivery-success">
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <View style={styles.success}>
           <View style={styles.bigCheck}>
             <Icon name="check" size={56} color={dark.greenInk} strokeWidth={3} />
@@ -124,7 +124,7 @@ export default function DeliverScreen() {
   if (!o || o.status !== 'PICKED_UP') {
     return (
       <DarkScreen edges={['top', 'bottom']} header={<DarkHeader title="Confirmer la livraison" onBack={() => router.back()} />}>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <Text style={styles.muted}>Aucune course à livrer.</Text>
         <Pill label="Retour" icon="back" tone="outline" size="lg" onPress={() => router.back()} />
       </DarkScreen>
@@ -181,7 +181,7 @@ export default function DeliverScreen() {
         />
       }
     >
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {amounts.atDropoff > 0 ? (
         <AmountRow
           hero

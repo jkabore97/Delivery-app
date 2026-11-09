@@ -43,8 +43,9 @@ const config: ExpoConfig = {
     name: 'Yaar Livraison',
     shortName: 'Yaar',
     lang: 'fr',
-    themeColor: '#0B7A4B',
-    backgroundColor: '#FFFFFF',
+    // Couleurs Cobalt (src/theme.ts) : barre du navigateur et fond de l'application installée sur l'écran d'accueil.
+    themeColor: '#EEF1F5',
+    backgroundColor: '#EEF1F5',
     description: 'Yaar Livraison : livraisons à la demande pour les entreprises de Ouagadougou, suivies en direct par vos clients.',
   },
   plugins: [

@@ -3,7 +3,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useAppFonts } from '../fonts';
+import { FONT_LOAD_TIMEOUT_MS, FONT_PUBLIC_TIMEOUT_MS, useAppFonts } from '../fonts';
 import { AuthProvider } from '../state/auth';
 import { AppConfigProvider } from '../state/config';
 import { SocketProvider } from '../state/socket';
@@ -29,10 +29,12 @@ export default function RootLayout() {
   const pathname = usePathname();
   // Page publique de suivi ouverte sur une connexion très lente : police du système tout de suite (le suivi d'abord,
   // pas ≈ 170 ko de polices en plus). Décidé une fois, à l'ouverture.
-  const [skipFonts] = useState(() => Platform.OS === 'web' && isFullWidthPath(pathname) && isSlowConnection());
+  const [publicPage] = useState(() => Platform.OS === 'web' && isFullWidthPath(pathname));
+  const [skipFonts] = useState(() => publicPage && isSlowConnection());
   // Polices de l'application (src/fonts.ts) : l'écran de démarrage (web : celui du HTML) reste affiché jusqu'à leur
-  // chargement, 2,5 s au plus (puis police du système).
-  const fontsReady = useAppFonts({ skip: skipFonts });
+  // chargement, 2,5 s au plus (puis police du système) ; page publique de suivi : 0,2 s au plus (le suivi d'abord, les
+  // polices remplacent celle du système à leur arrivée).
+  const fontsReady = useAppFonts({ skip: skipFonts, timeoutMs: publicPage ? FONT_PUBLIC_TIMEOUT_MS : FONT_LOAD_TIMEOUT_MS });
   // Filet de sécurité : l'écran de démarrage du HTML (web) disparaît même si un écran oublie de le retirer.
   useEffect(() => {
     const t = setTimeout(hideWebSplash, 6000);

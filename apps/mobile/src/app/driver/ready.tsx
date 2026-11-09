@@ -74,7 +74,7 @@ export default function DriverReadyScreen() {
         </View>
       }
     >
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <View style={styles.art}>
         <CourierIllustration width={art} />
       </View>

@@ -170,7 +170,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   inputMultiline: { paddingTop: 14, paddingBottom: 14, minHeight: 96, textAlignVertical: 'top' },
-  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white },
+  // Anneau de focus : la bordure cobalt de 2 px (6,1:1 sur blanc) remplace le contour du navigateur.
+  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0 },
   inputError: { borderColor: palette.coralText },
   error: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.coralText },
   hint: { fontSize: 12.5, lineHeight: 17, fontWeight: '500', color: palette.inkMuted },

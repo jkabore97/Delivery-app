@@ -145,9 +145,11 @@ Elle n'a pas « ⌘ » (pictogramme `command`) ; « ★ » et « ≈ » existent
   `public/index.html`) jusqu'au chargement, **2,5 s au plus** ; erreur ou délai : police du système (Android / iOS :
   décision figée pour la session ; web : le navigateur substitue la police quand elle arrive, `font-display: swap`).
 - **Web** : `scripts/web-postexport.mjs` écrit dans `index.html` la liste des polices chargées au démarrage, que la page
-  précharge dès ses premiers octets, en parallèle du JavaScript (4 fichiers, 370 ko, ≈ 172 ko compressés). Page
-  publique de suivi sur une connexion très lente (2G, économie de données) : aucune police téléchargée, police du
-  système (le suivi d'abord).
+  précharge dès ses premiers octets, en parallèle du JavaScript (4 fichiers, 370 ko, ≈ 175 ko compressés).
+- **Page publique de suivi** (`/suivi/…`, ouverte depuis un SMS, souvent en 3G) : le suivi d'abord. Les polices n'y
+  sont pas préchargées (elles prendraient la bande passante du JavaScript), l'attente est de 0,2 s au plus
+  (`FONT_PUBLIC_TIMEOUT_MS`) : première visite en police du système, remplacée à l'arrivée des polices ; visites
+  suivantes en cache. Connexion très lente (2G, économie de données) : aucune police téléchargée.
 
 ### Changer de police
 

@@ -9,6 +9,7 @@ import { DarkBanner } from '../../../components/business/DarkForm';
 import { HistoryDeliveryCard } from '../../../components/business/DeliveryCards';
 import { Icon } from '../../../components/design/Icon';
 import { Pill } from '../../../components/design/Pill';
+import { useTabBarInset } from '../../../components/design/tabBarInset';
 import { errorMessage } from '../../../lib/api';
 import { BUSINESS_HISTORY_STATUSES } from '../../../lib/delivery';
 import { useApi } from '../../../state/auth';
@@ -48,6 +49,8 @@ export default function BusinessHistoryScreen() {
     [api],
   );
 
+  const tabInset = useTabBarInset();
+
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
@@ -58,9 +61,10 @@ export default function BusinessHistoryScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
-      {focused ? <StatusBar style="light" /> : null}
+      {focused ? <StatusBar style="dark" /> : null}
       <ScrollView
-        contentContainerStyle={styles.content}
+        // Sous la barre d'onglets flottante : la fin de la liste reste au-dessus d'elle.
+        contentContainerStyle={[styles.content, { paddingBottom: tabInset + spacing.lg }]}
         refreshControl={<RefreshControl refreshing={loading && items !== null} onRefresh={() => void load(1)} tintColor={dark.text} />}
       >
         <Text style={styles.title} accessibilityRole="header">

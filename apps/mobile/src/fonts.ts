@@ -13,9 +13,11 @@ import { PlusJakartaSans_800ExtraBold } from '@expo-google-fonts/plus-jakarta-sa
  *
  * Changer de police (voir docs/DESIGN.md § « Changer de police ») :
  * 1. `npx expo install @expo-google-fonts/<police>` dans apps/mobile (et retirer l'ancien paquet) ;
- * 2. dans CE fichier : les imports ci-dessus, `FONT_NAME`, `FAMILY_PREFIX` et `FONT_FILES` (une ligne par graisse) ;
- * 3. vérifier : `npx jest src/__tests__/fonts.test.tsx`, puis les écrans (la nouvelle police a peut-être d'autres
- *    proportions : titres très longs, chiffres tabulaires `tnum`).
+ * 2. dans CE fichier : les imports ci-dessus, `FONT_NAME`, `FAMILY_PREFIX`, `FONT_FILES` (une ligne par graisse),
+ *    `LOADED_WEIGHTS` si les graisses changent et `FONT_MISSING_CHARS` (caractères que la nouvelle police n'a pas) ;
+ * 3. vérifier : `npx jest src/__tests__/fonts.test.tsx src/__tests__/textImports.test.ts`, `npm run export:web` (il
+ *    annonce les polices préchargées), puis les écrans (la nouvelle police a peut-être d'autres proportions : titres
+ *    très longs, chiffres tabulaires `tnum`).
  *
  * Fonctionnement : une famille par graisse (« PlusJakartaSans-800 »), chargée au démarrage par `useAppFonts`
  * (src/app/_layout.tsx). Un texte ne demande jamais un gras « synthétique » : le fichier de la graisse est choisi et
@@ -80,6 +82,14 @@ export function fontInUse(): boolean {
 
 /** Délai maximal d'attente des polices au démarrage : au-delà, police du système (voir `useAppFonts`). */
 export const FONT_LOAD_TIMEOUT_MS = 2500;
+
+/**
+ * Page publique de suivi (web, ouverte depuis un SMS, souvent en 3G) : attente très courte. Le suivi s'affiche dès que
+ * le JavaScript est prêt, dans la police du système si les polices ne sont pas encore là (première visite : elles ne
+ * sont pas préchargées, pour ne pas retarder le JavaScript) ; le navigateur les substitue à leur arrivée. Visites
+ * suivantes : polices en cache, chargées dans ce délai.
+ */
+export const FONT_PUBLIC_TIMEOUT_MS = 200;
 
 const NAMED_WEIGHTS: Record<string, number> = {
   normal: 400,

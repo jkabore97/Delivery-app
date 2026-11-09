@@ -51,7 +51,7 @@ export function OfferModal() {
   return (
     <>
       {/* Plein écran sombre : icônes claires dans la barre d'état tant que l'offre est affichée (puis le style d'avant). */}
-      {offer ? <StatusBar style="light" /> : null}
+      {offer ? <StatusBar style="dark" /> : null}
       <Modal visible={!!offer} transparent animationType="fade" statusBarTranslucent onRequestClose={() => undefined}>
         <View style={styles.backdrop}>
           <View style={styles.frame}>{offer ? <OfferTakeover key={offer.id} offer={offer} /> : null}</View>

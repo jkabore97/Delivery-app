@@ -480,7 +480,8 @@ export const styles = StyleSheet.create({
     backgroundColor: palette.raised,
   },
   inputMultiline: { paddingTop: 14, paddingBottom: 14, minHeight: 96, textAlignVertical: 'top' },
-  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white },
+  // Anneau de focus : la bordure cobalt de 2 px (6,1:1 sur blanc) remplace le contour du navigateur.
+  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0 },
   inputError: { borderColor: palette.coralText },
   badge: { minHeight: 24, paddingHorizontal: 10, borderRadius: 12, alignSelf: 'flex-start', justifyContent: 'center' },
   badgeText: { fontSize: 12, lineHeight: 16, fontWeight: '700' },

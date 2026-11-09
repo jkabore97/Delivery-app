@@ -118,10 +118,11 @@
         }
         // Polices de l'application (src/fonts.ts, graisses chargées au démarrage ; liste écrite par
         // scripts/web-postexport.mjs) : téléchargées tout de suite, en parallèle du JavaScript, pour que l'application
-        // s'affiche directement dans sa police. Page publique sur une connexion très lente : police du système (le
-        // suivi d'abord, l'application ne les demande pas non plus).
+        // s'affiche directement dans sa police. Pas sur la page publique de suivi (ouverte depuis un SMS, souvent en
+        // 3G) : le JavaScript du suivi d'abord ; l'application demande les polices ensuite et les substitue à leur
+        // arrivée (aussitôt quand elles sont déjà en cache), jamais sur une connexion très lente.
         var fonts = /*YAAR_FONT_PRELOAD*/[];
-        if (!(suivi && slow)) for (var f = 0; f < fonts.length; f++) preload(fonts[f], 'font');
+        if (!suivi) for (var f = 0; f < fonts.length; f++) preload(fonts[f], 'font');
         if (suivi) {
           // Page publique de suivi : le jeton du lien ne part jamais en en-tête Referer, dès la première requête.
           var meta = document.createElement('meta');

@@ -125,14 +125,19 @@ export function ArrivalHeadline({
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [boxWidth, setBoxWidth] = useState<number | null>(null);
-  // Petit téléphone (hauteur < 700 px) : heure un peu moins grande, le code et le montant restent visibles.
-  const clockMax = windowHeight < 700 ? 40 : 48;
+  // Petit téléphone (hauteur < 700 px) : libellé sur la ligne de l'heure et heure moins grande, pour que le code et
+  // le montant restent visibles sans faire défiler la feuille.
+  const short = windowHeight < 700;
+  const clockMax = short ? 34 : 48;
   const imminent = etaMinutes !== null && (!Number.isFinite(etaMinutes) || etaMinutes < 1);
   const clock = etaMinutes !== null && !imminent ? arrivalClockFr(Math.round(etaMinutes), now) : null;
   const eta = etaMinutes === null ? null : imminent ? imminentLabel : `${label} ${clock} · dans ${formatDurationFr(etaMinutes)}`;
   const pill = etaMinutes !== null && !imminent ? `dans ${formatDurationFr(etaMinutes)}` : null;
   const width = boxWidth ?? SHEET_CONTENT_GUESS(windowWidth);
-  const fontSize = clock ? headlineFontSize(clock, pill, width, clockMax, CLOCK_CHAR_WIDTH) : headlineFontSize(imminentLabel, null, width, 30);
+  const labelInline = short && !!clock;
+  // Libellé en ligne (15/700) : environ 7,6 px par caractère.
+  const labelWidth = labelInline ? Math.ceil(label.length * 7.6) + 8 : 0;
+  const fontSize = clock ? headlineFontSize(clock, pill, width - labelWidth, clockMax, CLOCK_CHAR_WIDTH) : headlineFontSize(imminentLabel, null, width, 30);
   return (
     <View
       style={styles.headline}
@@ -146,8 +151,9 @@ export function ArrivalHeadline({
         <>
           {/* « Arrivée vers » / « 14:32 » en très grand / « dans 12 min » en pastille : lu en une phrase. */}
           <View accessible accessibilityRole="header" accessibilityLabel={eta}>
-            {clock ? <Text style={styles.etaLabel}>{label}</Text> : null}
+            {clock && !labelInline ? <Text style={styles.etaLabel}>{label}</Text> : null}
             <View style={styles.etaRow}>
+              {labelInline ? <Text style={styles.etaInlineLabel}>{label}</Text> : null}
               <Text
                 style={[
                   styles.eta,
@@ -297,6 +303,12 @@ export function StateDisc({ icon, tone, theme: _theme, size = 56 }: { icon: Icon
 
 const VEHICLE_ICON: Record<VehicleType, IconName> = { BIKE: 'bike', MOTO: 'moto', CAR: 'car' };
 
+/** Initiales d'un nom quand il en donne deux, sinon null. */
+function twoInitials(name: string | null): string | null {
+  const letters = name ? avatarInitials(name) : null;
+  return letters && letters.length >= 2 ? letters : null;
+}
+
 /** Pastille ronde du livreur (soleil) : son véhicule de profil, ou ses initiales (`initials`). */
 export function DriverAvatar({ vehicleType, initials, size = 48 }: { vehicleType: VehicleType; initials?: string | null; size?: number }) {
   return (
@@ -337,7 +349,8 @@ export function DriverCard({
   return (
     <View style={styles.driverCard} testID="driver-card">
       <View style={styles.driverRow}>
-        <DriverAvatar vehicleType={vehicleType} initials={name ? avatarInitials(name) : null} />
+        {/* Deux initiales (« Issouf S. » → IS) ; un prénom seul : le véhicule plutôt qu'une lettre isolée. */}
+        <DriverAvatar vehicleType={vehicleType} initials={twoInitials(name)} />
         <View style={styles.driverText}>
           <View style={styles.nameRow}>
             <Text style={styles.cardTitle} numberOfLines={1}>
@@ -427,8 +440,10 @@ export function AmountBox({
   testID?: string;
 }) {
   const green = tone === 'green';
+  // Petit téléphone : tuile plus basse (le montant reste visible sous le code sans faire défiler).
+  const short = useWindowDimensions().height < 700;
   return (
-    <View style={[styles.amount, green ? styles.amountGreen : [styles.amountSun, shadows.sun]]} testID={testID}>
+    <View style={[styles.amount, short && styles.amountShort, green ? styles.amountGreen : [styles.amountSun, shadows.sun]]} testID={testID}>
       <View style={styles.amountText}>
         <Text style={styles.amountLabel}>{label}</Text>
         {detail ? <Text style={[styles.amountDetail, green && { color: palette.mintText }]}>{detail}</Text> : null}
@@ -483,6 +498,7 @@ export function InfoBlock({ children, theme: _theme, testID }: { children: React
 const styles = StyleSheet.create({
   headline: { gap: 4 },
   etaLabel: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.inkMuted },
+  etaInlineLabel: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.ink },
   // Sur une ligne (taille de l'heure calculée) ; à la ligne seulement si la police du téléphone est bien plus large.
   etaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 4 },
   eta: { fontWeight: '800', color: palette.ink, fontVariant: ['tabular-nums'] },
@@ -525,6 +541,7 @@ const styles = StyleSheet.create({
   codeDigitsCompact: { fontSize: 44, lineHeight: 50 },
   codeHint: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.onCobalt2, textAlign: 'center' },
   amount: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: 20, paddingVertical: 14, paddingHorizontal: spacing.lg },
+  amountShort: { paddingVertical: 10 },
   amountSun: { backgroundColor: palette.sun },
   amountGreen: { backgroundColor: palette.mintTint },
   amountText: { flex: 1, gap: 2 },

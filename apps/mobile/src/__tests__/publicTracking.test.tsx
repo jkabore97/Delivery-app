@@ -212,15 +212,15 @@ describe('page publique sur un petit téléphone (360 × 640) et sur une page cl
     jest.restoreAllMocks();
   });
 
-  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite (40 px) avec sa pastille sur sa ligne', async () => {
+  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite avec son libellé et sa pastille sur sa ligne', async () => {
     const r = await show(tracking());
     expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(640 * 0.6));
     const digits = r.getByText('4  8  2  1');
     expect(StyleSheet.flatten(digits.props.style)).toMatchObject({ fontSize: 44 });
-    // « Arrivée vers » en petit au-dessus, l'heure en très grand (chiffres tabulaires), la pastille à côté.
-    expect(r.getByText('Arrivée vers')).toBeTruthy();
+    // « Arrivée vers 14:29 [dans 9 min] » sur une ligne : libellé, heure en grand (chiffres tabulaires), pastille.
     const clock = r.getByText('14:29');
-    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 40, fontVariant: ['tabular-nums'] });
+    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 34, fontVariant: ['tabular-nums'] });
+    expect(r.getByText('Arrivée vers').parent).toBe(clock.parent);
     // La pastille « dans 9 min » est dans la même rangée que l'heure.
     expect(clock.parent?.parent).toBe(r.getByText('dans 9 min').parent?.parent?.parent);
     expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16 500 FCFA');

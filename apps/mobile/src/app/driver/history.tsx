@@ -17,7 +17,7 @@ export default function DriverHistory() {
   const count = list.data?.total ?? items.length;
   return (
     <SafeAreaView style={styles.root} edges={['bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={list.loading && !!list.data} onRefresh={() => void list.reload()} tintColor={dark.text} />}

@@ -7,11 +7,11 @@ reçoit un lien, suit le livreur sur une carte en direct et lui donne le code de
 Une seule application React Native (Expo SDK 58, TypeScript strict, Expo Router) avec deux espaces, choisis selon le
 rôle du compte après la connexion par code, et une page publique :
 
-| Espace | Rôle API | Couleur | Fonctions |
+| Espace | Rôle API | Accent | Fonctions |
 |---|---|---|---|
-| **Entreprise** | `SELLER` (profil d’entreprise = boutique validée par Yaar) | orange `#F28C1B` | onglet **Livraisons** : carte d’ensemble des livraisons en cours avec les livreurs en direct + liste ; onglet **Nouvelle** : demande en 3 étapes (destination sur une carte à épingle centrale avec bulle du quartier, adresse, repère, destinataire, « destinataire entreprise », suggestions de quartiers ; colis, véhicule avec prix du devis, qui paie la livraison, montant à encaisser ; récapitulatif → « Demander un livreur ») ; **suivi** façon Uber (carte plein écran, heure d’arrivée, étapes, livreur à appeler, destinataire, montants, « Envoyer le lien de suivi au destinataire », annulation avant le retrait ; jamais le code) ; **Historique** ; **Profil** (entreprise, adresse de retrait, bandeau de validation, compte) |
-| **Livreur** | `DRIVER` | vert de marque, vert vif `#2FD38A` sur ses feuilles et écrans sombres | inscription KYC (véhicule, immatriculation, photos des pièces), écran d’attente de validation, écran « Vous êtes prêt ! » (une fois, dossier validé et jamais passé en ligne), accueil carte plein écran avec l’indicateur « En ligne : suivi GPS actif », grand bouton rond « Passer en ligne », feuille sombre « En attente de courses… » (gains du jour, espèces / plafond) ; offre **plein écran** (carte sombre : livreur, entreprise, zone de livraison en cercle doux ; « ≈ N min · X km » ; grand bouton rond « Accepter » dans l’anneau du compte à rebours de 30 s, rouge les 10 dernières secondes ; « Refuser » ; détail : gain, espèces au retrait / à la livraison) ; course sur carte claire (itinéraire, destinataire en épingle à ses initiales) et feuille sombre : étape, « Colis pour … », adresse et repère, colis, instructions, montants, boutons ronds Récupéré / Livré, WhatsApp, Appeler, « Itinéraire », SOS ; saisie du code (montant à encaisser d’abord) + photo facultative ; historique en cartes de colis ; gains |
-| **Suivi public** | aucun (lien `/suivi/<jeton>`, sans connexion) | vert `#0B7A4B` | carte plein écran, « Arrivée vers 14:32 · dans 12 min », 4 étapes (Commande confirmée → Livreur en route vers l’expéditeur → En route vers vous → Livrée), entreprise expéditrice, livreur (prénom, véhicule, plaque, note, « Appeler »), code à donner au livreur, montant à payer, adresse et repère ; états recherche, livrée (merci), annulée, lien expiré |
+| **Entreprise** | `SELLER` (profil d’entreprise = boutique validée par Yaar) | cobalt `#2448FF` | onglet **Livraisons** : carte d’ensemble des livraisons en cours avec les livreurs en direct + liste ; onglet **Nouvelle** : demande en 3 étapes (destination sur une carte à épingle centrale avec bulle du quartier, adresse, repère, destinataire, « destinataire entreprise », suggestions de quartiers ; colis, véhicule avec prix du devis, qui paie la livraison, montant à encaisser ; récapitulatif → « Demander un livreur ») ; **suivi** façon Uber (carte plein écran, heure d’arrivée, étapes, livreur à appeler, destinataire, montants, « Envoyer le lien de suivi au destinataire », annulation avant le retrait ; jamais le code) ; **Historique** ; **Profil** (entreprise, adresse de retrait, bandeau de validation, compte) |
+| **Livreur** | `DRIVER` | cobalt `#2448FF` | inscription KYC (véhicule, immatriculation, photos des pièces), écran d’attente de validation, écran « Vous êtes prêt ! » (une fois, dossier validé et jamais passé en ligne), accueil carte plein écran avec l’indicateur « En ligne : suivi GPS actif », grand bouton rond « Passer en ligne », feuille blanche « En attente de courses… » (gains du jour, espèces / plafond) ; offre **plein écran** (carte Cobalt : livreur, entreprise, zone de livraison en cercle doux ; « ≈ N min · X km » ; grand bouton rond « Accepter » dans l’anneau du compte à rebours de 30 s, rouge les 10 dernières secondes ; « Refuser » ; détail : gain, espèces au retrait / à la livraison) ; course sur la carte (itinéraire, destinataire en épingle à ses initiales) et feuille blanche : étape, « Colis pour … », adresse et repère, colis, instructions, montants, boutons ronds Récupéré / Livré, WhatsApp, Appeler, « Itinéraire », SOS ; saisie du code (montant à encaisser d’abord) + photo facultative ; historique en cartes de colis ; gains |
+| **Suivi public** | aucun (lien `/suivi/<jeton>`, sans connexion) | cobalt `#2448FF` | carte plein écran, « Arrivée vers 14:32 · dans 12 min », 4 étapes (Commande confirmée → Livreur en route vers l’expéditeur → En route vers vous → Livrée), entreprise expéditrice, livreur (prénom, véhicule, plaque, note, « Appeler »), code à donner au livreur, montant à payer, adresse et repère ; états recherche, livrée (merci), annulée, lien expiré |
 
 Pas d’inscription client : l’écran de connexion ne propose que **Entreprise** et **Livreur**. Un ancien compte
 `CLIENT` est déconnecté avec un message d’accueil (« Yaar Livraison est réservé aux entreprises et aux livreurs…
@@ -145,19 +145,23 @@ Clé Google Maps (build Android) :
 - Build de production : `npx eas-cli build -p android` (la clé peut aussi être fournie comme secret EAS).
   Si l’API de test est en `http://` (non chiffré), un build de production Android la bloque : utiliser une URL `https://`.
 
-## Système de design « coursier » (`src/components/design/`)
+## Système de design « Cobalt » (`docs/DESIGN.md`)
 
-Écrans du livreur (et, à venir, de l’entreprise et du destinataire) : surfaces sombres et vert vif (`dark` de
-`src/theme.ts`, contrastes mesurés), titres 800–900, montants en chiffres tabulaires (`formatFcfa`), une action
-évidente par écran, cibles tactiles de 56 px au moins. Composants : `RoundButton` (rond, big / medium / small,
-icône + libellé, inactif / chargement), `CountdownRing` (anneau SVG qui se vide de `offeredAt` à `expiresAt`, rouge
-les 10 dernières secondes, horloge propre à ~15 images/s : l’écran et sa carte ne sont pas redessinés),
-`Pill` / `StatusChip` / `MapIconButton`, `PackageCard` (nom, adresse, état, colis, instructions, montant, WhatsApp /
-Appeler), `CallRoundButton` / `WhatsAppRoundButton` (`telUrl`, `whatsappUrl` → `https://wa.me/<chiffres>`),
-`SheetSurface`, `DarkScreen`, `AmountRow` (testID `<id>-value` des montants exacts), `Icon` (pictogrammes dessinés
-pour Yaar : aucun logo de marque) et `CourierIllustration`. `LiveTrackingLayout` accepte `sheetTheme="dark"`,
-`mapTheme`, `zones`, `aboveSheet`, `insetBottom` et `mapVisible` (sans ces options : écran inchangé). Le dossier
-s’appuie sur `react-native-svg` (inclus dans Expo Go) ; la page publique de suivi ne le télécharge pas.
+Tout le produit suit la direction **Cobalt** choisie par le fondateur : clair et vif, cartes blanches à ombre douce sur
+fond `canvas`, une seule couleur signature (cobalt `#2448FF`), le soleil (`#FFC93C`) réservé aux espèces, grands
+chiffres tabulaires, tout est arrondi ; pas de mode sombre. Référence complète (jetons et contrastes, échelle
+typographique, composants, à faire / à ne pas faire, « changer de police ») : [`docs/DESIGN.md`](../../docs/DESIGN.md).
+
+- **Jetons** : `palette`, `radii`, `shadows` (chaînes `boxShadow`), `spacing`, `typography` de `src/theme.ts` ; les
+  anciens `colors` / `dark` / `typeScale` restent (marqués `@deprecated`) avec des valeurs Cobalt claires, pour les
+  écrans pas encore redessinés.
+- **Police** : Plus Jakarta Sans (500 / 600 / 700 / 800), définie dans **un seul fichier**, `src/fonts.ts`, chargée par
+  `src/app/_layout.tsx` (2,5 s d'attente au plus, puis police du système ; 0,4 s sur la page publique). Tous les
+  textes passent par `Text` / `TextInput` de `src/components/Text.tsx` (un test refuse ceux de 'react-native').
+- **Composants** : `src/components/design/` (pictogrammes `Icon`, `RoundButton`, `Pill`, `StatusChip`,
+  `PackageCard`, `CountdownRing`, surfaces, `AmountRow`, barre d'onglets flottante `FloatingTabBar`…),
+  `src/components/tracking/` (feuille de suivi sur la carte, heure d'arrivée, étapes, code, montants, livreur ; sans
+  react-native-svg pour la page publique) et `src/components/ui.tsx` (bouton, carte, champ, bandeau…).
 
 ## Code partagé
 
