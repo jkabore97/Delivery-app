@@ -1,13 +1,19 @@
 import {
+  ANDROID_MAP_STYLE,
   DEFAULT_MAP_STYLE_DARK_URL,
+  DEFAULT_MAP_STYLE_URL,
   FALLBACK_STYLE,
   FALLBACK_STYLE_DARK,
   MAP_COLORS,
+  MAP_PALETTE,
   MAP_PALETTES,
   MAP_STYLE_DARK_URL,
   MAP_STYLE_URL,
   mapThemeConfig,
+  resolveMapStyleUrl,
 } from './style';
+import { ANDROID_MAP_STYLE_DARK } from './androidDarkStyle';
+import { COBALT_MAP, rgba } from './palette';
 import {
   absolutizeStyle,
   initialMapStyle,
@@ -127,35 +133,75 @@ describe('URL du style', () => {
   });
 });
 
-describe('fond sombre et cache des styles par fond', () => {
-  it('fond clair par défaut (positron), fond sombre : OpenFreeMap « dark » et son style de secours', () => {
-    expect(mapThemeConfig().styleUrl).toBe(MAP_STYLE_URL);
-    expect(mapThemeConfig('light')).toEqual({ styleUrl: MAP_STYLE_URL, fallback: FALLBACK_STYLE, palette: MAP_PALETTES.light });
-    const darkCfg = mapThemeConfig('dark');
-    expect(DEFAULT_MAP_STYLE_DARK_URL).toBe('https://tiles.openfreemap.org/styles/dark');
-    expect(darkCfg.styleUrl).toBe(MAP_STYLE_DARK_URL);
-    expect(darkCfg.styleUrl).not.toBe(MAP_STYLE_URL);
-    expect(darkCfg.fallback).toBe(FALLBACK_STYLE_DARK);
-    expect(FALLBACK_STYLE_DARK.layers[0]?.paint['background-color']).toBe(MAP_PALETTES.dark.background);
-    // Le fond clair garde exactement les couleurs d'origine des tracés.
-    expect(MAP_PALETTES.light).toEqual(
-      expect.objectContaining({ route: MAP_COLORS.route, casing: MAP_COLORS.casing, dashed: MAP_COLORS.dashed, background: MAP_COLORS.background }),
+describe('fond Cobalt partout (plus de fond sombre) et cache des styles', () => {
+  it('style par défaut : le fichier Cobalt servi par la version web, URL absolue par rapport à la page', () => {
+    expect(DEFAULT_MAP_STYLE_URL).toBe('/map/cobalt-style.json');
+    // Sans EXPO_PUBLIC_MAP_STYLE_URL (tests) : le style Cobalt.
+    expect(MAP_STYLE_URL).toBe(DEFAULT_MAP_STYLE_URL);
+    expect(resolveMapStyleUrl('/map/cobalt-style.json', 'https://yaar-livraison.vercel.app/suivi/abc')).toBe(
+      'https://yaar-livraison.vercel.app/map/cobalt-style.json',
     );
-    expect(MAP_PALETTES.dark.route).not.toBe(MAP_COLORS.route);
+    // URL absolue (variable d'environnement) : inchangée ; sans page (natif, tests) : inchangée.
+    expect(resolveMapStyleUrl('https://tiles.openfreemap.org/styles/positron', 'https://a.b/')).toBe('https://tiles.openfreemap.org/styles/positron');
+    expect(resolveMapStyleUrl('/map/cobalt-style.json')).toBe('/map/cobalt-style.json');
   });
 
-  it('style reçu mis en cache par URL : une carte sombre ne remplace jamais le style clair', () => {
+  it('l’ancien fond sombre donne exactement la carte Cobalt (même style, même secours, mêmes couleurs)', () => {
+    expect(mapThemeConfig('dark')).toEqual(mapThemeConfig('light'));
+    expect(mapThemeConfig()).toEqual({ styleUrl: MAP_STYLE_URL, fallback: FALLBACK_STYLE, palette: MAP_PALETTE });
+    expect(MAP_PALETTES.dark).toBe(MAP_PALETTES.light);
+    expect(FALLBACK_STYLE_DARK).toBe(FALLBACK_STYLE);
+    expect(MAP_STYLE_DARK_URL).toBe(MAP_STYLE_URL);
+    expect(DEFAULT_MAP_STYLE_DARK_URL).toBe(DEFAULT_MAP_STYLE_URL);
+    expect(ANDROID_MAP_STYLE_DARK).toBe(ANDROID_MAP_STYLE);
+  });
+
+  it('style de secours : la terre du fond Cobalt, sans source', () => {
+    expect(FALLBACK_STYLE.sources).toEqual({});
+    expect(FALLBACK_STYLE.layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': '#F3F5F8' } }]);
+    expect(MAP_COLORS.background).toBe(COBALT_MAP.land);
+    expect(MAP_PALETTE.background).toBe('#F3F5F8');
+  });
+
+  it('palette Cobalt : itinéraire cobalt à liseré blanc, tirets cobalt, étape à venir encre 30 %, zones cobalt / encre', () => {
+    expect(MAP_PALETTE).toMatchObject({
+      route: '#2448FF',
+      casing: '#FFFFFF',
+      chevron: '#FFFFFF',
+      dashed: '#2448FF',
+      pending: 'rgba(12, 18, 34, 0.32)',
+      overlayText: '#5B6475',
+      zoneFill: { dropoff: 'rgba(36, 72, 255, 0.1)', pickup: 'rgba(12, 18, 34, 0.06)' },
+    });
+    // Clés historiques gardées pour les écrans : fonds pleins aux couleurs du système.
+    expect(MAP_COLORS).toMatchObject({ pickup: '#0C1222', dropoff: '#2448FF', driver: '#2448FF', driverDisc: '#FFFFFF', driverGlyph: '#2448FF' });
+    expect(rgba('#2448FF', 0.5)).toBe('rgba(36, 72, 255, 0.5)');
+  });
+
+  it('Google Maps (Android) : terre, eau, parcs, rues blanches et grands axes jaunes Cobalt, ni points d’intérêt ni transports', () => {
+    const rule = (featureType: string | undefined, elementType: string | undefined) =>
+      ANDROID_MAP_STYLE.find((r) => (r as { featureType?: string }).featureType === featureType && (r as { elementType?: string }).elementType === elementType)?.stylers;
+    expect(rule(undefined, 'geometry')).toEqual([{ color: '#F3F5F8' }]);
+    expect(rule('water', 'geometry')).toEqual([{ color: '#A9C9FF' }]);
+    expect(rule('poi.park', 'geometry')).toEqual([{ visibility: 'on' }, { color: '#D6EEDC' }]);
+    expect(rule('road', 'geometry.fill')).toEqual([{ color: '#FFFFFF' }]);
+    expect(rule('road.highway', 'geometry.fill')).toEqual([{ color: '#FFE38A' }]);
+    expect(rule('poi', undefined)).toEqual([{ visibility: 'off' }]);
+    expect(rule('transit', undefined)).toEqual([{ visibility: 'off' }]);
+    // Plus aucune teinte de l'ancien fond sombre.
+    expect(JSON.stringify(ANDROID_MAP_STYLE)).not.toMatch(/#1a201e|#0f1b20/i);
+  });
+
+  it('style reçu mis en cache par URL : une seule entrée Cobalt, réutilisée quel que soit l’ancien « fond »', () => {
     const cache = new StyleCache();
-    const light = { version: 8, sources: {}, layers: [{ id: 'clair' }] };
-    const darkStyle = { version: 8, sources: {}, layers: [{ id: 'sombre' }] };
-    expect(initialMapStyle(MAP_STYLE_URL, FALLBACK_STYLE, cache)).toEqual({ style: FALLBACK_STYLE, remote: false });
-    cache.set(MAP_STYLE_URL, light);
-    expect(initialMapStyle(MAP_STYLE_URL, FALLBACK_STYLE, cache)).toEqual({ style: light, remote: true });
-    // Fond sombre pas encore reçu : son propre secours, le style clair n'est pas réutilisé.
-    expect(initialMapStyle(MAP_STYLE_DARK_URL, FALLBACK_STYLE_DARK, cache)).toEqual({ style: FALLBACK_STYLE_DARK, remote: false });
-    cache.set(MAP_STYLE_DARK_URL, darkStyle);
-    expect(initialMapStyle(MAP_STYLE_DARK_URL, FALLBACK_STYLE_DARK, cache).style).toEqual(darkStyle);
-    expect(initialMapStyle(MAP_STYLE_URL, FALLBACK_STYLE, cache).style).toEqual(light);
+    const cobalt = { version: 8, sources: {}, layers: [{ id: 'cobalt' }] };
+    const url = mapThemeConfig().styleUrl;
+    expect(initialMapStyle(url, FALLBACK_STYLE, cache)).toEqual({ style: FALLBACK_STYLE, remote: false });
+    cache.set(url, cobalt);
+    expect(initialMapStyle(url, FALLBACK_STYLE, cache)).toEqual({ style: cobalt, remote: true });
+    expect(initialMapStyle(mapThemeConfig('dark').styleUrl, FALLBACK_STYLE_DARK, cache)).toEqual({ style: cobalt, remote: true });
+    // Une autre URL (variable d'environnement) a sa propre entrée.
+    expect(initialMapStyle('https://tiles.example.org/autre', FALLBACK_STYLE, cache).remote).toBe(false);
   });
 
   it('le cache rend des copies (MapLibre ne peut pas modifier le style gardé)', () => {

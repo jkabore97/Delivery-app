@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { isTerminal, LABELS } from '@yaar/shared';
 import { CallRoundButton, WhatsAppRoundButton } from '../../../components/design/ContactButtons';

@@ -1,15 +1,22 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
+import { COBALT_MAP } from '../../lib/map/palette';
 import { MAP_COLORS } from '../../lib/map/style';
+import { Text } from '../Text';
 import { ArtView } from './MarkerViews';
 import { HOUSE_GLYPH, STORE_GLYPH } from './markerArt';
 
-const PIN_HEIGHT = 56;
+/** Goutte de l'épingle : carré de 40 dp aux trois coins arrondis tourné de -45°, pointe à 20 + 20·√2 ≈ 48,3 dp du haut. */
+const HEAD = 40;
+const PIN_WIDTH = 48;
+const TIP_Y = HEAD / 2 + (HEAD / 2) * Math.SQRT2;
+const PIN_HEIGHT = Math.ceil(TIP_Y) + 2;
 const BUBBLE_WIDTH = 230;
 
 /**
- * Épingle fixe au centre de la carte (comme Uber) : elle se soulève pendant que l'on déplace la carte et
- * se repose à l'arrêt, avec une bulle qui nomme le quartier sous l'épingle.
+ * Épingle fixe au centre de la carte (comme Uber) : goutte cobalt (destinataire, maison) ou encre (retrait, boutique)
+ * cerclée de blanc, dont la pointe désigne le centre ; elle se soulève pendant que l'on déplace la carte et se repose
+ * à l'arrêt, avec une bulle blanche qui nomme le quartier sous l'épingle.
  */
 export function CenterPin({
   moving,
@@ -62,7 +69,7 @@ export function CenterPin({
           style={[
             styles.shadow,
             {
-              opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [0.32, 0.14] }),
+              opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.12] }),
               transform: [{ scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }) }],
             },
           ]}
@@ -71,10 +78,10 @@ export function CenterPin({
       <Animated.View
         style={[styles.pinWrap, { transform: [{ translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -16] }) }] }]}
       >
-        <View style={[styles.head, { backgroundColor: color }]}>
-          <ArtView rects={variant === 'pickup' ? STORE_GLYPH : HOUSE_GLYPH} size={20} />
+        <View style={[styles.head, { backgroundColor: color }]} />
+        <View style={styles.glyph}>
+          <ArtView rects={variant === 'pickup' ? STORE_GLYPH : HOUSE_GLYPH} size={18} />
         </View>
-        <View style={[styles.stick, { backgroundColor: color }]} />
       </Animated.View>
     </View>
   );
@@ -85,29 +92,41 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%',
     top: '50%',
-    width: 42,
+    width: PIN_WIDTH,
     height: PIN_HEIGHT,
-    marginLeft: -21,
-    marginTop: -PIN_HEIGHT,
-    alignItems: 'center',
+    marginLeft: -PIN_WIDTH / 2,
+    marginTop: -TIP_Y,
   },
   head: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    position: 'absolute',
+    top: 0,
+    left: (PIN_WIDTH - HEAD) / 2,
+    width: HEAD,
+    height: HEAD,
+    borderTopLeftRadius: HEAD / 2,
+    borderTopRightRadius: HEAD / 2,
+    borderBottomRightRadius: HEAD / 2,
+    borderBottomLeftRadius: 0,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F2E22',
-    shadowOpacity: 0.3,
+    borderColor: COBALT_MAP.white,
+    transform: [{ rotate: '-45deg' }],
+    shadowColor: COBALT_MAP.ink,
+    shadowOpacity: 0.26,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
-  stick: { width: 4, height: PIN_HEIGHT - 42, borderBottomLeftRadius: 2, borderBottomRightRadius: 2, marginTop: -1 },
+  glyph: {
+    position: 'absolute',
+    top: 0,
+    left: (PIN_WIDTH - HEAD) / 2,
+    width: HEAD,
+    height: HEAD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   shadowWrap: { position: 'absolute', left: '50%', top: '50%', width: 18, height: 6, marginLeft: -9, marginTop: -3 },
-  shadow: { width: 18, height: 6, borderRadius: 9, backgroundColor: '#000000' },
+  shadow: { width: 18, height: 6, borderRadius: 9, backgroundColor: COBALT_MAP.ink },
   bubbleWrap: {
     position: 'absolute',
     left: '50%',
@@ -127,20 +146,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bubble: {
-    backgroundColor: '#16202A',
+    backgroundColor: COBALT_MAP.white,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 8,
     maxWidth: BUBBLE_WIDTH,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowColor: COBALT_MAP.ink,
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
-  bubbleTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
-  bubbleSub: { color: '#C9D2DA', fontSize: 12, marginTop: 1 },
-  bubbleArrow: { width: 12, height: 12, backgroundColor: '#16202A', transform: [{ rotate: '45deg' }], marginTop: -7 },
+  bubbleTitle: { color: COBALT_MAP.ink, fontWeight: '700', fontSize: 14, lineHeight: 18 },
+  bubbleSub: { color: COBALT_MAP.inkMuted, fontWeight: '500', fontSize: 12, lineHeight: 16, marginTop: 1 },
+  bubbleArrow: { width: 12, height: 12, backgroundColor: COBALT_MAP.white, transform: [{ rotate: '45deg' }], marginTop: -7 },
   bubbleArrowUp: { marginTop: 0, marginBottom: -7, zIndex: 1 },
 });

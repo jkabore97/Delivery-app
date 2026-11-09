@@ -1,23 +1,33 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { Text, TextInput } from './Text';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '../theme';
+import { MIN_TOUCH, palette, radii, shadows, spacing, typography } from '../theme';
+import { useTabBarInset } from './design/tabBarInset';
+import { TrackingIcon, type IconName } from './tracking/TrackingIcon';
+
+/*
+ * Composants de base Cobalt (docs/DESIGN.md). Ce fichier est aussi chargé par la page publique de suivi : il n'utilise
+ * que `TrackingIcon` (SVG du navigateur sur le web), jamais react-native-svg.
+ */
 
 /* ------------------------------ Mise en page ------------------------------ */
 
+/**
+ * Écran Cobalt : fond canvas, défilement (tirer pour actualiser avec `onRefresh`), bloc fixé en bas sur fond blanc.
+ * Au-dessus de la barre d'onglets flottante, le contenu garde la place de la barre.
+ */
 export function Screen({
   children,
   scroll = true,
@@ -36,26 +46,29 @@ export function Screen({
   /** Bloc fixé en bas (bouton principal). */
   footer?: ReactNode;
 }) {
+  const tabInset = useTabBarInset();
   return (
     <SafeAreaView style={styles.screen} edges={edges}>
       {scroll ? (
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, style]}
+          contentContainerStyle={[styles.scrollContent, tabInset && !footer ? { paddingBottom: tabInset + spacing.lg } : null, style]}
           keyboardShouldPersistTaps="handled"
-          refreshControl={
-            onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined
-          }
+          refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={palette.cobalt} colors={[palette.cobalt]} /> : undefined}
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={[styles.flex, style]}>{children}</View>
+        <View style={[styles.flex, tabInset && !footer ? { paddingBottom: tabInset } : null, style]}>{children}</View>
       )}
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      {footer ? <View style={[styles.footer, shadows.sheet, tabInset ? { paddingBottom: tabInset } : null]}>{footer}</View> : null}
     </SafeAreaView>
   );
 }
 
+/**
+ * Carte Cobalt : blanche, coins de 24 px, ombre douce, sans bordure. `highlight` : contour coloré de 2 px (ex. dossier
+ * en attente) ; Cobalt n'a pas de liseré latéral.
+ */
 export function Card({
   children,
   style,
@@ -63,14 +76,10 @@ export function Card({
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** Bordure colorée (ex. commande NOUVELLE en orange). */
+  /** Contour coloré (ex. commande à traiter). */
   highlight?: string;
 }) {
-  return (
-    <View style={[styles.card, highlight ? { borderColor: highlight, borderWidth: 2 } : null, style]}>
-      {children}
-    </View>
-  );
+  return <View style={[styles.card, shadows.tile, highlight ? { borderColor: highlight, borderWidth: 2 } : null, style]}>{children}</View>;
 }
 
 export function Row({
@@ -91,6 +100,7 @@ export function Spacer({ size = spacing.md }: { size?: number }) {
 
 /* ------------------------------ Textes ------------------------------ */
 
+/** Titre d'écran (display 30/800). */
 export function Title({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
   return (
     <Text style={[styles.title, style]} accessibilityRole="header">
@@ -99,6 +109,7 @@ export function Title({ children, style }: { children: ReactNode; style?: StyleP
   );
 }
 
+/** Nom, titre de carte (18/700). */
 export function Subtitle({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
   return <Text style={[styles.subtitle, style]}>{children}</Text>;
 }
@@ -119,6 +130,7 @@ export function Body({
   );
 }
 
+/** Texte secondaire (13/500, encre secondaire : 5,96:1 sur blanc, 5,26:1 sur canvas). */
 export function Muted({
   children,
   style,
@@ -137,18 +149,28 @@ export function Muted({
   );
 }
 
+/** Titre de section (« En cours », 17/800, en minuscules : Cobalt n'écrit pas ses titres en capitales). */
 export function SectionTitle({ children }: { children: ReactNode }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+  return (
+    <Text style={styles.sectionTitle} accessibilityRole="header">
+      {children}
+    </Text>
+  );
 }
 
 /* ------------------------------ Boutons ------------------------------ */
 
 type ButtonVariant = 'solid' | 'outline' | 'ghost';
 
+/**
+ * Bouton Cobalt en pilule : solid = plein (cobalt par défaut, texte blanc 16/700, 56 px) ; outline = secondaire (blanc à
+ * filet fin, texte encre) ; ghost = tertiaire (texte de la couleur, cobalt par défaut). `small` : 44 px, 14/700.
+ * Une couleur pleine destructive (`palette.coralFill`) donne le bouton « Annuler la livraison ».
+ */
 export function Button({
   title,
   onPress,
-  color = colors.green,
+  color = palette.cobalt,
   variant = 'solid',
   disabled,
   loading,
@@ -168,10 +190,7 @@ export function Button({
   small?: boolean;
   /** Pictogramme avant le titre, dessiné de la couleur du texte (ex. `(c) => <Icon name="camera" color={c} />`). */
   icon?: (color: string) => ReactNode;
-  /**
-   * Couleur du texte (et du pictogramme) à la place de celle par défaut (blanc sur un bouton plein) : ex. encre
-   * foncée sur l'orange de l'entreprise, où le blanc n'est pas assez contrasté.
-   */
+  /** Couleur du texte (et du pictogramme) à la place de celle par défaut (blanc sur un bouton plein). */
   textColor?: string;
   testID?: string;
 }) {
@@ -180,9 +199,10 @@ export function Button({
     variant === 'solid'
       ? { backgroundColor: color, borderColor: color }
       : variant === 'outline'
-        ? { backgroundColor: colors.white, borderColor: colors.border }
+        ? { backgroundColor: palette.white, borderColor: palette.line }
         : { backgroundColor: 'transparent', borderColor: 'transparent' };
-  const textColor = textColorProp ?? (variant === 'solid' ? colors.white : variant === 'outline' ? colors.text : color);
+  const textColor = textColorProp ?? (variant === 'solid' ? palette.white : variant === 'outline' ? palette.ink : color);
+  const glow = variant === 'solid' && color === palette.cobalt && !inactive ? shadows.cobalt : variant === 'outline' ? styles.buttonHairShadow : null;
   return (
     <Pressable
       testID={testID}
@@ -193,8 +213,9 @@ export function Button({
         styles.button,
         small && styles.buttonSmall,
         base,
+        glow,
         inactive && styles.buttonDisabled,
-        pressed && !inactive && styles.buttonPressed,
+        pressed && !inactive && (variant === 'ghost' ? styles.ghostPressed : styles.buttonPressed),
         style,
       ]}
     >
@@ -212,19 +233,19 @@ export function Button({
   );
 }
 
-/** Petite pastille cliquable (choix d'une adresse enregistrée, filtre...). */
+/** Pastille de choix (adresse enregistrée, filtre…) : pilule raised ; choisie : `color` plein (cobalt), texte blanc. */
 export function Chip({
   label,
   selected,
   onPress,
-  color = colors.green,
-  selectedTextColor = colors.white,
+  color = palette.cobalt,
+  selectedTextColor = palette.white,
 }: {
   label: string;
   selected?: boolean;
   onPress?: () => void;
   color?: string;
-  /** Texte de la pastille choisie (blanc par défaut ; encre foncée sur l'orange de l'entreprise). */
+  /** Texte de la pastille choisie (blanc par défaut). */
   selectedTextColor?: string;
 }) {
   return (
@@ -232,7 +253,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
-      style={[styles.chip, selected && { backgroundColor: color, borderColor: color }]}
+      style={({ pressed }) => [styles.chip, selected && { backgroundColor: color }, pressed && !selected && styles.chipPressed]}
     >
       <Text style={[styles.chipText, selected && { color: selectedTextColor }]}>{label}</Text>
     </Pressable>
@@ -241,38 +262,60 @@ export function Chip({
 
 /* ------------------------------ Formulaires ------------------------------ */
 
+/**
+ * Champ Cobalt : libellé au-dessus, champ rempli (raised) de 56 px aux coins de 16 px, anneau cobalt de 2 px au focus,
+ * erreur en rouge foncé sous le champ (sinon `hint`). `accessibilityLabel` = libellé.
+ */
 export function Field({
   label,
   hint,
   error,
   ...input
 }: TextInputProps & { label: string; hint?: string; error?: string | null }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={palette.inkMuted}
+        selectionColor={palette.cobalt}
         {...input}
+        onFocus={(e) => {
+          setFocused(true);
+          input.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          input.onBlur?.(e);
+        }}
         accessibilityLabel={label}
-        style={[styles.input, error ? { borderColor: colors.red } : null, input.style]}
+        style={[styles.input, input.multiline && styles.inputMultiline, focused && styles.inputFocused, error ? styles.inputError : null, input.style]}
       />
-      {error ? <Text style={styles.fieldError}>{error}</Text> : hint ? <Muted>{hint}</Muted> : null}
+      {error ? (
+        <Text style={styles.fieldError} accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : hint ? (
+        <Muted>{hint}</Muted>
+      ) : null}
     </View>
   );
 }
 
 /* ------------------------------ États ------------------------------ */
 
+/** Tons : green = réussite (mint), orange = avertissement (soleil doux), blue = information (cobalt), red = erreur, grey. */
 type Tone = 'green' | 'orange' | 'blue' | 'red' | 'grey';
 
-const TONES: Record<Tone, { bg: string; fg: string }> = {
-  green: { bg: colors.greenLight, fg: colors.green },
-  orange: { bg: colors.orangeLight, fg: '#B4610A' },
-  blue: { bg: colors.blueLight, fg: colors.blue },
-  red: { bg: colors.redLight, fg: colors.red },
-  grey: { bg: '#EEF1F4', fg: colors.textMuted },
+const TONES: Record<Tone, { bg: string; fg: string; icon: IconName }> = {
+  green: { bg: palette.mintTint, fg: palette.mintText, icon: 'check' },
+  orange: { bg: palette.sunTint, fg: palette.sunText, icon: 'alert' },
+  blue: { bg: palette.cobaltTint, fg: palette.cobaltText, icon: 'info' },
+  red: { bg: palette.coralTint, fg: palette.coralText, icon: 'alert' },
+  grey: { bg: palette.raised, fg: palette.inkMuted, icon: 'info' },
 };
 
+/** Petite étiquette d'état en pilule (12/700, fond teinté, texte assorti). */
 export function Badge({ label, tone = 'grey' }: { label: string; tone?: Tone }) {
   const t = TONES[tone];
   return (
@@ -282,6 +325,10 @@ export function Badge({ label, tone = 'grey' }: { label: string; tone?: Tone }) 
   );
 }
 
+/**
+ * Bandeau (information, avertissement, erreur, réussite) : fond teinté, coins de 16 px, pictogramme à gauche (celui du
+ * ton par défaut, ou `icon`), texte assorti (4,6:1 au moins).
+ */
 export function Banner({
   message,
   tone = 'red',
@@ -289,15 +336,14 @@ export function Banner({
 }: {
   message: string;
   tone?: Tone;
-  /** Pictogramme avant le message, dessiné de la couleur du texte. */
+  /** Pictogramme avant le message, dessiné de la couleur du texte (par défaut celui du ton). */
   icon?: (color: string) => ReactNode;
 }) {
   const t = TONES[tone];
-  const text = <Text style={[{ color: t.fg, fontWeight: '600' }, icon ? styles.flex : null]}>{message}</Text>;
   return (
-    <View style={[styles.banner, { backgroundColor: t.bg }, icon ? styles.bannerRow : null]} accessibilityRole="alert">
-      {icon ? icon(t.fg) : null}
-      {text}
+    <View style={[styles.banner, { backgroundColor: t.bg }]} accessibilityRole="alert">
+      <View style={styles.bannerIcon}>{icon ? icon(t.fg) : <TrackingIcon name={t.icon} size={18} color={t.fg} strokeWidth={2.4} />}</View>
+      <Text style={[styles.bannerText, { color: t.fg }]}>{message}</Text>
     </View>
   );
 }
@@ -305,7 +351,7 @@ export function Banner({
 export function Loading({ label = 'Chargement…' }: { label?: string }) {
   return (
     <View style={styles.center}>
-      <ActivityIndicator size="large" color={colors.green} />
+      <ActivityIndicator size="large" color={palette.cobalt} />
       <Muted style={{ marginTop: spacing.sm }}>{label}</Muted>
     </View>
   );
@@ -320,13 +366,14 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
+/** Tuile chiffrée (KPI) : grand nombre 800 tabulaire, libellé 13/600 dessous. */
 export function Stat({ value, label, color }: { value: string; label: string; color?: string }) {
   return (
-    <View style={styles.stat}>
+    <View style={[styles.stat, shadows.tile]}>
       <Text style={[styles.statValue, color ? { color } : null]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
-      <Muted>{label}</Muted>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
@@ -345,21 +392,19 @@ export function KeyValue({
 }) {
   return (
     <View style={styles.kv}>
-      <Text style={[styles.body, strong && styles.bold]}>{label}</Text>
-      <Text style={[styles.body, styles.bold, styles.tabular, strong && { fontSize: 18 }, valueColor ? { color: valueColor } : null]}>
-        {value}
-      </Text>
+      <Text style={[styles.kvLabel, strong && styles.kvLabelStrong]}>{label}</Text>
+      <Text style={[styles.kvValue, strong && styles.kvValueStrong, valueColor ? { color: valueColor } : null]}>{value}</Text>
     </View>
   );
 }
 
-/** Puce de couleur devant une adresse (orange = retrait, vert = livraison). */
+/** Puce de couleur devant une adresse (retrait, livraison). */
 export function Dot({ color }: { color: string }) {
   return <View style={[styles.dot, { backgroundColor: color }]} />;
 }
 
-/** Barre de progression horizontale (plafond d'espèces, délai d'une offre). */
-export function ProgressBar({ value, color = colors.green }: { value: number; color?: string }) {
+/** Barre de progression horizontale (plafond d'espèces, délai d'une offre) : piste grise, remplissage cobalt. */
+export function ProgressBar({ value, color = palette.cobalt }: { value: number; color?: string }) {
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
     <View style={styles.progressTrack} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: pct }}>
@@ -370,93 +415,99 @@ export function ProgressBar({ value, color = colors.green }: { value: number; co
 
 export const styles = StyleSheet.create({
   flex: { flex: 1 },
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: palette.canvas },
   scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
   footer: {
-    padding: spacing.lg,
-    backgroundColor: colors.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    backgroundColor: palette.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     gap: spacing.sm,
   },
   card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: palette.card,
+    borderRadius: radii.card,
+    padding: 20,
     gap: spacing.sm,
   },
   row: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: colors.text },
-  subtitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-  body: { fontSize: 15, color: colors.text },
+  title: { ...typography.display, color: palette.ink },
+  subtitle: { fontSize: 18, lineHeight: 23, fontWeight: '700', letterSpacing: -0.2, color: palette.ink },
+  body: { ...typography.body, color: palette.ink },
   bold: { fontWeight: '700' },
-  muted: { fontSize: 13, color: colors.textMuted },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.sm,
-  },
+  muted: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted },
+  sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.2, color: palette.ink, marginTop: spacing.sm },
   button: {
-    minHeight: 52,
-    borderRadius: radius.md,
+    minHeight: MIN_TOUCH,
+    borderRadius: radii.pill,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
-  buttonSmall: { minHeight: 40, paddingHorizontal: spacing.md },
+  buttonSmall: { minHeight: 44, paddingHorizontal: spacing.lg },
   buttonDisabled: { opacity: 0.45 },
-  buttonPressed: { opacity: 0.8 },
-  buttonText: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  buttonTextSmall: { fontSize: 14 },
+  buttonPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
+  ghostPressed: { backgroundColor: palette.raised },
+  buttonHairShadow: { boxShadow: '0 1px 2px rgba(12, 18, 34, 0.05)' },
+  buttonText: { fontSize: 16, lineHeight: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  buttonTextSmall: { fontSize: 14, lineHeight: 18 },
   buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   chip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: radii.pill,
+    backgroundColor: palette.raised,
   },
-  chipText: { fontSize: 14, color: colors.text, fontWeight: '600' },
+  chipPressed: { backgroundColor: palette.raisedHigh },
+  chipText: { fontSize: 14, lineHeight: 18, color: palette.ink, fontWeight: '600' },
   field: { gap: 6 },
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
-  fieldError: { fontSize: 13, color: colors.red },
+  fieldLabel: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.ink },
+  fieldError: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.coralText },
   input: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    minHeight: MIN_TOUCH,
+    borderRadius: radii.input,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    paddingHorizontal: spacing.lg,
+    // 16 px (et non 15) : en dessous, Safari sur iPhone agrandit la page au focus d'un champ.
     fontSize: 16,
-    color: colors.text,
-    backgroundColor: colors.white,
+    fontWeight: '500',
+    color: palette.ink,
+    backgroundColor: palette.raised,
   },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  banner: { padding: spacing.md, borderRadius: radius.md },
-  bannerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  inputMultiline: { paddingTop: 14, paddingBottom: 14, minHeight: 96, textAlignVertical: 'top' },
+  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white },
+  inputError: { borderColor: palette.coralText },
+  badge: { minHeight: 24, paddingHorizontal: 10, borderRadius: 12, alignSelf: 'flex-start', justifyContent: 'center' },
+  badgeText: { fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  banner: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.banner },
+  bannerIcon: { paddingTop: 1 },
+  bannerText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   empty: { alignItems: 'center', padding: spacing.xl, gap: spacing.sm },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.textMuted, textAlign: 'center' },
+  emptyTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: palette.inkMuted, textAlign: 'center' },
   stat: {
     flex: 1,
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: palette.card,
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    gap: 2,
   },
-  statValue: { fontSize: 20, fontWeight: '800', color: colors.text, fontVariant: ['tabular-nums'] },
+  statValue: { fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.6, color: palette.ink, fontVariant: ['tabular-nums'] },
+  statLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.inkMuted },
   /** Montants : chiffres tabulaires (espaces fines des milliers bien visibles, colonnes alignées). */
   tabular: { fontVariant: ['tabular-nums'] },
   kv: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
+  kvLabel: { flexShrink: 1, fontSize: 15, lineHeight: 21, fontWeight: '500', color: palette.ink },
+  kvLabelStrong: { fontWeight: '700' },
+  kvValue: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: palette.ink, fontVariant: ['tabular-nums'] },
+  kvValueStrong: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
   dot: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
-  progressTrack: { height: 8, borderRadius: 4, backgroundColor: '#E9EDF1', overflow: 'hidden' },
+  progressTrack: { height: 8, borderRadius: 4, backgroundColor: palette.raisedHigh, overflow: 'hidden' },
   progressFill: { height: 8, borderRadius: 4 },
 });

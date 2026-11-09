@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Text } from '../components/Text';
 import { useReadyScreenGate } from '../hooks/useReadyScreen';
 import { resetReadyScreenSession } from '../lib/readyScreen';
 import { driverReadyKey } from '../lib/storage';

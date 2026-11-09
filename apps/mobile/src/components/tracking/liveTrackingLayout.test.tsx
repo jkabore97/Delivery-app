@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { Dimensions, StyleSheet, Text } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
+import { Text } from '../Text';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LiveTrackingLayout } from './LiveTrackingLayout';

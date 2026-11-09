@@ -3,7 +3,8 @@ import { MAP_COLORS } from '../../lib/map/style';
 
 /**
  * Pictogrammes des marqueurs dessinés avec de simples formes (boîte 24 × 24) : le même dessin sert au web (SVG,
- * MapLibre) et au natif (vues React Native), sans dépendance graphique supplémentaire.
+ * MapLibre) et au natif (vues React Native), sans dépendance graphique supplémentaire. Style « au trait » (anneaux et
+ * traits à extrémités rondes), comme les icônes de l'application.
  *
  * Les formes sont décrites par leur boîte EXTÉRIEURE : un contour (`stroke`) est dessiné à l'intérieur de la boîte,
  * comme une bordure React Native (le SVG est décalé d'un demi-trait pour donner exactement le même rendu).
@@ -39,23 +40,14 @@ export type ArtShape = ArtRect | ArtCircle;
 
 const WHITE = '#FFFFFF';
 
-/** Boutique / entreprise (point de retrait) : auvent, façade, porte et vitrine. */
-export const STORE_GLYPH: ArtShape[] = [
-  { x: 3, y: 4, w: 18, h: 5, r: 1.6, fill: WHITE },
-  { x: 5, y: 10, w: 14, h: 10, r: 1.2, fill: WHITE },
-  { x: 10.5, y: 13.5, w: 3.2, h: 6.5, r: 0.6, fill: MAP_COLORS.pickup },
-  { x: 6.6, y: 12, w: 2.6, h: 2.8, r: 0.5, fill: MAP_COLORS.pickup },
-  { x: 14.8, y: 12, w: 2.6, h: 2.8, r: 0.5, fill: MAP_COLORS.pickup },
-];
+/** Épaisseur du trait des pictogrammes (unités de la boîte 24 × 24), comme les icônes de l'application. */
+export const GLYPH_STROKE = 2.2;
 
-/** Maison (destinataire) : toit en losange, façade, porte. */
-export const HOUSE_GLYPH: ArtShape[] = [
-  { x: 6.2, y: 3.6, w: 11.6, h: 11.6, r: 1.4, fill: WHITE, rotate: 45 },
-  { x: 6, y: 11, w: 12, h: 9.5, r: 1, fill: WHITE },
-  { x: 10.4, y: 14.2, w: 3.2, h: 6.3, r: 0.6, fill: MAP_COLORS.dropoff },
-];
-
-/** Barre arrondie de (x1, y1) à (x2, y2), épaisseur `w` (cadres, guidons). */
+/**
+ * Trait droit de (x1, y1) à (x2, y2), épaisseur `w`, extrémités rondes : un rectangle arrondi tourné. Deux traits qui
+ * se touchent donnent une jointure ronde ; une suite de traits dessine une ligne brisée, comme un tracé SVG à
+ * `stroke-linecap: round`.
+ */
 function bar(x1: number, y1: number, x2: number, y2: number, w: number, fill: string): ArtRect {
   const len = Math.hypot(x2 - x1, y2 - y1) + w;
   const cx = (x1 + x2) / 2;
@@ -64,57 +56,206 @@ function bar(x1: number, y1: number, x2: number, y2: number, w: number, fill: st
   return { x: cx - len / 2, y: cy - w / 2, w: len, h: w, r: w / 2, fill, ...(rotate ? { rotate } : {}) };
 }
 
-function wheel(cx: number, cy: number, r: number, width: number, color: string, fill?: string): ArtCircle {
-  return { kind: 'circle', cx, cy, r, stroke: color, strokeWidth: width, ...(fill ? { fill } : {}) };
+/** Ligne brisée (points [x, y]) en traits ronds. */
+function polyline(points: Array<[number, number]>, w: number, color: string): ArtRect[] {
+  const out: ArtRect[] = [];
+  for (let i = 1; i < points.length; i++) out.push(bar(points[i - 1]![0], points[i - 1]![1], points[i]![0], points[i]![1], w, color));
+  return out;
 }
 
+/** Anneau dont le trait (épaisseur `w`) est centré sur le cercle de rayon `r` (rayon extérieur r + w/2). */
+function ring(cx: number, cy: number, r: number, w: number, color: string): ArtCircle {
+  return { kind: 'circle', cx, cy, r: r + w / 2, stroke: color, strokeWidth: w };
+}
+
+/** Boutique (point de retrait), au trait : auvent, façade, porte. Blanc par défaut (sur le carré encre). */
+export function storeGlyph(color: string = WHITE, w: number = GLYPH_STROKE): ArtShape[] {
+  return [
+    // Auvent : toit en trapèze, bord festonné.
+    ...polyline(
+      [
+        [4, 9.8],
+        [5.6, 4.6],
+        [18.4, 4.6],
+        [20, 9.8],
+        [17.33, 11.6],
+        [14.67, 9.8],
+        [12, 11.6],
+        [9.33, 9.8],
+        [6.67, 11.6],
+        [4, 9.8],
+      ],
+      w,
+      color,
+    ),
+    // Façade et porte.
+    ...polyline(
+      [
+        [5.6, 13.6],
+        [5.6, 19.6],
+        [18.4, 19.6],
+        [18.4, 13.6],
+      ],
+      w,
+      color,
+    ),
+    ...polyline(
+      [
+        [10.1, 19.4],
+        [10.1, 15.6],
+        [13.9, 15.6],
+        [13.9, 19.4],
+      ],
+      w,
+      color,
+    ),
+  ];
+}
+
+/** Maison (destinataire), au trait : toit, murs, porte. Blanc par défaut (sur la goutte cobalt). */
+export function houseGlyph(color: string = WHITE, w: number = GLYPH_STROKE): ArtShape[] {
+  return [
+    ...polyline(
+      [
+        [3.8, 11.4],
+        [12, 4.2],
+        [20.2, 11.4],
+      ],
+      w,
+      color,
+    ),
+    ...polyline(
+      [
+        [6, 9.8],
+        [6, 19.6],
+        [18, 19.6],
+        [18, 9.8],
+      ],
+      w,
+      color,
+    ),
+    ...polyline(
+      [
+        [10.1, 19.4],
+        [10.1, 14.6],
+        [13.9, 14.6],
+        [13.9, 19.4],
+      ],
+      w,
+      color,
+    ),
+  ];
+}
+
+/** Boutique blanche (carré encre de l'entreprise, épingle fixe du choix d'adresse). */
+export const STORE_GLYPH: ArtShape[] = storeGlyph();
+/** Maison blanche (goutte cobalt du destinataire, épingle fixe du choix d'adresse). */
+export const HOUSE_GLYPH: ArtShape[] = houseGlyph();
+
 /**
- * Véhicules vus de profil, TOUJOURS DROITS (ils ne pivotent jamais : seul le chevron de cap tourne), dessinés en
- * `ink` sur le disque du marqueur, avec des découpes de la couleur `cut` (vitres, jantes). Mêmes silhouettes que
- * la console (apps/console/src/lib/map/markers.ts) : scooter, vélo, voiture tournés vers la droite.
+ * Véhicules vus de profil, au trait (comme les icônes de l'application), tournés vers la droite et TOUJOURS DROITS
+ * (ils ne pivotent jamais : seule l'encoche de cap tourne). `ink` : couleur du trait (blanc par défaut, sur une pastille
+ * pleine ; cobalt sur le disque blanc du marqueur, encre sur le disque Sun). `cut` : gardé pour compatibilité (les
+ * pictogrammes au trait n'ont plus de découpes).
  */
-export function vehicleSideGlyph(vehicle: VehicleType, ink: string = WHITE, cut: string = MAP_COLORS.driver): ArtShape[] {
+export function vehicleSideGlyph(vehicle: VehicleType, ink: string = WHITE, _cut: string = MAP_COLORS.driver): ArtShape[] {
+  const w = GLYPH_STROKE;
   switch (vehicle) {
     case 'CAR':
+      // Voiture : habitacle à l'arrière, long capot, deux roues.
       return [
-        // Caisse basse et habitacle.
-        { x: 2, y: 10.4, w: 20, h: 5.8, r: 2.2, fill: ink },
-        { x: 5.2, y: 6, w: 12.2, h: 7, r: 2.6, fill: ink },
-        // Vitres avant / arrière.
-        { x: 7, y: 7.7, w: 4.1, h: 3, r: 0.9, fill: cut },
-        { x: 12.1, y: 7.7, w: 3.7, h: 3, r: 0.9, fill: cut },
-        // Roues (jante de la couleur du disque, pneu blanc).
-        wheel(6.8, 16.6, 2.9, 1.5, ink, cut),
-        wheel(17.2, 16.6, 2.9, 1.5, ink, cut),
+        ...polyline(
+          [
+            [5, 16],
+            [3, 16],
+            [2.1, 15.1],
+            [2.1, 11],
+            [2.4, 9.8],
+            [3.7, 6.9],
+            [5, 6],
+            [12, 6],
+            [13.8, 6.7],
+            [16, 9],
+            [20.4, 10.1],
+            [21.9, 12],
+            [21.9, 15.1],
+            [21, 16],
+            [19.1, 16],
+          ],
+          w,
+          ink,
+        ),
+        bar(9, 16, 15, 16, w, ink),
+        ring(7, 16, 2.05, w, ink),
+        ring(17, 16, 2.05, w, ink),
       ];
-    case 'BIKE':
+    case 'BIKE': {
+      // Vélo : deux grandes roues, cadre fin (le trait plein du cadre se confondrait à petite taille), selle, guidon.
+      const f = w * 0.8;
       return [
-        wheel(5.5, 15.6, 4.2, 1.7, ink),
-        wheel(18.5, 15.6, 4.2, 1.7, ink),
-        // Cadre : base, tube de selle, tube supérieur, tube diagonal, fourche.
-        bar(5.5, 15.6, 9.4, 8.8, 1.7, ink),
-        bar(5.5, 15.6, 12.2, 15.6, 1.7, ink),
-        bar(9.4, 8.8, 12.2, 15.6, 1.7, ink),
-        bar(9.4, 8.8, 15.4, 8.8, 1.7, ink),
-        bar(12.2, 15.6, 15.4, 8.8, 1.7, ink),
-        bar(15.4, 8.8, 18.5, 15.6, 1.7, ink),
-        // Selle et guidon.
-        bar(9.4, 8.8, 9.6, 6.6, 1.5, ink),
-        bar(7.9, 6.3, 11, 6.3, 1.7, ink),
-        bar(15.4, 8.8, 14.8, 6.4, 1.5, ink),
-        bar(14.6, 6.1, 17.2, 6.1, 1.6, ink),
+        ring(5.3, 15, 3.75, w * 0.9, ink),
+        ring(18.7, 15, 3.75, w * 0.9, ink),
+        ...polyline(
+          [
+            [5.3, 15],
+            [9.2, 8.6],
+            [15.6, 8.6],
+            [18.7, 15],
+          ],
+          f,
+          ink,
+        ),
+        ...polyline(
+          [
+            [9.2, 8.6],
+            [11.9, 15],
+            [15.6, 8.6],
+          ],
+          f,
+          ink,
+        ),
+        bar(5.3, 15, 11.9, 15, f, ink),
+        bar(9.2, 8.6, 8.8, 6.2, f, ink),
+        bar(7.4, 5.9, 10.4, 5.9, w, ink),
+        ...polyline(
+          [
+            [15.6, 8.6],
+            [14.9, 5.9],
+            [17.3, 5.9],
+          ],
+          f,
+          ink,
+        ),
       ];
+    }
     case 'MOTO':
     default:
+      // Scooter (moto) : roues, carrosserie arrière, plancher, colonne de direction, guidon, coffre.
       return [
-        wheel(5.6, 16.3, 3.9, 1.9, ink),
-        wheel(18.4, 16.3, 3.9, 1.9, ink),
-        // Selle et carrosserie arrière, plancher, colonne de direction (inclinée), guidon, phare.
-        { x: 5.4, y: 9.6, w: 8.8, h: 3.2, r: 1.6, fill: ink },
-        { x: 6.6, y: 11.6, w: 9.6, h: 4.2, r: 1.6, fill: ink },
-        bar(15.4, 8, 18.2, 15.4, 2.3, ink),
-        bar(13.6, 6.6, 17.6, 6.6, 1.9, ink),
-        { x: 17.6, y: 8.8, w: 3, h: 2.4, r: 1, fill: ink },
+        ring(6, 15.7, 2.7, w, ink),
+        ring(18.2, 15.7, 2.7, w, ink),
+        ...polyline(
+          [
+            [3.3, 13.2],
+            [4.6, 11],
+            [7.8, 9.9],
+            [10.9, 9.9],
+            [12.8, 15.7],
+            [15.6, 15.7],
+          ],
+          w,
+          ink,
+        ),
+        ...polyline(
+          [
+            [18.2, 15.7],
+            [15.6, 6.5],
+            [13.3, 6.5],
+          ],
+          w,
+          ink,
+        ),
+        bar(7.5, 6.8, 11.2, 6.8, w, ink),
       ];
   }
 }

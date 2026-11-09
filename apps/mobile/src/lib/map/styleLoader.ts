@@ -1,5 +1,5 @@
 /**
- * Chargement du style distant des cartes web (OpenFreeMap) sans jamais y renoncer pendant la session : la carte
+ * Chargement du style des cartes web (fond Cobalt, `/map/cobalt-style.json`) sans jamais y renoncer pendant la session : la carte
  * s'affiche tout de suite avec le style de secours embarqué (fond clair, itinéraires et marqueurs), puis le style
  * distant est demandé, et redemandé avec un délai croissant (2 s, 4 s, 8 s… 60 s au plus) tant qu'il n'est pas
  * arrivé, et aussitôt quand le navigateur repasse en ligne. Dès qu'il arrive, la carte l'applique (setStyle) et
@@ -188,9 +188,9 @@ function cloneStyle(style: StyleJson): StyleJson {
 }
 
 /**
- * Styles distants déjà reçus pendant la session, rangés par URL, donc par fond de carte (« positron » clair,
- * « dark » sombre) : une carte rouverte (autre écran, offre suivante) affiche aussitôt le bon style, sans repasser
- * par le style de secours ni retélécharger le JSON ; un fond ne remplace jamais l'autre.
+ * Styles distants déjà reçus pendant la session, rangés par URL (le style Cobalt, ou celui de EXPO_PUBLIC_MAP_STYLE_URL) :
+ * une carte rouverte (autre écran, offre suivante) affiche aussitôt le bon style, sans repasser
+ * par le style de secours ni retélécharger le JSON.
  */
 export class StyleCache {
   private readonly styles = new Map<string, StyleJson>();

@@ -1,26 +1,29 @@
 /**
- * Apparence des cartes (web MapLibre et natif react-native-maps).
+ * Apparence des cartes (web MapLibre et natif react-native-maps) : le fond « Cobalt » partout.
  *
- * Web : style vectoriel gratuit OpenFreeMap « positron » (sans clé), remplaçable par EXPO_PUBLIC_MAP_STYLE_URL.
- * La carte s'affiche d'abord avec le style de secours ci-dessous, embarqué dans l'application (fond clair, sans
- * tuiles, mais marqueurs et itinéraires), puis passe au style distant dès qu'il arrive : il est redemandé avec un
- * délai croissant tant qu'il n'est pas chargé, et aussitôt au retour du réseau (voir styleLoader.ts). Natif :
- * Google Maps (Android) avec un style « argenté » discret, Apple Plans en `mutedStandard` (iOS).
+ * Web : style vectoriel « Cobalt » (OpenFreeMap « positron » recoloré : terre #F3F5F8, eau #A9C9FF, parcs #D6EEDC,
+ * rues blanches, grands axes jaunes, noms des quartiers seulement), fichier statique servi par l'application
+ * elle-même (`public/map/cobalt-style.json` → `/map/cobalt-style.json`), remplaçable par EXPO_PUBLIC_MAP_STYLE_URL.
+ * Ses tuiles, polices et sprites viennent de tiles.openfreemap.org (gratuit, sans clé). La carte s'affiche d'abord
+ * avec le style de secours embarqué ci-dessous (fond Cobalt uni, sans tuiles, mais marqueurs et itinéraires), puis
+ * passe au style Cobalt dès qu'il arrive : il est redemandé avec un délai croissant tant qu'il n'est pas chargé, et
+ * aussitôt au retour du réseau (voir styleLoader.ts). Natif : Google Maps (Android) avec un style Cobalt
+ * (`ANDROID_MAP_STYLE`), Apple Plans clair (iOS).
  *
- * Fond sombre (`theme="dark"`, offre de course du livreur) : OpenFreeMap « dark » (EXPO_PUBLIC_MAP_STYLE_DARK_URL),
- * même chargement, style de secours sombre, cache distinct ; Google Maps de nuit (Android), Apple Plans sombre (iOS).
- * Les cartes claires restent la valeur par défaut partout.
+ * Plus de fond sombre : l'ancien `theme="dark"` (offre de course du livreur) affiche aussi le fond Cobalt.
  */
 import type { MapTheme } from '../../components/map/types';
+import { COBALT_MAP, rgba } from './palette';
 
-export const DEFAULT_MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
-/** Style sombre (offre de course du livreur) : OpenFreeMap « dark », même hôte, mêmes sources que « positron ». */
-export const DEFAULT_MAP_STYLE_DARK_URL = 'https://tiles.openfreemap.org/styles/dark';
+/** Style Cobalt servi par la version web elle-même (copie de public/map/cobalt-style.json). */
+export const DEFAULT_MAP_STYLE_URL = '/map/cobalt-style.json';
+/** @deprecated Plus de fond sombre : même style Cobalt que les autres cartes. */
+export const DEFAULT_MAP_STYLE_DARK_URL = DEFAULT_MAP_STYLE_URL;
 
 /** Remplacé au build par Expo (variables EXPO_PUBLIC_*). */
 export const MAP_STYLE_URL: string = process.env.EXPO_PUBLIC_MAP_STYLE_URL || DEFAULT_MAP_STYLE_URL;
-/** Remplacé au build par Expo (variables EXPO_PUBLIC_*). */
-export const MAP_STYLE_DARK_URL: string = process.env.EXPO_PUBLIC_MAP_STYLE_DARK_URL || DEFAULT_MAP_STYLE_DARK_URL;
+/** @deprecated EXPO_PUBLIC_MAP_STYLE_DARK_URL n'est plus lue : toutes les cartes utilisent MAP_STYLE_URL. */
+export const MAP_STYLE_DARK_URL: string = MAP_STYLE_URL;
 
 export const MAP_ATTRIBUTION = '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
 export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
@@ -28,105 +31,147 @@ export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
 /** Densité de pixels plafonnée (écrans 3x : 2x suffit et divise le coût du rendu). */
 export const MAX_PIXEL_RATIO = 2;
 
-export const MAP_COLORS = {
-  route: '#0B7A4B',
-  casing: '#FFFFFF',
-  shadow: 'rgba(15, 46, 34, 0.22)',
-  dashed: '#0B7A4B',
-  /** Fond du style de secours et des cartes en cours de chargement. */
-  background: '#EEF1EC',
-  pickup: '#F28C1B',
-  dropoff: '#0B7A4B',
-  /** Livreur : disque vert cerclé de blanc, pictogramme blanc (comme la console). */
-  driver: '#0B7A4B',
-  driverRing: '#FFFFFF',
-  driverInk: '#16202A',
-} as const;
+const ABSOLUTE_URL = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
- * Couleurs des tracés et des zones selon le fond de carte. Clair : celles de MAP_COLORS (inchangées). Sombre : vert
- * vif (le vert de marque disparaît sur un fond sombre) et liseré sombre au lieu du blanc.
+ * URL absolue d'un style : une URL relative (le style Cobalt par défaut, `/map/cobalt-style.json`) est résolue par
+ * rapport à la page, pour que les ressources relatives du style soient résolues à leur tour (styleLoader.ts) et que
+ * le cache des styles ait une seule clé par style. Sans page (tests, natif) : inchangée.
  */
+export function resolveMapStyleUrl(url: string, base?: string): string {
+  if (!url || ABSOLUTE_URL.test(url)) return url;
+  const page = base ?? (typeof location !== 'undefined' && typeof location.href === 'string' ? location.href : undefined);
+  if (!page) return url;
+  try {
+    return new URL(url, page).href;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Couleurs des cartes. Les clés historiques sont gardées (des écrans les importent) avec des valeurs Cobalt :
+ * `driver` reste un fond plein (pastilles du livreur avec un pictogramme blanc), `pickup` est l'encre de l'entreprise,
+ * `dropoff` le cobalt du destinataire.
+ */
+export const MAP_COLORS = {
+  /** Itinéraire devant le livreur : cobalt 6 px… */
+  route: COBALT_MAP.cobalt,
+  /** …sur un liseré blanc de 2 px… */
+  casing: COBALT_MAP.white,
+  /** …avec une ombre douce dessous. */
+  shadow: rgba(COBALT_MAP.ink, 0.22),
+  /** Petits chevrons blancs le long de l'itinéraire (web). */
+  chevron: COBALT_MAP.white,
+  /** Lignes droites (recherche d'un livreur, pas encore d'itinéraire) : cobalt en tirets. */
+  dashed: COBALT_MAP.cobalt,
+  /** Étape à venir (retrait → destinataire pendant le retrait) : encre à 30 % en pointillés. */
+  pending: rgba(COBALT_MAP.ink, 0.32),
+  /** Fond du style de secours et des cartes en cours de chargement (terre du fond Cobalt). */
+  background: COBALT_MAP.land,
+  /** Entreprise / retrait : carré encre arrondi. */
+  pickup: COBALT_MAP.ink,
+  /** Destinataire : goutte cobalt. */
+  dropoff: COBALT_MAP.cobalt,
+  /** Fond plein des pastilles « livreur » hors carte (pictogramme blanc dessus) et pictogramme du marqueur. */
+  driver: COBALT_MAP.cobalt,
+  /** Marqueur du livreur sur la carte : disque blanc… */
+  driverDisc: COBALT_MAP.white,
+  /** …pictogramme cobalt… */
+  driverGlyph: COBALT_MAP.cobalt,
+  /** …contour blanc des formes posées sur la carte (épingles, carré, encoche de cap). */
+  driverRing: COBALT_MAP.white,
+  driverInk: COBALT_MAP.ink,
+  /** Variante Sun (livreur en route vers l'entreprise, vue de l'entreprise) : disque, pictogramme, encoche. */
+  driverSun: COBALT_MAP.sun,
+  driverSunInk: COBALT_MAP.ink,
+  driverSunNotch: COBALT_MAP.sunDeep,
+} as const;
+
+/** Couleurs des tracés et des zones d'une carte. */
 export interface MapPalette {
   route: string;
   casing: string;
   shadow: string;
+  /** Chevrons de direction posés sur l'itinéraire (web). */
+  chevron: string;
   dashed: string;
+  /** Étape à venir en pointillés discrets (`SceneLine.kind = 'pending'`). */
+  pending: string;
   /** Fond du style de secours et de la carte en cours de chargement. */
   background: string;
-  /** Texte « Chargement de la carte… ». */
+  /** Texte « Chargement de la carte… » (encre atténuée : 5,5:1 sur le fond). */
   overlayText: string;
+  /** Zones approximatives : retrait (encre) et livraison (cobalt), cercle translucide à bord en tirets. */
   zoneFill: { pickup: string; dropoff: string };
   zoneStroke: { pickup: string; dropoff: string };
 }
 
-export const MAP_PALETTES: Record<MapTheme, MapPalette> = {
-  light: {
-    route: MAP_COLORS.route,
-    casing: MAP_COLORS.casing,
-    shadow: MAP_COLORS.shadow,
-    dashed: MAP_COLORS.dashed,
-    background: MAP_COLORS.background,
-    overlayText: '#7A8691',
-    zoneFill: { pickup: 'rgba(242, 140, 27, 0.14)', dropoff: 'rgba(11, 122, 75, 0.13)' },
-    zoneStroke: { pickup: 'rgba(242, 140, 27, 0.75)', dropoff: 'rgba(11, 122, 75, 0.7)' },
-  },
-  dark: {
-    route: '#2FD38A',
-    casing: '#08110D',
-    shadow: 'rgba(0, 0, 0, 0.45)',
-    dashed: '#2FD38A',
-    background: '#141A18',
-    overlayText: '#8D9A93',
-    zoneFill: { pickup: 'rgba(242, 140, 27, 0.18)', dropoff: 'rgba(47, 211, 138, 0.16)' },
-    zoneStroke: { pickup: 'rgba(255, 170, 72, 0.85)', dropoff: 'rgba(47, 211, 138, 0.8)' },
-  },
-};
-
-/** Style MapLibre minimal embarqué (aucune requête réseau). */
-export const FALLBACK_STYLE = {
-  version: 8 as const,
-  name: 'Yaar (secours)',
-  sources: {},
-  layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': MAP_COLORS.background } }],
-};
-
-/** Style de secours sombre (même principe : fond uni, marqueurs et tracés de l'application par-dessus). */
-export const FALLBACK_STYLE_DARK = {
-  version: 8 as const,
-  name: 'Yaar (secours, sombre)',
-  sources: {},
-  layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': MAP_PALETTES.dark.background } }],
+/** Palette Cobalt des cartes (la seule). */
+export const MAP_PALETTE: MapPalette = {
+  route: MAP_COLORS.route,
+  casing: MAP_COLORS.casing,
+  shadow: MAP_COLORS.shadow,
+  chevron: MAP_COLORS.chevron,
+  dashed: MAP_COLORS.dashed,
+  pending: MAP_COLORS.pending,
+  background: MAP_COLORS.background,
+  overlayText: COBALT_MAP.inkMuted,
+  zoneFill: { pickup: rgba(COBALT_MAP.ink, 0.06), dropoff: rgba(COBALT_MAP.cobalt, 0.1) },
+  zoneStroke: { pickup: rgba(COBALT_MAP.ink, 0.42), dropoff: rgba(COBALT_MAP.cobalt, 0.62) },
 };
 
 /**
- * Style distant, style de secours et couleurs d'une carte web selon son fond. Chaque fond a son URL, donc son
- * propre chargement et sa propre entrée dans le cache des styles (styleLoader.ts) : une carte sombre ne change
- * rien aux cartes claires des autres écrans.
+ * @deprecated Une seule palette (Cobalt) : `light` et `dark` sont la même. Utiliser MAP_PALETTE.
  */
-export function mapThemeConfig(theme: MapTheme = 'light'): {
+export const MAP_PALETTES: Record<MapTheme, MapPalette> = {
+  light: MAP_PALETTE,
+  dark: MAP_PALETTE,
+};
+
+/** Style MapLibre minimal embarqué (aucune requête réseau) : la terre du fond Cobalt. */
+export const FALLBACK_STYLE = {
+  version: 8 as const,
+  name: 'Yaar Cobalt (secours)',
+  sources: {},
+  layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': COBALT_MAP.land } }],
+};
+
+/** @deprecated Plus de fond sombre : même style de secours que les autres cartes. */
+export const FALLBACK_STYLE_DARK = FALLBACK_STYLE;
+
+/**
+ * Style distant, style de secours et couleurs d'une carte web. Le paramètre `theme` est accepté pour compatibilité
+ * (ancien fond sombre de l'offre de course) mais ignoré : le fond Cobalt partout, une seule entrée dans le cache des
+ * styles (styleLoader.ts).
+ */
+export function mapThemeConfig(_theme: MapTheme = 'light'): {
   styleUrl: string;
-  fallback: typeof FALLBACK_STYLE | typeof FALLBACK_STYLE_DARK;
+  fallback: typeof FALLBACK_STYLE;
   palette: MapPalette;
 } {
-  return theme === 'dark'
-    ? { styleUrl: MAP_STYLE_DARK_URL, fallback: FALLBACK_STYLE_DARK, palette: MAP_PALETTES.dark }
-    : { styleUrl: MAP_STYLE_URL, fallback: FALLBACK_STYLE, palette: MAP_PALETTES.light };
+  return { styleUrl: resolveMapStyleUrl(MAP_STYLE_URL), fallback: FALLBACK_STYLE, palette: MAP_PALETTE };
 }
 
-/** Google Maps (Android) : style « argenté » discret, points d'intérêt masqués, routes blanches. */
+/**
+ * Google Maps (Android), fond Cobalt : terre #F3F5F8, eau #A9C9FF, parcs #D6EEDC, rues blanches, grands axes jaunes
+ * (#FFE38A, bord #F0C85A), aucun point d'intérêt ni transport en commun, noms des quartiers seulement.
+ */
 export const ANDROID_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#f2f3f0' }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#6b7682' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
-  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+  { elementType: 'geometry', stylers: [{ color: COBALT_MAP.land }] },
+  { elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels.text', stylers: [{ visibility: 'on' }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: COBALT_MAP.label }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: COBALT_MAP.land }, { weight: 3 }] },
+  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: COBALT_MAP.landuse }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: '#e3eadf' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#7b8691' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#e1e3e1' }] },
-  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#a0a8b0' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: COBALT_MAP.park }] },
+  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: COBALT_MAP.road }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: COBALT_MAP.roadCasing }] },
+  { featureType: 'road.arterial', elementType: 'geometry.stroke', stylers: [{ color: COBALT_MAP.arterialCasing }] },
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: COBALT_MAP.trunk }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: COBALT_MAP.trunkCasing }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#cfd8dc' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: COBALT_MAP.water }] },
 ];

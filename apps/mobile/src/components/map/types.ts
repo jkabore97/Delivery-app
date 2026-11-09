@@ -6,10 +6,16 @@ export interface MapPoint {
   lng: number;
 }
 
-/** pickup = entreprise / retrait (carré orange) ; dropoff = destinataire (épingle verte) ; driver = livreur. */
+/**
+ * pickup = entreprise / retrait (carré encre arrondi : initiales ou boutique) ; dropoff = destinataire (goutte cobalt :
+ * initiales ou maison) ; driver = livreur (disque blanc, véhicule cobalt, encoche de cap).
+ */
 export type MarkerKind = 'pickup' | 'dropoff' | 'driver';
 
-/** Apparence du fond de carte : claire (défaut partout) ou sombre (offre de course du livreur). */
+/**
+ * @deprecated Plus de fond sombre : toutes les cartes ont le fond Cobalt. Les deux valeurs sont acceptées (props
+ * `theme` / `mapTheme`) et donnent la même carte.
+ */
 export type MapTheme = 'light' | 'dark';
 
 export interface SceneMarker extends MapPoint {
@@ -24,14 +30,19 @@ export interface SceneMarker extends MapPoint {
   fixAt?: number | null;
   /** Livreur : pictogramme du véhicule. */
   vehicleType?: VehicleType;
+  /**
+   * Livreur : `sun` = disque Sun (#FFC93C) à pictogramme encre, pour un livreur en route vers l'entreprise vu par
+   * l'entreprise ; absent = disque blanc à pictogramme cobalt.
+   */
+  tone?: 'sun';
   /** Livreur arrivé chez l'entreprise : décalé de quelques pixels pour ne pas cacher son marqueur. */
   nudge?: boolean;
-  /** pickup : radar « recherche d'un livreur » ; dropoff : halo pulsé. */
+  /** pickup : radar cobalt « recherche d'un livreur » ; dropoff : halo pulsé sous la pointe. */
   pulse?: boolean;
   /**
-   * pickup / dropoff : épingle « avatar » (initiales dans un disque posé sur une épingle, couleur du type) à la place
-   * du pictogramme habituel ; absent = marqueur habituel (carré de l'entreprise, épingle à maison du destinataire).
-   * Une ou deux lettres (voir `avatarInitials`). Ignoré pour le livreur.
+   * pickup / dropoff : initiales blanches à la place du pictogramme (carré encre de l'entreprise, goutte cobalt du
+   * destinataire) ; absent = pictogramme (boutique, maison). Une ou deux lettres (voir `avatarInitials`). Ignoré pour
+   * le livreur.
    */
   initials?: string | null;
   /** Texte d'accessibilité / info-bulle. */
@@ -44,7 +55,7 @@ export interface SceneMarker extends MapPoint {
  */
 export interface SceneZone extends MapPoint {
   id: string;
-  /** pickup = zone de retrait (orange) ; dropoff = zone de livraison (vert). */
+  /** pickup = zone de retrait (encre) ; dropoff = zone de livraison (cobalt). */
   kind: 'pickup' | 'dropoff';
   /** Rayon du cercle, en mètres. */
   radiusM: number;
@@ -55,8 +66,12 @@ export const DRIVER_NUDGE_PX: [number, number] = [20, -20];
 
 export interface SceneLine {
   id: string;
-  /** route = itinéraire routier (vert, liseré blanc) ; dashed = ligne droite en pointillés (pas encore d'itinéraire). */
-  kind: 'route' | 'dashed';
+  /**
+   * route = itinéraire routier devant le livreur (cobalt 6 px, liseré blanc, chevrons blancs sur le web) ;
+   * dashed = ligne droite en tirets cobalt (recherche d'un livreur, pas encore d'itinéraire, aperçu d'une offre) ;
+   * pending = étape à venir (retrait → destinataire pendant que le livreur va au retrait), encre à 30 % en pointillés.
+   */
+  kind: 'route' | 'dashed' | 'pending';
   points: MapPoint[];
   /**
    * Identifiant du marqueur livreur qui parcourt cette ligne : `route` est rognée au point le plus proche de sa
@@ -78,8 +93,8 @@ export interface LiveMapProps {
   /** Zones approximatives (cercles) ; aucune par défaut. */
   zones?: SceneZone[];
   /**
-   * Fond de carte clair (défaut) ou sombre. Web : style distant OpenFreeMap « positron » ou « dark » (avec son style
-   * de secours embarqué) ; Android : style Google Maps clair ou de nuit ; iOS : Apple Plans clair ou sombre.
+   * @deprecated Plus de fond sombre : accepté pour compatibilité, la carte a toujours le fond Cobalt (web : style
+   * `/map/cobalt-style.json` ; Android : style Google Maps Cobalt ; iOS : Apple Plans clair).
    */
   theme?: MapTheme;
   /** Points à garder visibles (livreur + cible en cours, ou retrait + livraison). */

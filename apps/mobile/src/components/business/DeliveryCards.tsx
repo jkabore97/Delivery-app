@@ -1,4 +1,5 @@
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Text } from '../Text';
 import { LABELS, type OrderDto, type OrderStatus } from '@yaar/shared';
 import { PackageCard } from '../design/PackageCard';
 import type { ChipTone } from '../design/Pill';
@@ -7,13 +8,26 @@ import { amountsToCollect, businessStatusLabel, historyFeeText } from '../../lib
 import { formatDateTime, formatFcfa, formatOrderNumber, timeAgo } from '../../lib/format';
 import { arrivalSummary } from '../../lib/liveScene';
 import { recipientWhatsappText } from '../../lib/share';
-import { dark } from '../../theme';
+import { palette } from '../../theme';
 
-/** Puce d'état d'une livraison de l'entreprise (couleurs des puces du système de design ; livrée en vert). */
-export function deliveryChip(status: OrderStatus): { label: string; tone: ChipTone } {
+/**
+ * Puce d'état d'une livraison de l'entreprise, aux couleurs Cobalt : recherche d'un livreur (gris, point cobalt),
+ * livreur en route vers le retrait (soleil), en livraison (cobaltTint), livrée (mint), annulée (corail).
+ */
+export function deliveryChip(status: OrderStatus): { label: string; tone: ChipTone; dot?: boolean } {
   const b = businessStatusLabel(status);
-  const tone: ChipTone = b.tone === 'orange' ? 'amber' : b.tone === 'grey' ? (status === 'DELIVERED' ? 'green' : 'grey') : b.tone;
-  return { label: b.label, tone };
+  switch (status) {
+    case 'ASSIGNED':
+      return { label: b.label, tone: 'amber' };
+    case 'PICKED_UP':
+      return { label: b.label, tone: 'blue' };
+    case 'DELIVERED':
+      return { label: b.label, tone: 'green' };
+    case 'CANCELLED':
+      return { label: b.label, tone: 'red' };
+    default:
+      return { label: b.label, tone: 'grey', dot: true };
+  }
 }
 
 /**
@@ -117,5 +131,5 @@ export function HistoryDeliveryCard({ order: o, onPress }: { order: OrderDto; on
 }
 
 const styles = StyleSheet.create({
-  reason: { color: dark.red, fontSize: 13, fontWeight: '700' },
+  reason: { color: palette.coralText, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

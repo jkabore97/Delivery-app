@@ -1,5 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react-native';
-import { AppState, Text, type AppStateStatus } from 'react-native';
+import { AppState, type AppStateStatus } from 'react-native';
+import { Text } from '../components/Text';
 import * as Location from 'expo-location';
 import type { ServerToClientEvents } from '@yaar/shared';
 import { ApiError } from '../lib/api';

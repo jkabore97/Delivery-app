@@ -1,12 +1,15 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
-import { ANDROID_MAP_STYLE, MAP_COLORS } from '../../lib/map/style';
+import { ANDROID_MAP_STYLE, MAP_PALETTE } from '../../lib/map/style';
 import { deltaForZoom, type PickerMapHandle, type PickerMapProps } from './types';
 
 export type { PickerMapHandle, PickerMapProps } from './types';
 
-/** Carte du choix d'adresse « épingle fixe au centre » (Android / iOS : react-native-maps). */
+/**
+ * Carte du choix d'adresse « épingle fixe au centre » (Android / iOS : react-native-maps) : style Google Maps Cobalt
+ * (Android), Apple Plans clair (iOS).
+ */
 export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function PickerMap(
   { initial, initialZoom = 15, onCenterChange, onMoveStart, style, testID = 'address-map' },
   ref,
@@ -33,7 +36,8 @@ export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function Pi
         style={StyleSheet.absoluteFill}
         provider={android ? PROVIDER_GOOGLE : undefined}
         customMapStyle={android ? ANDROID_MAP_STYLE : undefined}
-        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
+        userInterfaceStyle="light"
+        mapType="standard"
         initialRegion={initialRegion}
         rotateEnabled={false}
         pitchEnabled={false}
@@ -54,5 +58,5 @@ export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function Pi
 });
 
 const styles = StyleSheet.create({
-  wrap: { overflow: 'hidden', backgroundColor: MAP_COLORS.background },
+  wrap: { overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
 });

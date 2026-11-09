@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { Marker as MlMarker } from 'maplibre-gl';
 import { boundsOf, distanceM, OUAGADOUGOU_CENTER, padBounds } from '@yaar/shared';
 import { clampPadding, withDefaultPadding } from '../../lib/mapCamera';
@@ -16,15 +16,15 @@ import {
   type Maplibre,
 } from '../../lib/map/maplibre.web';
 import { DriverMotion, screenHeading } from '../../lib/map/motion';
-import { MAP_PALETTES } from '../../lib/map/style';
+import { MAP_PALETTE } from '../../lib/map/style';
+import { Text } from '../Text';
 import { MapAttribution } from './MapAttribution';
-import { avatarPinElement, driverElement, dropoffElement, pickupElement, setDriverHeading } from './markerDom.web';
+import { driverElement, dropoffElement, pickupElement, setDriverHeading } from './markerDom.web';
 import {
   DRIVER_NUDGE_PX,
   type LiveMapProps,
   type MapPadding,
   type MapPoint,
-  type MapTheme,
   type SceneLine,
   type SceneMarker,
   type SceneZone,
@@ -61,7 +61,6 @@ class LiveMapController {
     private readonly ml: Maplibre,
     private readonly base: BaseMap,
     private readonly allowRotate: boolean,
-    private theme: MapTheme,
   ) {
     this.staleTimer = setInterval(() => this.refreshHeadings(performance.now()), STALE_CHECK_MS);
     // Carte tournée par le livreur : le chevron garde le cap réel (le pictogramme, lui, reste droit à l'écran).
@@ -80,7 +79,7 @@ class LiveMapController {
     for (const m of markers) {
       seen.add(m.id);
       const avatar = m.kind !== 'driver' && m.initials ? m.initials : null;
-      const look = `${m.kind}|${m.pulse ? 1 : 0}|${m.vehicleType ?? ''}|${avatar ?? ''}`;
+      const look = `${m.kind}|${m.pulse ? 1 : 0}|${m.vehicleType ?? ''}|${avatar ?? ''}|${m.tone ?? ''}`;
       const target = { lat: m.lat, lng: m.lng };
       let e = this.entries.get(m.id);
       if (e && e.look !== look) {
@@ -91,16 +90,14 @@ class LiveMapController {
       if (!e) {
         const el =
           m.kind === 'driver'
-            ? driverElement(m.vehicleType ?? 'MOTO', m.title)
-            : avatar
-              ? avatarPinElement(m.kind, avatar, !!m.pulse, m.title)
-              : m.kind === 'pickup'
-                ? pickupElement(!!m.pulse, m.title)
-                : dropoffElement(!!m.pulse, m.title);
+            ? driverElement(m.vehicleType ?? 'MOTO', m.title, m.tone)
+            : m.kind === 'pickup'
+              ? pickupElement(!!m.pulse, m.title, avatar)
+              : dropoffElement(!!m.pulse, m.title, avatar);
         const marker = new this.ml.Marker({
           element: el,
-          // Épingles (destinataire, avatars) : la pointe touche la position.
-          anchor: m.kind === 'dropoff' || avatar ? 'bottom' : 'center',
+          // Goutte du destinataire : la pointe touche la position ; carré de l'entreprise et disque du livreur : centrés.
+          anchor: m.kind === 'dropoff' ? 'bottom' : 'center',
           // Pictogrammes toujours droits à l'écran (seul le chevron du livreur suit le cap).
           rotationAlignment: 'viewport',
           pitchAlignment: 'viewport',
@@ -185,13 +182,6 @@ class LiveMapController {
     );
   }
 
-  /** Nouveau fond de carte : le style change, les calques sont rajoutés aux bonnes couleurs (onStyleReady). */
-  setTheme(theme: MapTheme): void {
-    if (theme === this.theme) return;
-    this.theme = theme;
-    this.base.setTheme(theme);
-  }
-
   flushLines(now: number = performance.now()): void {
     this.lastLineFlush = now;
     if (!this.map.getSource(LINES_SOURCE)) return; // style en cours de chargement : repris dans onStyleReady
@@ -208,7 +198,7 @@ class LiveMapController {
 
   /** Style prêt (secours, puis distant) : les calques des zones et des itinéraires sont rajoutés et redessinés. */
   onStyleReady(): void {
-    ensureLineLayers(this.map, this.theme);
+    ensureLineLayers(this.map);
     this.flushZones();
     this.flushLines();
   }
@@ -246,7 +236,7 @@ function markersKey(markers: SceneMarker[]): string {
   return markers
     .map(
       (m) =>
-        `${m.id}:${m.kind}:${m.lat.toFixed(6)},${m.lng.toFixed(6)}:${m.heading ?? ''}:${m.fixAt ?? ''}:${m.nudge ? 1 : 0}:${m.pulse ? 1 : 0}:${m.vehicleType ?? ''}:${m.initials ?? ''}`,
+        `${m.id}:${m.kind}:${m.lat.toFixed(6)},${m.lng.toFixed(6)}:${m.heading ?? ''}:${m.fixAt ?? ''}:${m.nudge ? 1 : 0}:${m.pulse ? 1 : 0}:${m.vehicleType ?? ''}:${m.initials ?? ''}:${m.tone ?? ''}`,
     )
     .join(';');
 }
@@ -258,16 +248,16 @@ function linesKey(lines: SceneLine[]): string {
 }
 
 /**
- * Carte de suivi en direct (web) : MapLibre GL JS chargé à la demande, style de secours aussitôt puis
- * OpenFreeMap dès qu'il arrive, marqueurs entreprise / destinataire / livreur, itinéraire vert à liseré blanc
- * rogné au fil de l'avancée, livreur qui glisse en continu d'un relevé GPS au suivant, caméra qui suit jusqu'au
- * premier geste de l'utilisateur. Fond clair par défaut, sombre avec `theme="dark"` ; zones approximatives (`zones`).
+ * Carte de suivi en direct (web) : MapLibre GL JS chargé à la demande, style de secours aussitôt puis fond Cobalt
+ * (`/map/cobalt-style.json`) dès qu'il arrive, marqueurs Cobalt entreprise / destinataire / livreur, itinéraire cobalt à
+ * liseré blanc et chevrons rogné au fil de l'avancée, livreur qui glisse en continu d'un relevé GPS au suivant, caméra
+ * qui suit jusqu'au premier geste de l'utilisateur ; zones approximatives (`zones`). `theme` (ancien fond sombre) est
+ * accepté et ignoré : fond Cobalt partout.
  */
 export function LiveMap({
   markers,
   lines,
   zones = NO_ZONES,
-  theme = 'light',
   fitPoints,
   follow,
   recenterKey = 0,
@@ -287,8 +277,6 @@ export function LiveMap({
   gestureRef.current = onUserGesture;
   const initialCenter = useRef<MapPoint>(fitPoints[0] ?? markers[0] ?? OUAGADOUGOU_CENTER);
   const allowRotateRef = useRef(allowRotate);
-  const themeRef = useRef(theme);
-  themeRef.current = theme;
 
   useEffect(() => {
     let cancelled = false;
@@ -305,10 +293,9 @@ export function LiveMap({
           center: initialCenter.current,
           zoom: 13,
           allowRotate: allowRotateRef.current,
-          theme: themeRef.current,
           onStyleReady: () => ctrl?.onStyleReady(),
         });
-        ctrl = new LiveMapController(ml, base, allowRotateRef.current, themeRef.current);
+        ctrl = new LiveMapController(ml, base, allowRotateRef.current);
         const userGesture = (e: { originalEvent?: unknown }) => {
           if (e.originalEvent) gestureRef.current?.();
         };
@@ -342,10 +329,6 @@ export function LiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, zoneKey]);
 
-  useEffect(() => {
-    if (status === 'ready') ctrlRef.current?.setTheme(theme);
-  }, [status, theme]);
-
   const pad = withDefaultPadding(padding);
   const padKey = `${pad.top},${pad.right},${pad.bottom},${pad.left}`;
   const fitKey = pointsKey(fitPoints);
@@ -362,25 +345,22 @@ export function LiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, fitKey, recenterKey, follow, padKey, maxZoom]);
 
-  const palette = MAP_PALETTES[theme];
   return (
-    <View style={[styles.wrap, { backgroundColor: palette.background }, style]} testID={testID}>
-      {/* zIndex 0 : contexte d'empilement propre sous les boutons posés sur la carte. */}
-      <div ref={containerRef} data-testid="live-map" data-theme={theme} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
+    <View style={[styles.wrap, style]} testID={testID}>
+      {/* zIndex 0 : contexte d'empilement propre sous les boutons posés sur la carte. data-theme : apparence affichée. */}
+      <div ref={containerRef} data-testid="live-map" data-theme="light" data-map-style="cobalt" style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
       {status !== 'ready' ? (
         <View style={styles.overlay} pointerEvents="none">
-          <Text style={[styles.overlayText, { color: palette.overlayText }]}>
-            {status === 'loading' ? 'Chargement de la carte…' : 'Carte indisponible sur cet appareil.'}
-          </Text>
+          <Text style={styles.overlayText}>{status === 'loading' ? 'Chargement de la carte…' : 'Carte indisponible sur cet appareil.'}</Text>
         </View>
       ) : null}
-      <MapAttribution bottom={bottomInset + 4} theme={theme} />
+      <MapAttribution bottom={bottomInset + 4} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { overflow: 'hidden' },
+  wrap: { overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  overlayText: { fontSize: 13, fontWeight: '600' },
+  overlayText: { fontSize: 13, fontWeight: '600', color: MAP_PALETTE.overlayText },
 });

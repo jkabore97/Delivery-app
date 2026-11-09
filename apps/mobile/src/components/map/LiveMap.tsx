@@ -13,9 +13,9 @@ import { boundsOf, OUAGADOUGOU_CENTER, padBounds, regionForBounds } from '@yaar/
 import { clampBasePadding, nativeFitPadding, withDefaultPadding } from '../../lib/mapCamera';
 import { activeLegPoints, pointsKey, resolveLines, type DrawnLine } from '../../lib/map/lines';
 import { DriverMotion } from '../../lib/map/motion';
+import { COBALT_MAP, rgba } from '../../lib/map/palette';
 import { radarRings, RADAR_PERIOD_MS, RADAR_STEP_MS } from '../../lib/map/radar';
-import { ANDROID_MAP_STYLE_DARK } from '../../lib/map/androidDarkStyle';
-import { ANDROID_MAP_STYLE, MAP_COLORS, MAP_PALETTES, type MapPalette } from '../../lib/map/style';
+import { ANDROID_MAP_STYLE, MAP_PALETTE, type MapPalette } from '../../lib/map/style';
 import {
   AVATAR_VIEW,
   AvatarPinView,
@@ -55,11 +55,10 @@ function nudgedAnchor(size: number) {
 /** iOS (Apple Plans) : `anchor` n'existe pas, la vue est décalée par `centerOffset` (y positif = vers le bas). */
 const NUDGE_OFFSET = { x: DRIVER_NUDGE_PX[0], y: DRIVER_NUDGE_PX[1] };
 const NO_OFFSET = { x: 0, y: 0 };
-/** Épingle du destinataire (vue 64 × 56, pointe à 45 px du haut) : pointe sur la position, sur iOS aussi. */
-const DROPOFF_CENTER_OFFSET = { x: 0, y: -(45 - 28) };
-/** Épingle « avatar » (vue 56 × 60, pointe à 52,3 px du haut). */
-const AVATAR_ANCHOR = { x: 0.5, y: AVATAR_VIEW.tipY / AVATAR_VIEW.height };
-const AVATAR_CENTER_OFFSET = { x: 0, y: -(AVATAR_VIEW.tipY - AVATAR_VIEW.height / 2) };
+/** Goutte du destinataire (initiales ou maison, vue 48 × 54, pointe à ≈ 46,5 dp du haut) : pointe sur la position. */
+const PIN_ANCHOR = { x: 0.5, y: AVATAR_VIEW.tipY / AVATAR_VIEW.height };
+/** iOS (Apple Plans) : même placement par `centerOffset` (y positif = vers le bas). */
+const PIN_CENTER_OFFSET = { x: 0, y: -(AVATAR_VIEW.tipY - AVATAR_VIEW.height / 2) };
 
 /** Marker.Animated accepte une AnimatedRegion et des enfants (vue personnalisée) ; ses types ne le disent pas. */
 const AnimatedMarker = MarkerAnimated as unknown as ComponentType<
@@ -94,7 +93,7 @@ class PositionStore {
   }
 }
 
-/** Radar « recherche d'un livreur » autour de l'entreprise : cercles natifs (Circle), 5 images par seconde. */
+/** Radar cobalt « recherche d'un livreur » autour de l'entreprise : cercles natifs (Circle), 5 images par seconde. */
 function SearchRadar({ center }: { center: MapPoint }) {
   const [t, setT] = useState(0);
   useEffect(() => {
@@ -108,8 +107,8 @@ function SearchRadar({ center }: { center: MapPoint }) {
           key={i}
           center={ll(center)}
           radius={r.radiusM}
-          fillColor={`rgba(242,140,27,${r.alpha})`}
-          strokeColor={`rgba(242,140,27,${Math.min(1, r.alpha * 1.8).toFixed(3)})`}
+          fillColor={rgba(COBALT_MAP.cobalt, r.alpha * 0.6)}
+          strokeColor={rgba(COBALT_MAP.cobalt, Math.min(1, r.alpha * 2))}
           strokeWidth={1.5}
           zIndex={0}
         />
@@ -118,7 +117,7 @@ function SearchRadar({ center }: { center: MapPoint }) {
   );
 }
 
-/** Zones approximatives : cercles natifs doux, contour en pointillés (iOS ; trait plein sur Android). */
+/** Zones approximatives : cercles natifs translucides (cobalt : livraison ; encre : retrait), bord en tirets (iOS ; trait plein sur Android). */
 function ZoneCircles({ zones, palette }: { zones: SceneZone[]; palette: MapPalette }) {
   return (
     <>
@@ -138,26 +137,31 @@ function ZoneCircles({ zones, palette }: { zones: SceneZone[]; palette: MapPalet
   );
 }
 
-/** Marqueur fixe (entreprise, destinataire, ou épingle « avatar ») : vue statique capturée une seule fois. */
+/**
+ * Marqueur fixe (carré encre de l'entreprise, goutte cobalt du destinataire, initiales ou pictogramme) : vue statique
+ * capturée une seule fois.
+ */
 const StaticMarker = memo(function StaticMarker({ marker }: { marker: SceneMarker }) {
   const isDropoff = marker.kind === 'dropoff';
-  const avatar = marker.kind !== 'driver' && marker.initials ? marker.initials : null;
-  const tracks = useCaptureOnce(`${marker.kind}|${marker.pulse ? 1 : 0}|${avatar ?? ''}`);
+  const initials = marker.kind !== 'driver' && marker.initials ? marker.initials : null;
+  const tracks = useCaptureOnce(`${marker.kind}|${marker.pulse ? 1 : 0}|${initials ?? ''}`);
   return (
     <Marker
       coordinate={ll(marker)}
-      anchor={avatar ? AVATAR_ANCHOR : isDropoff ? { x: 0.5, y: 45 / 56 } : CENTER}
-      centerOffset={avatar ? AVATAR_CENTER_OFFSET : isDropoff ? DROPOFF_CENTER_OFFSET : NO_OFFSET}
+      anchor={isDropoff ? PIN_ANCHOR : CENTER}
+      centerOffset={isDropoff ? PIN_CENTER_OFFSET : NO_OFFSET}
       tracksViewChanges={tracks}
       title={marker.title}
       zIndex={isDropoff ? 3 : 2}
     >
-      {avatar ? (
-        <AvatarPinView initials={avatar} color={isDropoff ? MAP_COLORS.dropoff : MAP_COLORS.pickup} pulse={isDropoff && marker.pulse} />
-      ) : isDropoff ? (
-        <DropoffMarkerView pulse={marker.pulse} />
+      {isDropoff ? (
+        initials ? (
+          <AvatarPinView initials={initials} pulse={marker.pulse} />
+        ) : (
+          <DropoffMarkerView pulse={marker.pulse} />
+        )
       ) : (
-        <PickupMarkerView searching={marker.pulse} />
+        <PickupMarkerView searching={marker.pulse} initials={initials} />
       )}
     </Marker>
   );
@@ -171,9 +175,9 @@ const StaticMarker = memo(function StaticMarker({ marker }: { marker: SceneMarke
   a.marker.title === b.marker.title,
 );
 
-/** Chevron de cap (Android : marqueur plat tourné nativement ; iOS / Apple Plans : vue tournée). */
-function ChevronMarker({ region, heading, nudge }: { region: AnimatedRegion; heading: number; nudge: boolean }) {
-  const tracks = useCaptureOnce('chevron');
+/** Encoche de cap (Android : marqueur plat tourné nativement ; iOS / Apple Plans : vue tournée). */
+function ChevronMarker({ region, heading, nudge, tone }: { region: AnimatedRegion; heading: number; nudge: boolean; tone?: 'sun' }) {
+  const tracks = useCaptureOnce(`chevron|${tone ?? ''}`);
   return (
     <AnimatedMarker
       coordinate={region}
@@ -185,7 +189,7 @@ function ChevronMarker({ region, heading, nudge }: { region: AnimatedRegion; hea
       zIndex={4}
     >
       <View style={android ? undefined : { transform: [{ rotate: `${heading}deg` }] }}>
-        <HeadingChevronView />
+        <HeadingChevronView tone={tone} />
       </View>
     </AnimatedMarker>
   );
@@ -201,7 +205,7 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
     new AnimatedRegion({ latitude: marker.lat, longitude: marker.lng, latitudeDelta: 0, longitudeDelta: 0 }),
   ).current;
   const [heading, setHeading] = useState<number | null>(null);
-  const tracks = useCaptureOnce(marker.vehicleType ?? 'MOTO');
+  const tracks = useCaptureOnce(`${marker.vehicleType ?? 'MOTO'}|${marker.tone ?? ''}`);
 
   useEffect(() => {
     const now = Date.now();
@@ -250,7 +254,7 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
 
   return (
     <>
-      {heading !== null ? <ChevronMarker region={region} heading={Math.round(heading)} nudge={!!marker.nudge} /> : null}
+      {heading !== null ? <ChevronMarker region={region} heading={Math.round(heading)} nudge={!!marker.nudge} tone={marker.tone} /> : null}
       <AnimatedMarker
         coordinate={region}
         anchor={marker.nudge ? nudgedAnchor(DRIVER_VIEW_SIZE) : CENTER}
@@ -259,13 +263,17 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
         title={marker.title}
         zIndex={5}
       >
-        <DriverMarkerView vehicleType={marker.vehicleType ?? 'MOTO'} />
+        <DriverMarkerView vehicleType={marker.vehicleType ?? 'MOTO'} tone={marker.tone} />
       </AnimatedMarker>
     </>
   );
 }
 
-/** Tracés (itinéraire rogné à la position animée du livreur, pointillés) : seul composant re-rendu pendant un glissement. */
+/**
+ * Tracés (itinéraire rogné à la position animée du livreur, lignes droites) : seul composant re-rendu pendant un
+ * glissement. Itinéraire cobalt de 6 dp sur un liseré blanc de 2 dp (pas de chevrons en natif : react-native-maps n'a
+ * pas de motif le long d'une ligne) ; lignes droites en tirets cobalt ; étape à venir en pointillés encre à 30 %.
+ */
 function TrimmedLines({
   lines,
   markers,
@@ -312,19 +320,30 @@ function TrimmedLines({
               key={l.id}
               coordinates={l.points.map(ll)}
               strokeColor={palette.route}
-              strokeWidth={5.5}
+              strokeWidth={6}
               lineCap="round"
               lineJoin="round"
               zIndex={2}
             />,
           ]
+        ) : l.kind === 'pending' ? (
+          <Polyline
+            key={l.id}
+            coordinates={l.points.map(ll)}
+            strokeColor={palette.pending}
+            strokeWidth={2.5}
+            lineCap="round"
+            lineDashPattern={[1, 6]}
+            zIndex={1}
+          />
         ) : (
           <Polyline
             key={l.id}
             coordinates={l.points.map(ll)}
             strokeColor={palette.dashed}
-            strokeWidth={3.5}
-            lineDashPattern={[10, 8]}
+            strokeWidth={3}
+            lineCap="round"
+            lineDashPattern={[8, 7]}
             zIndex={1}
           />
         ),
@@ -336,17 +355,16 @@ function TrimmedLines({
 const NO_ZONES: SceneZone[] = [];
 
 /**
- * Carte de suivi en direct (Android / iOS) : react-native-maps, Google Maps au style discret sur Android,
- * Apple Plans `mutedStandard` sur iOS, marqueurs personnalisés statiques, itinéraire à liseré blanc rogné au fil
- * de l'avancée du livreur, caméra qui suit jusqu'au premier geste de l'utilisateur. Le logo Google et le lien
- * « Mentions légales » d'Apple restent au-dessus de la feuille (`mapPadding`). `theme="dark"` : Google Maps de nuit
- * (Android), Apple Plans sombre (iOS), tracés en vert vif ; zones approximatives en cercles natifs (`zones`).
+ * Carte de suivi en direct (Android / iOS) : react-native-maps, Google Maps au style Cobalt sur Android, Apple Plans
+ * clair sur iOS, marqueurs Cobalt statiques, itinéraire cobalt à liseré blanc rogné au fil de l'avancée du livreur,
+ * caméra qui suit jusqu'au premier geste de l'utilisateur. Le logo Google et le lien « Mentions légales » d'Apple
+ * restent au-dessus de la feuille (`mapPadding`) ; zones approximatives en cercles natifs (`zones`). `theme` (ancien
+ * fond sombre) est accepté et ignoré : fond Cobalt partout.
  */
 export function LiveMap({
   markers,
   lines,
   zones = NO_ZONES,
-  theme = 'light',
   fitPoints,
   follow,
   recenterKey = 0,
@@ -409,11 +427,10 @@ export function LiveMap({
   }, [ready, size, fitKey, recenterKey, follow, padKey]);
 
   const radarAt = markers.find((m) => m.kind === 'pickup' && m.pulse) ?? null;
-  const dark = theme === 'dark';
-  const palette = MAP_PALETTES[theme];
+  const palette = MAP_PALETTE;
   return (
     <View
-      style={[styles.wrap, { backgroundColor: palette.background }, style]}
+      style={[styles.wrap, style]}
       testID={testID}
       onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
@@ -424,10 +441,10 @@ export function LiveMap({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={android ? PROVIDER_GOOGLE : undefined}
-        customMapStyle={android ? (dark ? ANDROID_MAP_STYLE_DARK : ANDROID_MAP_STYLE) : undefined}
-        // Fond sombre seulement sur demande : les cartes claires gardent exactement leurs réglages d'origine.
-        userInterfaceStyle={dark ? 'dark' : undefined}
-        mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
+        customMapStyle={android ? ANDROID_MAP_STYLE : undefined}
+        // Toujours clair (Cobalt), même quand le téléphone est en mode sombre.
+        userInterfaceStyle="light"
+        mapType="standard"
         initialRegion={initialRegion}
         mapPadding={mapPadding}
         rotateEnabled={allowRotate}
@@ -460,5 +477,5 @@ export function LiveMap({
 }
 
 const styles = StyleSheet.create({
-  wrap: { overflow: 'hidden' },
+  wrap: { overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
 });

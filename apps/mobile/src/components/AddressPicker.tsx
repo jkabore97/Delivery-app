@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import * as Location from 'expo-location';
 import { approximateZone, OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
 import { isPinAtDefault, PIN_NOT_PLACED_MESSAGE } from '../lib/address';
-import { colors, radius, spacing } from '../theme';
+import { palette, radii, shadows, spacing } from '../theme';
 import { Icon } from './design/Icon';
 import { CenterPin } from './map/CenterPin';
 import { PickerMap, type PickerMapHandle } from './map/PickerMap';
@@ -94,16 +95,21 @@ export function AddressPicker({
             title="Ma position"
             small
             variant="outline"
-            icon={(c) => <Icon name="navigation" size={15} color={c} />}
+            icon={() => <Icon name="navigation" size={15} color={palette.cobalt} />}
             onPress={useMyPosition}
             loading={locating}
+            style={[styles.locate, shadows.float]}
           />
         </View>
       </View>
       <Muted>Déplacez la carte pour placer l’épingle sur l’entrée exacte.</Muted>
-      {locError ? <Text style={{ color: colors.red }}>{locError}</Text> : null}
+      {locError ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {locError}
+        </Text>
+      ) : null}
       {current.address.trim() && isPinAtDefault(current) ? (
-        <Text style={{ color: colors.red }} testID={testID ? `${testID}-pin-warning` : undefined}>
+        <Text style={styles.error} testID={testID ? `${testID}-pin-warning` : undefined}>
           {PIN_NOT_PLACED_MESSAGE}
         </Text>
       ) : null}
@@ -126,6 +132,8 @@ export function AddressPicker({
 }
 
 const styles = StyleSheet.create({
-  mapWrap: { borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#E8ECEF' },
+  mapWrap: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: '#F3F5F8' },
   locateBtn: { position: 'absolute', right: spacing.sm, bottom: spacing.lg + 4 },
+  locate: { borderColor: palette.white },
+  error: { color: palette.coralText, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

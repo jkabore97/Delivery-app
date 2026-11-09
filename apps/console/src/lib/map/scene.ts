@@ -11,16 +11,19 @@ import {
   type RouteDto,
 } from '@yaar/shared';
 import { filterDrivers, type VehicleFilter } from '../mapState';
+import { markerInitials } from './initials';
 import type { LineKind, MapScene, SceneLine, SceneMarker } from './types';
 
 /**
- * Ce que dessinent les cartes MapLibre de la console (fonctions pures, testées sans navigateur), avec les règles de
- * l'application mobile (apps/mobile/src/lib/liveScene.ts) :
- * - entreprises : carré orange ; destinataires des livraisons en cours : épingle verte ;
- * - livreurs : pastille ronde (anneau vert = libre, bleu = en livraison) avec une flèche de cap ;
- * - livraison en attente d'un livreur : anneaux rouges pulsés au point de retrait ; SOS : point rouge pulsé ;
- * - étape en cours d'un livreur occupé : itinéraire de l'API (`MapOrderDto.route`) en vert à liseré blanc, rogné à
- *   sa position ; pointillés vers la cible sans itinéraire ou avec la ligne droite de secours (`source: straight`).
+ * Ce que dessinent les cartes MapLibre de la console (fonctions pures, testées sans navigateur), avec les règles et
+ * l'apparence « Cobalt » de l'application mobile (apps/mobile/src/lib/liveScene.ts) :
+ * - entreprises : carré encre à leurs initiales ; destinataires des livraisons en cours : goutte cobalt ;
+ * - livreurs : disque blanc (véhicule cobalt = en livraison, encre et pastille menthe = libre) avec une encoche de cap ;
+ * - livraison en attente d'un livreur : radar cobalt au point de retrait et ligne droite en tirets cobalt vers le
+ *   destinataire ; SOS : point corail pulsé ;
+ * - étape en cours d'un livreur occupé : itinéraire de l'API (`MapOrderDto.route`) en cobalt à liseré blanc et
+ *   chevrons, rogné à sa position ; tirets vers la cible sans itinéraire ou avec la ligne droite de secours
+ *   (`source: straight`) ; trajet retrait → destinataire à venir en pointillés encre.
  */
 
 export type DeliveryStage = 'pending' | 'searching' | 'toPickup' | 'toDropoff' | 'delivered' | 'cancelled';
@@ -67,8 +70,8 @@ const valid = (p: LatLng | null | undefined): LatLng | null =>
   p && Number.isFinite(p.lat) && Number.isFinite(p.lng) ? { lat: p.lat, lng: p.lng } : null;
 
 /**
- * Ligne de l'étape en cours d'un livreur : itinéraire routier (vert) ; pointillés pour la ligne droite de secours
- * ou, sans itinéraire en cache, de la position du livreur jusqu'à la cible. null hors course.
+ * Ligne de l'étape en cours d'un livreur : itinéraire routier (cobalt) ; tirets pour la ligne droite de secours ou,
+ * sans itinéraire en cache, de la position du livreur jusqu'à la cible. null hors course.
  */
 export function legLine(
   id: string,
@@ -109,6 +112,7 @@ export function buildLiveScene(data: MapDataDto, filter: VehicleFilter): MapScen
       lng: s.lng,
       title: s.isOpen ? s.name : `${s.name} (fermée)`,
       dimmed: !s.isOpen,
+      initials: markerInitials(s.name),
     });
   }
   const nearBusiness = (p: LatLng) => data.stores.some((s) => distanceM(p, s) < SAME_PLACE_M);
@@ -145,7 +149,8 @@ export function buildLiveScene(data: MapDataDto, filter: VehicleFilter): MapScen
         title: `Livraison #${o.number} · ${vehicle} · recherche d’un livreur · ${o.pickup.address} → ${o.dropoff.address}`,
         orderId: o.id,
       });
-      lines.push({ id: `next:${o.id}`, kind: 'next', points: [{ ...o.pickup }, { ...o.dropoff }] });
+      // Livraison qui attend un livreur : ligne droite en tirets cobalt (comme l'application mobile).
+      lines.push({ id: `next:${o.id}`, kind: 'dashed', points: [{ ...o.pickup }, { ...o.dropoff }] });
     }
   }
 
@@ -228,8 +233,11 @@ export function buildDeliveryScene(o: OrderDto): DeliveryScene {
     const line = legLine('leg', driverId, driver, o.status, pickup, dropoff, o.route);
     if (line) lines.push(line);
   }
-  // Trajet retrait → destinataire (pointillés discrets) tant que le colis n'est pas en route vers le destinataire.
-  if (pickup && dropoff && stage !== 'toDropoff') lines.push({ id: 'next', kind: 'next', points: [pickup, dropoff] });
+  // Trajet retrait → destinataire tant que le colis n'est pas en route vers le destinataire : tirets cobalt pendant la
+  // recherche d'un livreur, sinon pointillés encre discrets (étape à venir, ou trajet effectué).
+  if (pickup && dropoff && stage !== 'toDropoff') {
+    lines.push({ id: 'next', kind: stage === 'searching' ? 'dashed' : 'next', points: [pickup, dropoff] });
+  }
 
   const target = stage === 'toPickup' ? pickup : stage === 'toDropoff' ? dropoff : null;
   const route = legRoute(o.status, o.route);
@@ -290,7 +298,7 @@ export function sceneKey(scene: MapScene): string {
     .map(
       (x) =>
         `${x.id}:${x.kind}:${x.lat.toFixed(6)},${x.lng.toFixed(6)}:${x.heading ?? ''}:${x.busy ? 1 : 0}:${x.pulse ? 1 : 0}:` +
-        `${x.dimmed ? 1 : 0}:${x.vehicleType ?? ''}:${x.label ?? ''}:${x.title}`,
+        `${x.dimmed ? 1 : 0}:${x.vehicleType ?? ''}:${x.label ?? ''}:${x.initials ?? ''}:${x.title}`,
     )
     .join(';');
   const l = scene.lines.map((x) => `${x.id}:${x.kind}:${x.trimToMarkerId ?? ''}:${pointsKey(x.points)}`).join(';');

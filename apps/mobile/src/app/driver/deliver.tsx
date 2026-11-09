@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type TextInputInstance } from 'react-native';
+import { Text, TextInput } from '../../components/Text';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import type { FileUploadInput, OrderDto } from '@yaar/shared';

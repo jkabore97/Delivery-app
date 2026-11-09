@@ -61,37 +61,53 @@ ni de vraies données personnelles. », repris sur l’écran des pièces KYC du
 Un seul moteur de carte (`src/components/map/`) sert au suivi de l’entreprise, à la page publique, à la course du
 livreur, à la carte d’ensemble et au choix d’adresse :
 
+- **Fond « Cobalt » partout** (système de design Cobalt, aucune carte sombre, offre du livreur comprise) :
+  OpenFreeMap « positron » recoloré — terre `#F3F5F8`, eau `#A9C9FF`, parcs `#D6EEDC`, rues blanches, grands axes
+  jaunes `#FFE38A` (bord `#F0C85A`), noms des quartiers seulement (Noto Sans Bold `#7B8597`, majuscules). C’est un
+  style MapLibre statique servi par la version web elle-même : `public/map/cobalt-style.json` → `/map/cobalt-style.json`
+  (copié dans `dist/` par `expo export`, gardé par `scripts/web-postexport.mjs`). Ses tuiles, polices et noms viennent
+  de `tiles.openfreemap.org` (gratuit, sans clé) ; il n’a pas de sprite (aucune icône : deux requêtes de moins en 3G).
+  Pour retoucher une couleur, modifier ce fichier (et sa copie `apps/console/public/map/cobalt-style.json`).
+  Palette des cartes : `src/lib/map/palette.ts` (valeurs du système de design, sans dépendre de `theme.ts`).
 - **Web** : MapLibre GL JS (`maplibre-gl` 5.x, construction UMD qui embarque son worker ; la 6.x, ESM seulement, charge
   son worker par `import.meta.url`, que le bundle web de Metro ne sait pas servir), chargé à la demande
   (`import('maplibre-gl')`), densité de pixels plafonnée à 2, rotation et inclinaison désactivées sauf pour le
-  livreur. La carte s’affiche aussitôt avec un style de secours embarqué (fond clair, marqueurs et itinéraires), puis
-  passe au style vectoriel gratuit OpenFreeMap « positron » (`https://tiles.openfreemap.org/styles/positron`, sans
-  clé, remplaçable par `EXPO_PUBLIC_MAP_STYLE_URL`) dès qu’il arrive : il est redemandé avec un délai croissant
-  (2 s, 4 s… 60 s) tant qu’il n’est pas chargé, et aussitôt au retour du réseau (`online`) — jamais abandonné
-  (`src/lib/map/styleLoader.ts`). Fond sombre sur demande (`<LiveMap theme="dark">`, offre du livreur) : OpenFreeMap
-  « dark » (`https://tiles.openfreemap.org/styles/dark`, remplaçable par `EXPO_PUBLIC_MAP_STYLE_DARK_URL`), même
-  chargement, style de secours sombre ; chaque style reçu est gardé pendant la session, par URL (un fond ne remplace
-  jamais l’autre) : une carte rouverte l’affiche aussitôt. Seules les règles utiles de `maplibre-gl.css` sont injectées avec la carte (la
-  feuille complète bloquait le premier affichage). Mention « © OpenFreeMap © OpenMapTiles © OpenStreetMap
+  livreur. La carte s’affiche aussitôt avec un style de secours embarqué (terre Cobalt unie, sans tuiles, marqueurs et
+  itinéraires), puis passe au style Cobalt (`/map/cobalt-style.json`, remplaçable par `EXPO_PUBLIC_MAP_STYLE_URL` :
+  URL absolue, ou relative à la page) dès qu’il arrive : il est redemandé avec un délai croissant (2 s, 4 s… 60 s) tant
+  qu’il n’est pas chargé, et aussitôt au retour du réseau (`online`) — jamais abandonné (`src/lib/map/styleLoader.ts`).
+  Un style que MapLibre refuse ramène au style de secours ; des tuiles indisponibles laissent la terre Cobalt sous les
+  marqueurs. Le style reçu est gardé pendant la session, par URL : une carte rouverte l’affiche aussitôt. `theme="dark"`
+  (`<LiveMap>`) et `mapTheme` (`LiveTrackingLayout`) sont encore acceptés mais dépréciés : même carte Cobalt
+  (`EXPO_PUBLIC_MAP_STYLE_DARK_URL` n’est plus lue). Seules les règles utiles de `maplibre-gl.css` sont injectées avec
+  la carte (la feuille complète bloquait le premier affichage). Mention « © OpenFreeMap © OpenMapTiles © OpenStreetMap
   contributors » toujours visible au-dessus de la feuille, dans la marge de cadrage (jamais sur un marqueur cadré).
-- **Android / iOS** : `react-native-maps` ; Google Maps (Android) avec un style « argenté » discret
-  (`customMapStyle`), Apple Plans `mutedStandard` (iOS) ; fond sombre : style Google de nuit
-  (`src/lib/map/androidDarkStyle.ts`) et `userInterfaceStyle="dark"` (iOS) ; marqueurs en vues personnalisées STATIQUES, capturées une
-  seule fois (`tracksViewChanges` coupé après le premier rendu : aucune image redessinée à chaque image) ; radar
-  « recherche d’un livreur » en cercles natifs (5 images/s) ; `mapPadding` garde le logo Google et le lien
-  « Mentions légales » d’Apple au-dessus de la feuille ; marges de cadrage bornées à la taille de la carte.
-- **Marqueurs** (mêmes formes que la console) : entreprise (carré orange arrondi, vitrine), destinataire (épingle
-  verte, maison, halo), livreur (disque vert cerclé de blanc, moto / vélo / voiture DE PROFIL, toujours droit) avec
-  un petit chevron séparé sur l’anneau qui suit le cap (`heading` de l’API, ou déduit du déplacement), masqué quand
-  le cap est inconnu, le livreur arrêté ou sa position ancienne ; seul le chevron tourne (web : élément enfant,
-  corrigé de l’orientation de la carte ; natif : marqueur plat séparé avec `rotation`). Livreur arrivé chez
-  l’entreprise : marqueur décalé de quelques pixels pour ne pas la cacher. Mêmes pictogrammes sur le web (SVG) et en
-  natif (vues) : `markerArt.ts`. En option (`initials` d’un marqueur, `SceneInput.initials`) : épingle « avatar »
-  aux initiales de l’entreprise (orange) ou du destinataire (vert), utilisée par les écrans du livreur. Zones
-  approximatives (`zones`) : cercles doux à contour pointillé (offre : quartier de livraison, jamais l’adresse).
-- **Itinéraire** : `route` de l’API (`OrderDto` / `TrackingDto`) en vert `#0B7A4B` avec liseré blanc ; ligne droite en
-  pointillés sans itinéraire (ou `source: "straight"`) ; la partie parcourue est rognée au point de la ligne le plus
-  proche du livreur (fonctions de `packages/shared/src/map.ts`).
+- **Android / iOS** : `react-native-maps` ; Google Maps (Android) avec le style Cobalt (`ANDROID_MAP_STYLE` :
+  terre, eau, parcs, rues blanches, grands axes jaunes, ni points d’intérêt ni transports, noms des quartiers
+  seulement), Apple Plans clair (iOS, `userInterfaceStyle="light"` même quand le téléphone est en mode sombre) ;
+  marqueurs en vues personnalisées STATIQUES, capturées une seule fois (`tracksViewChanges` coupé après le premier
+  rendu : aucune image redessinée à chaque image) ; radar cobalt « recherche d’un livreur » en cercles natifs
+  (5 images/s) ; `mapPadding` garde le logo Google et le lien « Mentions légales » d’Apple au-dessus de la feuille ;
+  marges de cadrage bornées à la taille de la carte.
+- **Marqueurs** (mêmes formes en web — éléments HTML, `markerDom.web.ts` — en natif — vues, `MarkerViews.tsx` — et
+  dans la console) : entreprise = carré encre `#0C1222` arrondi cerclé de blanc, initiales blanches (`initials`) ou
+  boutique, radar cobalt doux pendant la recherche d’un livreur (`pulse`) ; destinataire = goutte cobalt `#2448FF`
+  cerclée de blanc, initiales blanches ou maison, halo pulsé sous la pointe ; livreur = disque blanc (38 px), véhicule
+  cobalt au trait (moto / vélo / voiture DE PROFIL, toujours droit) et petite encoche de cap cobalt sur le bord, qui
+  suit le cap (`heading` de l’API, ou déduit du déplacement), masquée quand le cap est inconnu, le livreur arrêté ou
+  sa position ancienne ; seule l’encoche tourne (web : élément enfant, corrigé de l’orientation de la carte ; natif :
+  marqueur plat séparé avec `rotation`). Variante `tone: 'sun'` (disque Sun `#FFC93C`, véhicule encre) pour un livreur
+  en route vers l’entreprise vu par l’entreprise. Livreur arrivé chez l’entreprise : marqueur décalé de quelques
+  pixels pour ne pas la cacher. Pictogrammes au trait (anneaux et traits ronds), identiques sur le web (SVG) et en
+  natif (vues) : `markerArt.ts`. Zones approximatives (`zones`) : cercles cobalt translucides à bord en tirets
+  (livraison ; encre pour un retrait approximatif), jamais l’adresse avant acceptation.
+- **Itinéraire et lignes** (`SceneLine.kind`) : `route` = `route` de l’API (`OrderDto` / `TrackingDto`) devant le
+  livreur, cobalt 6 px sur un liseré blanc de 2 px avec une ombre douce et de petits chevrons blancs tous les 64 px
+  dans le sens de la marche (web : calque `symbol` et image `addImage` calculée, `src/lib/map/chevron.ts` ; pas de
+  chevrons en natif) ; la partie parcourue est rognée au point de la ligne le plus proche du livreur (fonctions de
+  `packages/shared/src/map.ts`). `dashed` = ligne droite en tirets cobalt de 2,5 px (recherche d’un livreur, pas
+  d’itinéraire, `source: "straight"`, aperçu de l’offre). `pending` = étape à venir (retrait → destinataire pendant
+  le retrait) en pointillés encre à 30 %.
 - **Livreur qui roule en continu** : chaque nouvelle position est atteinte à vitesse constante pendant l’écart RÉEL
   entre deux relevés GPS (`lastLocation.at`, borné à 2–12 s ; `src/lib/map/motion.ts`), quel que soit le rythme des
   rafraîchissements (requestAnimationFrame sur le web, `AnimatedRegion` en natif) ; tracé rogné au plus une fois par
@@ -171,7 +187,7 @@ src/components/          UI commune (ui.tsx), lien de suivi à partager, offre, 
 src/state/               contextes : session (JWT en SecureStore), Socket.IO / polling, entreprise, livreur
 src/hooks/               useAsync, useDeliveryQuote, usePublicTracking, useFollowCamera, useDriverLocationTracking...
 src/lib/                 client API typé, logique pure testée (scène de carte, caméra, montants, partage, étapes...)
-src/lib/map/             style de carte (OpenFreeMap / secours / Google), chargement de MapLibre, tracés rognés
+src/lib/map/             fond Cobalt (style, secours, Google, palette), chargement de MapLibre, tracés rognés, chevrons
 src/__tests__/           tests d’écrans et de contextes (fixtures, API simulée)
 ```
 

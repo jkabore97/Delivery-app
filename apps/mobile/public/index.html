@@ -29,6 +29,7 @@
       (src/lib/webShell.ts) ; filet de sécurité ci-dessous au bout de 20 s.
     -->
     <style id="yaar-splash-css">
+      /* Couleurs du système Cobalt (src/theme.ts) ; police du système : celle de l'application n'est pas encore là. */
       #yaar-splash {
         position: fixed;
         inset: 0;
@@ -38,36 +39,46 @@
         align-items: center;
         justify-content: center;
         gap: 6px;
-        background: #f5f7f9;
-        color: #16202a;
+        background: #eef1f5;
+        color: #0c1222;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         transition: opacity 0.25s ease;
       }
       #yaar-splash .logo {
-        font-size: 44px;
-        font-weight: 900;
-        color: #0b7a4b;
-        letter-spacing: -0.5px;
+        display: flex;
+        align-items: flex-end;
+        gap: 4px;
+        font-size: 46px;
+        font-weight: 800;
+        letter-spacing: -2px;
         line-height: 1;
+      }
+      #yaar-splash .logo i {
+        width: 12px;
+        height: 12px;
+        margin-bottom: 7px;
+        border-radius: 50%;
+        background: #2448ff;
       }
       #yaar-splash .sub {
         font-size: 15px;
-        font-weight: 800;
-        color: #f28c1b;
+        font-weight: 600;
+        color: #5b6475;
       }
       #yaar-splash .spin {
         width: 30px;
         height: 30px;
         margin-top: 22px;
         border-radius: 50%;
-        border: 3px solid #d5e6dd;
-        border-top-color: #0b7a4b;
+        border: 3px solid #e9edff;
+        border-top-color: #2448ff;
         animation: yaar-spin 0.9s linear infinite;
       }
       #yaar-splash .msg {
         margin-top: 10px;
         font-size: 14px;
-        color: #5e6b78;
+        font-weight: 500;
+        color: #5b6475;
       }
       @keyframes yaar-spin {
         to {
@@ -84,7 +95,7 @@
 
   <body>
     <div id="yaar-splash" role="status" aria-live="polite">
-      <div class="logo">Yaar</div>
+      <div class="logo">Yaar<i></i></div>
       <div class="sub">Livraison · Ouagadougou</div>
       <div class="spin" aria-hidden="true"></div>
       <div class="msg" id="yaar-splash-text">Chargement…</div>
@@ -92,26 +103,39 @@
     <script>
       (function () {
         var path = location.pathname;
-        if (path.indexOf('/suivi/') === 0) {
+        var conn = navigator.connection;
+        // Connexion très lente (2G, « 3G lente », économie de données) : même règle que src/lib/webShell.ts.
+        var slow = !!conn && (conn.saveData === true || /(^|-)2g$/.test(conn.effectiveType || ''));
+        var suivi = path.indexOf('/suivi/') === 0;
+        function preload(href, as) {
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = as;
+          link.href = href;
+          // Police : demandée en mode CORS par @font-face ; sans crossorigin, le préchargement ne servirait pas.
+          if (as === 'font') link.crossOrigin = 'anonymous';
+          document.head.appendChild(link);
+        }
+        // Polices de l'application (src/fonts.ts, graisses chargées au démarrage ; liste écrite par
+        // scripts/web-postexport.mjs) : téléchargées tout de suite, en parallèle du JavaScript, pour que l'application
+        // s'affiche directement dans sa police. Page publique sur une connexion très lente : police du système (le
+        // suivi d'abord, l'application ne les demande pas non plus).
+        var fonts = /*YAAR_FONT_PRELOAD*/[];
+        if (!(suivi && slow)) for (var f = 0; f < fonts.length; f++) preload(fonts[f], 'font');
+        if (suivi) {
           // Page publique de suivi : le jeton du lien ne part jamais en en-tête Referer, dès la première requête.
           var meta = document.createElement('meta');
           meta.name = 'referrer';
           meta.content = 'no-referrer';
           document.head.appendChild(meta);
           // Blocs JS de la page (carte comprise) téléchargés tout de suite, en parallèle de l'application
-          // (liste écrite par scripts/web-postexport.mjs). Connexion très lente (2G, « 3G lente », économie de
-          // données) : MapLibre (≈ 270 ko) n'est pas préchargé ici, pour ne pas retarder le suivi lui-même (code,
-          // heure d'arrivée) ; l'application le demande dès l'ouverture de l'écran de suivi.
+          // (liste écrite par scripts/web-postexport.mjs). Connexion très lente : MapLibre (≈ 270 ko) n'est pas
+          // préchargé ici, pour ne pas retarder le suivi lui-même (code, heure d'arrivée) ; l'application le demande
+          // dès l'ouverture de l'écran de suivi.
           var urls = /*YAAR_SUIVI_PRELOAD*/[];
-          var conn = navigator.connection;
-          var slow = !!conn && (conn.saveData === true || /(^|-)2g$/.test(conn.effectiveType || ''));
           for (var i = 0; i < urls.length; i++) {
             if (slow && urls[i].indexOf('maplibre-gl-') >= 0) continue;
-            var link = document.createElement('link');
-            link.rel = 'preload';
-            link.as = 'script';
-            link.href = urls[i];
-            document.head.appendChild(link);
+            preload(urls[i], 'script');
           }
           var text = document.getElementById('yaar-splash-text');
           if (text) text.textContent = 'Chargement du suivi de votre colis…';

@@ -1,5 +1,5 @@
 import { act, render } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Text } from '../components/Text';
 import type { PublicConfigDto } from '@yaar/shared';
 import { PollScheduler, type VisibilitySource } from '../lib/pollScheduler';
 import { fetchPublicConfig, parsePublicConfig } from '../lib/publicConfig';

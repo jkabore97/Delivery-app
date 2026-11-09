@@ -6,24 +6,36 @@
  */
 export type IconName =
   | 'alert'
+  | 'approx'
   | 'back'
+  | 'bell'
+  | 'bike'
   | 'camera'
+  | 'car'
   | 'cash'
+  | 'chart'
   | 'chat'
   | 'check'
   | 'chevronDown'
+  | 'chevronLeft'
   | 'chevronRight'
   | 'chevronUp'
   | 'clock'
   | 'close'
+  | 'command'
   | 'document'
+  | 'eye'
   | 'flag'
+  | 'grid'
   | 'history'
   | 'home'
   | 'info'
   | 'link'
   | 'list'
+  | 'logout'
   | 'map'
+  | 'minus'
+  | 'moto'
   | 'navigation'
   | 'package'
   | 'phone'
@@ -33,8 +45,13 @@ export type IconName =
   | 'recenter'
   | 'refresh'
   | 'route'
+  | 'search'
+  | 'selector'
+  | 'settings'
   | 'share'
+  | 'shield'
   | 'star'
+  | 'starOutline'
   | 'store'
   | 'user'
   | 'wallet';
@@ -44,16 +61,39 @@ export type IconPart = { p: string; fill?: true } | { c: [number, number, number
 
 export const ICON_PARTS: Record<IconName, IconPart[]> = {
   alert: [{ p: 'M12 4.2 21 19.5H3L12 4.2z' }, { p: 'M12 10v4.2' }, { c: [12, 16.9, 1.1], fill: true }],
+  // « ≈ » (environ) : la police n'a pas de quoi l'écrire en grand.
+  approx: [{ p: 'M5 9.6c1.4-1.5 2.9-1.5 4.4 0s2.9 1.5 4.4 0 2.9-1.5 4.4 0M5 14.6c1.4-1.5 2.9-1.5 4.4 0s2.9 1.5 4.4 0 2.9-1.5 4.4 0' }],
   back: [{ p: 'M19 12H5.5M11.5 5.8 5.3 12l6.2 6.2' }],
+  bell: [
+    { p: 'M12 3.8a5.7 5.7 0 0 0-5.7 5.7v3.4c0 1-.4 2-1.1 2.7l-.7.7h15l-.7-.7c-.7-.7-1.1-1.7-1.1-2.7V9.5A5.7 5.7 0 0 0 12 3.8z' },
+    { p: 'M9.9 19.6a2.4 2.4 0 0 0 4.2 0' },
+  ],
+  // Vélo de profil (même famille que moto et car).
+  bike: [
+    { c: [5.6, 15.4, 3.4] },
+    { c: [18.4, 15.4, 3.4] },
+    { p: 'M5.6 15.4 8.8 9.2l2.8 6.2H5.6' },
+    { p: 'M8.8 9.2h6.4l3.2 6.2M11.6 15.4l3.6-6.2' },
+    { p: 'M8.8 9.2 8.1 7.2M6.9 7.2h2.6M15.2 9.2l-.7-2h1.9' },
+  ],
   camera: [
     { p: 'M4.5 8h2.8l1.6-2.5h6.2L16.7 8h2.8c.8 0 1.5.7 1.5 1.5v8c0 .8-.7 1.5-1.5 1.5h-15c-.8 0-1.5-.7-1.5-1.5v-8C3 8.7 3.7 8 4.5 8z' },
     { c: [12, 13.2, 3.3] },
+  ],
+  // Voiture de profil.
+  car: [
+    { p: 'M4.9 16.2H3.6v-3.4c0-.6.4-1.1 1-1.2l2.4-.5 2.1-3c.4-.5 1-.8 1.6-.8h4.6c.6 0 1.2.3 1.6.8l2.4 3 1.4.3c.7.1 1.2.7 1.2 1.4v3.4h-1.3' },
+    { p: 'M9.3 16.2h5.4' },
+    { p: 'M7 11.1h10.4' },
+    { c: [7.1, 16.2, 2.2] },
+    { c: [16.9, 16.2, 2.2] },
   ],
   cash: [
     { p: 'M3.5 7h17a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z' },
     { c: [12, 12, 2.6] },
     { p: 'M6 10v4M18 10v4' },
   ],
+  chart: [{ p: 'M4 19.5h16' }, { p: 'M7.5 15.5v-4M12 15.5V6.5M16.5 15.5v-7' }],
   chat: [
     { p: 'M12 4c4.7 0 8.5 3.2 8.5 7.3s-3.8 7.3-8.5 7.3c-1.1 0-2.1-.2-3.1-.5L4.6 19.6l1.3-3.5C4.4 14.8 3.5 13.1 3.5 11.3 3.5 7.2 7.3 4 12 4z' },
     { c: [8.6, 11.4, 1.05], fill: true },
@@ -62,16 +102,30 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   ],
   check: [{ p: 'M5 12.5 9.6 17.1 19.2 7.4' }],
   chevronDown: [{ p: 'M6.5 9.5 12 15l5.5-5.5' }],
+  chevronLeft: [{ p: 'M14.5 6.5 9 12l5.5 5.5' }],
   chevronRight: [{ p: 'M9.5 6.5 15 12l-5.5 5.5' }],
   chevronUp: [{ p: 'M6.5 14.5 12 9l5.5 5.5' }],
   clock: [{ c: [12, 12, 8.6] }, { p: 'M12 7.4V12l3.2 2' }],
   close: [{ p: 'M6.5 6.5l11 11M17.5 6.5l-11 11' }],
+  // « ⌘ » (raccourci clavier) : absent de la police.
+  command: [
+    { p: 'M9 9h6v6H9z' },
+    { p: 'M9 9V7a2 2 0 1 0-2 2h2zM15 9V7a2 2 0 1 1 2 2h-2zM9 15v2a2 2 0 1 1-2-2h2zM15 15v2a2 2 0 1 0 2-2h-2z' },
+  ],
   document: [
     { p: 'M6.5 3.5h7.5l4.5 4.5v11.2c0 .7-.6 1.3-1.3 1.3H6.5c-.7 0-1.3-.6-1.3-1.3V4.8c0-.7.6-1.3 1.3-1.3z' },
     { p: 'M13.5 3.7v4.8h4.8' },
     { p: 'M8.8 13h6.4M8.8 16.5h6.4' },
   ],
+  eye: [{ p: 'M2.6 12S6 5.6 12 5.6 21.4 12 21.4 12 18 18.4 12 18.4 2.6 12 2.6 12z' }, { c: [12, 12, 2.9] }],
   flag: [{ p: 'M5.5 21V4.5' }, { p: 'M5.5 4.5h11.8l-2.4 4.3 2.4 4.3H5.5' }],
+  // Vue d'ensemble (quatre tuiles).
+  grid: [
+    { p: 'M6 4.5h2.8c.8 0 1.5.7 1.5 1.5v2.8c0 .8-.7 1.5-1.5 1.5H6c-.8 0-1.5-.7-1.5-1.5V6c0-.8.7-1.5 1.5-1.5z' },
+    { p: 'M15.2 4.5H18c.8 0 1.5.7 1.5 1.5v2.8c0 .8-.7 1.5-1.5 1.5h-2.8c-.8 0-1.5-.7-1.5-1.5V6c0-.8.7-1.5 1.5-1.5z' },
+    { p: 'M6 13.7h2.8c.8 0 1.5.7 1.5 1.5V18c0 .8-.7 1.5-1.5 1.5H6c-.8 0-1.5-.7-1.5-1.5v-2.8c0-.8.7-1.5 1.5-1.5z' },
+    { p: 'M15.2 13.7H18c.8 0 1.5.7 1.5 1.5V18c0 .8-.7 1.5-1.5 1.5h-2.8c-.8 0-1.5-.7-1.5-1.5v-2.8c0-.8.7-1.5 1.5-1.5z' },
+  ],
   // Horloge dans une flèche qui tourne en arrière (historique).
   history: [{ p: 'M6.2 17.8a8.2 8.2 0 1 0-2.4-5.8' }, { p: 'M1.4 9.8l2.4 2.6 2.4-2.6' }, { p: 'M12 7.6V12l3 2' }],
   home: [{ p: 'M3.8 11.2 12 4.2l8.2 7' }, { p: 'M6 9.6v9.9h12V9.6' }, { p: 'M10 19.5v-5h4v5' }],
@@ -86,7 +140,17 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
     { c: [4.7, 12, 1.25], fill: true },
     { c: [4.7, 17.5, 1.25], fill: true },
   ],
+  logout: [{ p: 'M14 4.5h3.5c.8 0 1.5.7 1.5 1.5v12c0 .8-.7 1.5-1.5 1.5H14' }, { p: 'M9.5 16.5 5 12l4.5-4.5M5 12h9.5' }],
   map: [{ p: 'M9 4.5 3.5 6.7v12.8L9 17.3l6 2.2 5.5-2.2V4.5L15 6.7 9 4.5z' }, { p: 'M9 4.5v12.8M15 6.7v12.8' }],
+  minus: [{ p: 'M5 12h14' }],
+  // Moto de profil (le pictogramme du livreur sur la carte Cobalt).
+  moto: [
+    { c: [6, 15.2, 2.7] },
+    { c: [18.2, 15.2, 2.7] },
+    { p: 'M3.3 12.7c.6-2 2.4-3.3 4.5-3.3h3.1l1.9 5.8h3' },
+    { p: 'M18.2 15.2 15.6 6h-2.2' },
+    { p: 'M7.6 6.3h3.6' },
+  ],
   navigation: [{ p: 'M20.2 3.8 3.8 10.6l7.1 2.5 2.5 7.1 6.8-16.4z', fill: true }],
   package: [
     { p: 'M12 3.2l7.8 4.3v9L12 20.8l-7.8-4.3v-9L12 3.2z' },
@@ -105,9 +169,16 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   // Flèche circulaire (« Réessayer »).
   refresh: [{ p: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }, { p: 'M17.3 3.1v3.6h-3.6' }],
   route: [{ c: [6, 18, 2.2] }, { c: [18, 6, 2.2] }, { p: 'M8.2 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8' }],
+  search: [{ c: [10.8, 10.8, 6.6] }, { p: 'M15.8 15.8l4.4 4.4' }],
+  // Deux chevrons (changer d'établissement…).
+  selector: [{ p: 'M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4' }],
+  // Réglages (deux curseurs).
+  settings: [{ p: 'M4 7.5h9.2M17.8 7.5H20M4 16.5h2.2M10.8 16.5H20' }, { c: [15.5, 7.5, 2.3] }, { c: [8.5, 16.5, 2.3] }],
   // Partage (trois points reliés, comme sur Android).
   share: [{ c: [17.8, 5.6, 2.6] }, { c: [6.2, 12, 2.6] }, { c: [17.8, 18.4, 2.6] }, { p: 'M8.5 10.7l7-3.9M8.5 13.3l7 3.9' }],
+  shield: [{ p: 'M12 3.4 19 6v5.4c0 4.3-2.9 7.9-7 9.2-4.1-1.3-7-4.9-7-9.2V6l7-2.6z' }, { p: 'M8.7 12.1l2.3 2.3 4.3-4.4' }],
   star: [{ p: 'M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8L12 3.6z', fill: true }],
+  starOutline: [{ p: 'M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8L12 3.6z' }],
   store: [
     { p: 'M4 9.5 5.5 4.5h13L20 9.5' },
     { p: 'M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.2 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1.1 2.5 2.6 2.5S20 10.9 20 9.5' },

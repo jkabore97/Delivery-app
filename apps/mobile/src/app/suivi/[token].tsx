@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Text } from '../../components/Text';
 import Head from 'expo-router/head';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';

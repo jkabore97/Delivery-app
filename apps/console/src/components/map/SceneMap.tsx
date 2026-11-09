@@ -2,11 +2,15 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { LatLng } from '@yaar/shared';
 import { MapSceneController, type MapPadding } from '../../lib/map/controller';
 import { createBaseMap, loadMaplibre, webglSupported } from '../../lib/map/engine';
+import { COBALT_MAP_CLASS, ensureCobaltMapCss } from '../../lib/map/markers';
 import { sceneKey } from '../../lib/map/scene';
 import { DRIVER_ANIMATION_MS, MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../lib/map/style';
 import type { MapScene, SceneMarker } from '../../lib/map/types';
 
 export type MapStatus = 'loading' | 'ready' | 'unsupported';
+
+// Styles Cobalt des cartes (marqueurs, mention des données, état), injectés dès que le module des cartes est chargé.
+ensureCobaltMapCss();
 
 export interface SceneMapOptions {
   center: LatLng;
@@ -77,7 +81,7 @@ export function useSceneMap(scene: MapScene, opts: SceneMapOptions) {
   return { containerRef, status, fallback, fit, sceneKey: key };
 }
 
-/** Cadre de carte : conteneur MapLibre, état de chargement, mention des données (toujours visible). */
+/** Cadre de carte (apparence Cobalt) : conteneur MapLibre, état de chargement, mention des données (toujours visible). */
 export function MapFrame({
   containerRef,
   status,
@@ -94,7 +98,7 @@ export function MapFrame({
   children?: ReactNode;
 }) {
   return (
-    <div className={`map-frame ${className}`}>
+    <div className={`map-frame ${COBALT_MAP_CLASS} ${className}`}>
       {/* Position en style en ligne : `.maplibregl-map { position: relative }` (chargé plus tard) ne doit pas la remplacer. */}
       <div ref={containerRef} className="map-canvas" style={{ position: 'absolute', inset: 0 }} role="region" aria-label={label} />
       {status !== 'ready' && (

@@ -1,26 +1,35 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { errorMessage } from '../lib/api';
-import { colors, dark, spacing } from '../theme';
-import { Button, Card, Field, Muted, Subtitle } from './ui';
+import { palette, spacing } from '../theme';
+import { TrackingIcon } from './tracking/TrackingIcon';
+import { Button, Card, Field, Subtitle } from './ui';
+import { Text } from './Text';
 
+/** Étoile vide : contour gris (la forme, pleine ou vide, dit la note sans dépendre de la couleur). */
+const EMPTY_STAR = '#B8C0CD';
+
+/**
+ * Note en étoiles dessinées (la police n'a pas d'étoile utilisable partout) : pleines en soleil, vides en contour.
+ * `onChange` : chaque étoile devient un bouton (zone tactile élargie).
+ */
 export function Stars({
   value,
   onChange,
   size = 32,
-  emptyColor = colors.border,
+  emptyColor = EMPTY_STAR,
 }: {
   value: number;
   onChange?: (v: number) => void;
   size?: number;
-  /** Couleur des étoiles non choisies (fond sombre : plus claire). */
+  /** Couleur du contour des étoiles non choisies. */
   emptyColor?: string;
 }) {
   return (
     <View style={styles.row} accessibilityRole="adjustable" accessibilityValue={{ min: 1, max: 5, now: value }}>
       {[1, 2, 3, 4, 5].map((n) => (
-        <Pressable key={n} onPress={onChange ? () => onChange(n) : undefined} accessibilityLabel={`${n} étoile(s)`} hitSlop={6}>
-          <Text style={{ fontSize: size, color: n <= value ? colors.orange : emptyColor }}>★</Text>
+        <Pressable key={n} onPress={onChange ? () => onChange(n) : undefined} accessibilityLabel={`${n} étoile(s)`} hitSlop={6} disabled={!onChange}>
+          <TrackingIcon name={n <= value ? 'star' : 'starOutline'} size={size} color={n <= value ? palette.sun : emptyColor} strokeWidth={1.8} />
         </Pressable>
       ))}
     </View>
@@ -28,18 +37,19 @@ export function Stars({
 }
 
 /**
- * Carte de notation après livraison (client → livreur, livreur → client). `tone="dark"` : version pour un écran
- * sombre (livreur) ; claire par défaut.
+ * Carte de notation après livraison (client → livreur, livreur → client) : carte blanche Cobalt, étoiles, commentaire,
+ * « Envoyer ma note ». `tone` : @deprecated (même rendu clair).
  */
 export function RatingCard({
   title,
   onSubmit,
-  color = colors.green,
-  tone = 'light',
+  color = palette.cobalt,
+  tone: _tone,
 }: {
   title: string;
   onSubmit: (score: number, comment: string) => Promise<void>;
   color?: string;
+  /** @deprecated */
   tone?: 'light' | 'dark';
 }) {
   const [score, setScore] = useState(5);
@@ -58,54 +68,23 @@ export function RatingCard({
     }
   };
 
-  if (tone === 'dark') {
-    return (
-      <View style={styles.darkCard}>
-        <Text style={styles.darkTitle}>{title}</Text>
-        <Stars value={score} onChange={setScore} size={36} emptyColor={dark.raisedHigh} />
-        <TextInput
-          value={comment}
-          onChangeText={setComment}
-          maxLength={300}
-          placeholder="Commentaire (facultatif)"
-          placeholderTextColor={dark.textFaint}
-          accessibilityLabel="Commentaire (facultatif)"
-          style={styles.darkInput}
-        />
-        {error ? <Text style={styles.darkError}>{error}</Text> : null}
-        <Pressable onPress={busy ? undefined : submit} accessibilityRole="button" accessibilityState={{ busy }} style={styles.darkButton} testID="rating-submit">
-          {busy ? <ActivityIndicator color={dark.text} /> : <Text style={styles.darkButtonText}>Envoyer ma note</Text>}
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
-    <Card>
+    <Card style={styles.card}>
       <Subtitle>{title}</Subtitle>
-      <Stars value={score} onChange={setScore} />
+      <Stars value={score} onChange={setScore} size={36} />
       <Field label="Commentaire (facultatif)" value={comment} onChangeText={setComment} maxLength={300} />
-      {error ? <Muted style={{ color: colors.red }}>{error}</Muted> : null}
-      <Button title="Envoyer ma note" color={color} loading={busy} onPress={submit} />
+      {error ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
+      <Button title="Envoyer ma note" color={color} loading={busy} onPress={submit} testID="rating-submit" />
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: spacing.xs },
-  darkCard: { gap: spacing.md, padding: spacing.lg, borderRadius: 20, backgroundColor: dark.surface, borderWidth: 1, borderColor: dark.border },
-  darkTitle: { color: dark.text, fontSize: 18, fontWeight: '900' },
-  darkInput: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: dark.border,
-    backgroundColor: dark.raised,
-    color: dark.text,
-    paddingHorizontal: spacing.md,
-    fontSize: 15,
-  },
-  darkError: { color: dark.red, fontSize: 13, fontWeight: '700' },
-  darkButton: { minHeight: 52, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: dark.raisedHigh },
-  darkButtonText: { color: dark.text, fontWeight: '900', fontSize: 16 },
+  row: { flexDirection: 'row', gap: spacing.sm },
+  card: { gap: spacing.md },
+  error: { color: palette.coralText, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

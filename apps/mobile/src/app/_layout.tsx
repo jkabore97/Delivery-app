@@ -1,13 +1,14 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useAppFonts } from '../fonts';
 import { AuthProvider } from '../state/auth';
 import { AppConfigProvider } from '../state/config';
 import { SocketProvider } from '../state/socket';
-import { hideWebSplash, isFullWidthPath } from '../lib/webShell';
-import { MAX_APP_WIDTH } from '../theme';
+import { hideWebSplash, isFullWidthPath, isSlowConnection } from '../lib/webShell';
+import { MAX_APP_WIDTH, palette } from '../theme';
 
 /**
  * Web : l'application tient dans une colonne « téléphone » centrée, sauf la page publique de suivi qui prend toute
@@ -25,11 +26,19 @@ function WebPhoneFrame({ children }: { children: ReactNode }) {
 }
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  // Page publique de suivi ouverte sur une connexion très lente : police du système tout de suite (le suivi d'abord,
+  // pas ≈ 170 ko de polices en plus). Décidé une fois, à l'ouverture.
+  const [skipFonts] = useState(() => Platform.OS === 'web' && isFullWidthPath(pathname) && isSlowConnection());
+  // Polices de l'application (src/fonts.ts) : l'écran de démarrage (web : celui du HTML) reste affiché jusqu'à leur
+  // chargement, 2,5 s au plus (puis police du système).
+  const fontsReady = useAppFonts({ skip: skipFonts });
   // Filet de sécurité : l'écran de démarrage du HTML (web) disparaît même si un écran oublie de le retirer.
   useEffect(() => {
     const t = setTimeout(hideWebSplash, 6000);
     return () => clearTimeout(t);
   }, []);
+  if (!fontsReady) return Platform.OS === 'web' ? null : <View style={styles.boot} />;
   return (
     <WebPhoneFrame>
       <SafeAreaProvider>
@@ -38,7 +47,7 @@ export default function RootLayout() {
           <AuthProvider>
             <SocketProvider>
               <StatusBar style="dark" />
-              <Stack screenOptions={{ headerShown: false }} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.canvas } }} />
             </SocketProvider>
           </AuthProvider>
         </AppConfigProvider>
@@ -48,14 +57,15 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  webBackdrop: { flex: 1, alignItems: 'center', backgroundColor: '#DDE3E8' },
+  boot: { flex: 1, backgroundColor: palette.canvas },
+  webBackdrop: { flex: 1, alignItems: 'center', backgroundColor: '#DCE1E9' },
   webPhone: {
     flex: 1,
     width: '100%',
     maxWidth: MAX_APP_WIDTH,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: palette.canvas,
     overflow: 'hidden',
-    boxShadow: '0 0 24px rgba(15, 46, 34, 0.18)',
+    boxShadow: '0 0 0 1px rgba(12, 18, 34, 0.04), 0 24px 64px rgba(12, 18, 34, 0.14)',
   },
   webFull: { maxWidth: '100%', boxShadow: 'none' },
 });

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Text } from '../../../components/Text';
 import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import type { OrderDto, StoreDto } from '@yaar/shared';
 import { BUSINESS_ACCENT, ORANGE_INK } from '../../../components/business/accent';
@@ -19,7 +20,7 @@ import { POLL_MS } from '../../../lib/publicConfig';
 import { useApi } from '../../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../../state/business';
 import { useOrderRooms, usePolling, useSocket, useSocketEvent } from '../../../state/socket';
-import { dark, spacing, typeScale } from '../../../theme';
+import { dark, palette, spacing, typeScale } from '../../../theme';
 
 const isSearching = (o: OrderDto) => o.status === 'SEARCHING_DRIVER' || o.status === 'PENDING';
 
@@ -32,7 +33,7 @@ function SummaryChip({ onTheWay, searching }: { onTheWay: number; searching: num
       {searching > 0 ? (
         <>
           <Text style={styles.summarySep}>·</Text>
-          <View style={[styles.dot, { backgroundColor: dark.amber }]} />
+          <View style={[styles.dot, { backgroundColor: palette.sun }]} />
           <Text style={[styles.summaryText, styles.shrink]} numberOfLines={1} testID="summary-searching">
             {searchingCountText(searching)}
           </Text>

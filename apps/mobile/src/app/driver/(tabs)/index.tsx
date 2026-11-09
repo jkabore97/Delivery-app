@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/Text';
 import { Redirect, router, useFocusEffect, useIsFocused } from 'expo-router';
 import { LABELS, type DriverProfileDto, type OrderDto } from '@yaar/shared';
 import { PackageCard } from '../../../components/design/PackageCard';

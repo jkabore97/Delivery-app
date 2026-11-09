@@ -1,4 +1,4 @@
-import { Text } from 'react-native';
+import { Text } from '../components/Text';
 import { render } from '@testing-library/react-native';
 import type { UserDto } from '@yaar/shared';
 import { RoleGuard } from '../components/RoleGuard';

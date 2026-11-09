@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { distanceM } from '@yaar/shared';
+import { CHEVRON_IMAGE_ID, chevronImage } from '../src/lib/map/chevron';
 import { MapSceneController } from '../src/lib/map/controller';
-import type { BaseMap, Maplibre } from '../src/lib/map/engine';
-import { createMarkerElement, setDriverHeading, updateMarkerElement } from '../src/lib/map/markers';
+import { ensureLineLayers, type BaseMap, type Maplibre } from '../src/lib/map/engine';
+import { markerInitials } from '../src/lib/map/initials';
+import { COBALT_MAP_CLASS, createMarkerElement, ensureCobaltMapCss, setDriverHeading, updateMarkerElement } from '../src/lib/map/markers';
+import { COBALT_MAP } from '../src/lib/map/palette';
+import { DEFAULT_MAP_STYLE_URL, FALLBACK_STYLE, MAP_COLORS, MAP_STYLE_URL, resolveMapStyleUrl } from '../src/lib/map/style';
 import {
   buildDeliveryScene,
   buildLiveScene,
@@ -21,14 +25,15 @@ const lineById = (scene: MapScene, id: string) => scene.lines.find((l) => l.id =
 describe('Carte en direct : marqueurs', () => {
   const scene = buildLiveScene(b2bMapData, 'ALL');
 
-  it('entreprises en carrés orange (fermée : estompée), destinataires des livraisons en cours en épingles', () => {
+  it('entreprises en carrés encre à leurs initiales (fermée : estompée), destinataires des livraisons en cours en gouttes', () => {
     expect(scene.markers.filter((m) => m.kind === 'business').map((m) => m.id)).toEqual([
       'business:st-verdoyant',
       'business:st-tech',
       'business:st-mode',
       'business:st-pissy',
     ]);
-    expect(byId(scene, 'business:st-pissy')).toMatchObject({ dimmed: true, title: 'Grillades de Pissy (fermée)' });
+    expect(byId(scene, 'business:st-pissy')).toMatchObject({ dimmed: true, title: 'Grillades de Pissy (fermée)', initials: 'GP' });
+    expect(byId(scene, 'business:st-verdoyant')?.initials).toBe('LV');
     expect(byId(scene, 'business:st-tech')?.dimmed).toBe(false);
     expect(scene.markers.filter((m) => m.kind === 'dropoff').map((m) => m.id)).toEqual([
       'dropoff:ord-1003',
@@ -38,13 +43,13 @@ describe('Carte en direct : marqueurs', () => {
     expect(byId(scene, 'dropoff:ord-1004')).toMatchObject({ lat: 12.375, lng: -1.47, orderId: 'ord-1004' });
   });
 
-  it('livraison en attente : anneaux pulsés au retrait, numéro cliquable et trajet à venir en pointillés discrets', () => {
+  it('livraison en attente : radar au retrait, numéro cliquable et ligne droite en tirets cobalt vers le destinataire', () => {
     expect(scene.markers.filter((m) => m.kind === 'search')).toEqual([
       expect.objectContaining({ id: 'search:ord-1005', lat: 12.3805, lng: -1.4975, label: '#1005', orderId: 'ord-1005' }),
     ]);
     expect(lineById(scene, 'next:ord-1005')).toEqual({
       id: 'next:ord-1005',
-      kind: 'next',
+      kind: 'dashed',
       points: [
         { lat: 12.3805, lng: -1.4975, address: 'Zogona' },
         { lat: 12.3765, lng: -1.4855, address: 'Wemtenga' },
@@ -61,7 +66,7 @@ describe('Carte en direct : marqueurs', () => {
     expect(byId(scene, 'driver:drv-issouf')?.title).toBe('Issouf S. · Moto · livraison #1003');
   });
 
-  it('étape en cours : itinéraire routier vert rogné au livreur ; ligne droite de secours en pointillés', () => {
+  it('étape en cours : itinéraire routier cobalt rogné au livreur ; ligne droite de secours en tirets', () => {
     expect(lineById(scene, 'leg:ord-1003')).toMatchObject({ kind: 'route', trimToMarkerId: 'driver:drv-issouf' });
     expect(lineById(scene, 'leg:ord-1003')?.points[1]).toEqual({ lat: 12.3349, lng: -1.5112 });
     // source « straight » (service d'itinéraire indisponible) : pointillés, comme sans itinéraire.
@@ -143,7 +148,7 @@ describe('Ligne de l’étape en cours', () => {
     expect(legLine('l', 'drv', driver, 'ASSIGNED', null, dropoff, null)).toBeNull();
   });
 
-  it('itinéraire routier de l’étape : vert ; ligne droite de secours : pointillés', () => {
+  it('itinéraire routier de l’étape : cobalt ; ligne droite de secours : tirets', () => {
     expect(legLine('l', 'drv', driver, 'ASSIGNED', pickup, dropoff, route('PICKUP'))).toMatchObject({ kind: 'route' });
     expect(legLine('l', 'drv', driver, 'ASSIGNED', pickup, dropoff, route('PICKUP', 'straight'))).toMatchObject({ kind: 'dashed' });
   });
@@ -209,9 +214,10 @@ describe('Carte de la fiche de livraison', () => {
     expect(s.fitPoints[1]).toEqual({ lat: 12.405, lng: -1.559 });
   });
 
-  it('recherche d’un livreur : anneaux au retrait, pas de livreur ; colis récupéré sans itinéraire : pointillés', () => {
+  it('recherche d’un livreur : radar au retrait, pas de livreur, trajet en tirets cobalt ; colis récupéré sans itinéraire : tirets', () => {
     const searching = buildDeliveryScene(businessOrder({ status: 'SEARCHING_DRIVER', driver: null, route: null }));
     expect(searching.markers.map((m) => m.kind)).toEqual(['business', 'search', 'dropoff']);
+    expect(searching.lines.map((l) => [l.id, l.kind])).toEqual([['next', 'dashed']]);
     expect(searching.fitPoints).toHaveLength(2);
     const picked = buildDeliveryScene(businessOrder({ status: 'PICKED_UP', route: null }));
     expect(picked.lines).toEqual([
@@ -232,33 +238,40 @@ describe('Marqueurs DOM', () => {
     id: 'driver:d1', kind: 'driver', lat: 12, lng: -1, title: 'Karim D. · Moto · libre', vehicleType: 'MOTO', busy: false, driverId: 'd1',
   };
 
-  it('livreur : véhicule droit, anneau libre / en livraison, flèche de cap séparée', () => {
+  it('livreur : disque blanc, véhicule droit, libre (pastille menthe) / en livraison, encoche de cap séparée', () => {
     const el = createMarkerElement(driver);
     expect(el.className).toContain('yaar-driver');
     expect(el.classList.contains('is-free')).toBe(true);
+    expect(el.querySelector('.ycm-available')).not.toBeNull();
     expect(el.dataset.vehicle).toBe('MOTO');
     expect(el.getAttribute('role')).toBe('button');
     expect(el.getAttribute('aria-label')).toBe('Karim D. · Moto · libre');
-    expect(el.querySelector('.yaar-driver-badge svg')).not.toBeNull();
+    expect(el.querySelector('.ycm-disc svg')).not.toBeNull();
     setDriverHeading(el, null);
     expect(el.classList.contains('no-heading')).toBe(true);
     setDriverHeading(el, 135);
     expect(el.classList.contains('no-heading')).toBe(false);
-    expect((el.querySelector('.yaar-driver-heading') as HTMLElement).style.transform).toBe('rotate(135deg)');
+    expect((el.querySelector('.ycm-heading') as HTMLElement).style.transform).toBe('rotate(135deg)');
     // Le véhicule ne tourne pas.
-    expect((el.querySelector('.yaar-driver-badge') as HTMLElement).style.transform).toBe('');
+    expect((el.querySelector('.ycm-disc') as HTMLElement).style.transform).toBe('');
     updateMarkerElement(el, { ...driver, busy: true });
     expect(el.classList.contains('is-busy')).toBe(true);
     expect(el.classList.contains('is-free')).toBe(false);
   });
 
-  it('entreprise estompée, recherche avec numéro, SOS avec nom, quartiers', () => {
-    const biz = createMarkerElement({ id: 'b', kind: 'business', lat: 0, lng: 0, title: 'Kaya Market', dimmed: true });
+  it('entreprise estompée à ses initiales (texte, jamais du HTML), recherche avec numéro, SOS avec nom, quartiers', () => {
+    const biz = createMarkerElement({ id: 'b', kind: 'business', lat: 0, lng: 0, title: 'Kaya Market', dimmed: true, initials: 'KM' });
     expect(biz.classList.contains('is-dimmed')).toBe(true);
     expect(biz.getAttribute('role')).toBe('img');
+    expect(biz.querySelector('.ycm-initials')?.textContent).toBe('KM');
+    const injected = createMarkerElement({ id: 'x', kind: 'business', lat: 0, lng: 0, title: 'x', initials: '<b>' });
+    expect(injected.querySelector('b')).toBeNull();
+    expect(injected.querySelector('.ycm-initials')?.textContent).toBe('<b>');
+    // Sans initiales : pictogramme boutique.
+    expect(createMarkerElement({ id: 'y', kind: 'business', lat: 0, lng: 0, title: 'y' }).querySelector('.ycm-square svg')).not.toBeNull();
     const search = createMarkerElement({ id: 's', kind: 'search', lat: 0, lng: 0, title: 't', label: '#1005', orderId: 'o' });
-    expect(search.querySelectorAll('.yaar-ring')).toHaveLength(3);
-    expect(search.querySelector('.yaar-search-label')?.textContent).toBe('#1005');
+    expect(search.querySelectorAll('.ycm-radar')).toHaveLength(3);
+    expect(search.querySelector('.ycm-search-label')?.textContent).toBe('#1005');
     const sos = createMarkerElement({ id: 'x', kind: 'sos', lat: 0, lng: 0, title: 'SOS', label: 'SOS · Karim D.' });
     expect(sos.textContent).toBe('SOS · Karim D.');
     expect(neighbourhoodLabels().map((l) => l.label)).toContain('Zogona');
@@ -302,6 +315,8 @@ function fakeMap() {
     addSource: (id: string) => sources.set(id, { setData }),
     getLayer: () => undefined,
     addLayer: vi.fn(),
+    hasImage: () => false,
+    addImage: vi.fn(),
     getStyle: () => ({ layers: [] }),
     getContainer: () => ({ clientWidth: 800, clientHeight: 600 }),
     fitBounds,
@@ -328,7 +343,7 @@ describe('MapSceneController (MapLibre simulé)', () => {
     const issouf = () => FakeMarker.all.find((m) => m.element.getAttribute('aria-label')?.startsWith('Issouf'))!;
     expect(issouf().lngLat).toEqual([-1.5141, 12.3372]);
     const drawnKinds = () => (setData.mock.lastCall?.[0] as { features: Array<{ properties: { kind: string } }> }).features.map((f) => f.properties.kind);
-    expect(drawnKinds().sort()).toEqual(['dashed', 'next', 'route']);
+    expect(drawnKinds().sort()).toEqual(['dashed', 'dashed', 'route']);
 
     // Nouvelle réponse : Issouf a avancé ; Fatimata passe en livraison.
     const next = structuredClone(b2bMapData);
@@ -376,5 +391,95 @@ describe('MapSceneController (MapLibre simulé)', () => {
     ctrl.onStyleReady(false);
     expect(labels.every((m) => m.removed)).toBe(true);
     ctrl.destroy();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Apparence Cobalt                                                     */
+/* ------------------------------------------------------------------ */
+
+describe('Fond de carte Cobalt', () => {
+  it('style servi par la console (/map/cobalt-style.json), URL absolue par rapport à la page ; secours à la couleur de la terre', () => {
+    expect(DEFAULT_MAP_STYLE_URL).toBe('/map/cobalt-style.json');
+    expect(MAP_STYLE_URL).toBe(DEFAULT_MAP_STYLE_URL);
+    expect(resolveMapStyleUrl('/map/cobalt-style.json', 'https://yaar-console.vercel.app/courses/1')).toBe(
+      'https://yaar-console.vercel.app/map/cobalt-style.json',
+    );
+    // Une URL absolue (VITE_MAP_STYLE_URL) est gardée telle quelle.
+    expect(resolveMapStyleUrl('https://tiles.example.org/styles/x', 'https://a.b/')).toBe('https://tiles.example.org/styles/x');
+    expect(FALLBACK_STYLE.layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': '#F3F5F8' } }]);
+    expect(MAP_COLORS.background).toBe(COBALT_MAP.land);
+  });
+
+  it('couleurs du système : cobalt pour l’itinéraire et le destinataire, encre pour l’entreprise, corail pour le SOS', () => {
+    expect(MAP_COLORS).toMatchObject({
+      route: '#2448FF',
+      casing: '#FFFFFF',
+      dashed: '#2448FF',
+      next: 'rgba(12, 18, 34, 0.32)',
+      business: '#0C1222',
+      dropoff: '#2448FF',
+      driverBusy: '#2448FF',
+      sos: '#FF5A4E',
+      sosFill: '#D92D20',
+    });
+  });
+
+  it('calques des tracés : pointillés encre, tirets cobalt, itinéraire (ombre, liseré blanc, cobalt 6 px) et chevrons, au-dessus du fond', () => {
+    const layers: Array<{ id: string; type: string; paint?: Record<string, unknown>; layout?: Record<string, unknown> }> = [];
+    const before: unknown[] = [];
+    const images = new Map<string, unknown>();
+    const map = {
+      getSource: () => undefined,
+      addSource: vi.fn(),
+      getLayer: () => undefined,
+      addLayer: (l: (typeof layers)[number], b?: unknown) => {
+        layers.push(l);
+        before.push(b);
+      },
+      hasImage: (id: string) => images.has(id),
+      addImage: (id: string, img: unknown) => images.set(id, img),
+      getStyle: () => ({ layers: [{ id: 'label_other', type: 'symbol' }] }),
+    };
+    ensureLineLayers(map as unknown as Parameters<typeof ensureLineLayers>[0]);
+    expect(layers.map((l) => l.id)).toEqual(['yaar-next', 'yaar-dashed', 'yaar-route-shadow', 'yaar-route-casing', 'yaar-route', 'yaar-route-chevrons']);
+    expect(before.every((b) => b === undefined)).toBe(true);
+    const byLayer = (id: string) => layers.find((l) => l.id === id)!;
+    expect(byLayer('yaar-route').paint?.['line-color']).toBe('#2448FF');
+    expect(byLayer('yaar-route-casing').paint?.['line-color']).toBe('#FFFFFF');
+    expect(byLayer('yaar-next').paint).toMatchObject({ 'line-color': 'rgba(12, 18, 34, 0.32)', 'line-dasharray': [0, 3] });
+    expect(byLayer('yaar-next').layout?.['line-cap']).toBe('round');
+    expect(byLayer('yaar-dashed').paint).toMatchObject({ 'line-color': '#2448FF', 'line-width': 2.5 });
+    expect(byLayer('yaar-route-chevrons')).toMatchObject({ type: 'symbol', layout: { 'symbol-placement': 'line', 'icon-image': CHEVRON_IMAGE_ID } });
+    expect(images.has(CHEVRON_IMAGE_ID)).toBe(true);
+  });
+
+  it('chevron : image blanche anticrénelée, pointe vers la droite (sens du tracé)', () => {
+    const img = chevronImage(2);
+    expect([img.width, img.height, img.data.length]).toEqual([16, 16, 16 * 16 * 4]);
+    const alpha = (x: number, y: number) => img.data[(y * img.width + x) * 4 + 3]!;
+    // Pointe à droite du centre, branches à gauche ; le centre gauche est vide.
+    expect(alpha(10, 7) + alpha(10, 8)).toBeGreaterThan(300);
+    expect(alpha(5, 3) + alpha(5, 12)).toBeGreaterThan(300);
+    expect(alpha(5, 7)).toBe(0);
+    expect(alpha(0, 0)).toBe(0);
+    expect(img.data[0]).toBe(255);
+  });
+
+  it('initiales des entreprises : comme l’application mobile', () => {
+    expect(markerInitials('Le Verdoyant')).toBe('LV');
+    expect(markerInitials('Grillades de Pissy')).toBe('GP');
+    expect(markerInitials('L’Escale')).toBe('E');
+    expect(markerInitials('  ')).toBeNull();
+    expect(markerInitials(null)).toBeNull();
+  });
+
+  it('styles des marqueurs injectés une fois, limités aux cartes', () => {
+    ensureCobaltMapCss();
+    ensureCobaltMapCss();
+    const styles = document.querySelectorAll('#yaar-cobalt-map-css');
+    expect(styles).toHaveLength(1);
+    expect(styles[0]!.textContent).toContain(`.${COBALT_MAP_CLASS} .yaar-driver`);
+    expect(styles[0]!.textContent).toContain('#2448FF');
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/Text';
 import { router } from 'expo-router';
 import { errorMessage } from '../lib/api';
 import { normalizePhone } from '../lib/phone';

@@ -120,9 +120,9 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(mockTrack).toHaveBeenCalledTimes(3);
   });
 
-  it('feuille sombre (RECIPIENT_SHEET_THEME) ; entreprise à ses initiales, « chez vous » en épingle à maison', async () => {
+  it('feuille blanche Cobalt ; entreprise à ses initiales, « chez vous » en épingle à maison', async () => {
     const r = await show(tracking({ status: 'ASSIGNED', pickedUpAt: null, route: route({ target: 'PICKUP', points: [[12.3627, -1.521], [12.3686, -1.5275]] }) }));
-    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style)).toMatchObject({ backgroundColor: '#131917' });
+    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style)).toMatchObject({ backgroundColor: '#FFFFFF', borderTopLeftRadius: 32 });
     // Retrait (Pharmacie du Centre → PC), destinataire sans initiales (maison), livreur.
     expect(r.getByTestId('live-map-initials').props.children).toBe('PC,-,-');
     expect(r.getByTestId('dropoff-address')).toHaveTextContent(/Patte d’Oie, rue 15\.23.*Repère : Station Total/);
@@ -177,7 +177,7 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
   it('lien expiré ou inconnu (404) : message clair, sans carte, plus de requête', async () => {
     const r = await show(new ApiError(404, 'NOT_FOUND', 'Lien de suivi introuvable ou expiré'));
     expect(r.getByText('Ce lien de suivi n’est plus valide')).toBeTruthy();
-    expect(StyleSheet.flatten(r.getByTestId('tracking-expired').props.style)).toMatchObject({ backgroundColor: '#131917' });
+    expect(StyleSheet.flatten(r.getByTestId('tracking-expired').props.style)).toMatchObject({ backgroundColor: '#FFFFFF' });
     expect(r.queryByTestId('live-map')).toBeNull();
     await act(async () => jest.advanceTimersByTimeAsync(20_000));
     expect(mockTrack).toHaveBeenCalledTimes(1);
@@ -212,13 +212,15 @@ describe('page publique sur un petit téléphone (360 × 640) et sur une page cl
     jest.restoreAllMocks();
   });
 
-  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite pour garder la pastille sur sa ligne', async () => {
+  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite (40 px) avec sa pastille sur sa ligne', async () => {
     const r = await show(tracking());
     expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(640 * 0.6));
     const digits = r.getByText('4  8  2  1');
     expect(StyleSheet.flatten(digits.props.style)).toMatchObject({ fontSize: 44 });
-    const clock = r.getByText('Arrivée vers 14:29');
-    expect(StyleSheet.flatten(clock.props.style).fontSize).toBeLessThanOrEqual(23);
+    // « Arrivée vers » en petit au-dessus, l'heure en très grand (chiffres tabulaires), la pastille à côté.
+    expect(r.getByText('Arrivée vers')).toBeTruthy();
+    const clock = r.getByText('14:29');
+    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 40, fontVariant: ['tabular-nums'] });
     // La pastille « dans 9 min » est dans la même rangée que l'heure.
     expect(clock.parent?.parent).toBe(r.getByText('dans 9 min').parent?.parent?.parent);
     expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16 500 FCFA');

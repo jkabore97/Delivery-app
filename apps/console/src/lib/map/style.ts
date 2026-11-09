@@ -1,14 +1,33 @@
+import { COBALT_MAP, rgba } from './palette';
+
 /**
- * Apparence des cartes MapLibre de la console, alignée sur l'application mobile (apps/mobile/src/lib/map/style.ts) :
- * style vectoriel gratuit OpenFreeMap « positron » (sans clé), remplaçable par VITE_MAP_STYLE_URL. Si le style ne
- * répond pas (hôte bloqué, réseau lent : rien après STYLE_TIMEOUT_MS), la carte passe au style de secours embarqué
- * ci-dessous : fond clair sans tuiles, mais marqueurs et itinéraires restent affichés.
+ * Apparence des cartes MapLibre de la console, la même que l'application mobile (apps/mobile/src/lib/map/style.ts) :
+ * fond « Cobalt » (OpenFreeMap « positron » recoloré : terre #F3F5F8, eau #A9C9FF, parcs #D6EEDC, rues blanches,
+ * grands axes jaunes, noms des quartiers seulement), style statique servi par la console elle-même
+ * (`public/map/cobalt-style.json` → `/map/cobalt-style.json`), remplaçable par VITE_MAP_STYLE_URL. Ses tuiles, polices et
+ * sprites viennent de tiles.openfreemap.org (gratuit, sans clé). Si le style ne répond pas (rien après
+ * STYLE_TIMEOUT_MS) ou est refusé, la carte passe au style de secours embarqué ci-dessous : fond Cobalt uni sans
+ * tuiles, mais marqueurs et itinéraires restent affichés.
  */
-export const DEFAULT_MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+export const DEFAULT_MAP_STYLE_URL = '/map/cobalt-style.json';
 
 /** Lu au build par Vite (VITE_MAP_STYLE_URL, cf. .env.example). */
 export const MAP_STYLE_URL: string =
   (import.meta.env.VITE_MAP_STYLE_URL as string | undefined)?.trim() || DEFAULT_MAP_STYLE_URL;
+
+const ABSOLUTE_URL = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+
+/** URL absolue d'un style (une URL relative est résolue par rapport à la page) ; sans page : inchangée. */
+export function resolveMapStyleUrl(url: string, base?: string): string {
+  if (!url || ABSOLUTE_URL.test(url)) return url;
+  const page = base ?? (typeof location !== 'undefined' && typeof location.href === 'string' ? location.href : undefined);
+  if (!page) return url;
+  try {
+    return new URL(url, page).href;
+  } catch {
+    return url;
+  }
+}
 
 /** Mention des données cartographiques, toujours affichée sur la carte (VITE_MAP_ATTRIBUTION avec un autre style). */
 export const MAP_ATTRIBUTION: string =
@@ -24,27 +43,36 @@ export const MAX_PIXEL_RATIO = 2;
 export const DRIVER_ANIMATION_MS = 1500;
 
 export const MAP_COLORS = {
-  route: '#0B7A4B',
-  casing: '#FFFFFF',
-  shadow: 'rgba(15, 46, 34, 0.22)',
-  dashed: '#0B7A4B',
-  /** Trajet retrait → destinataire pas encore commencé (pointillés discrets). */
-  next: '#6B8F7E',
-  /** Fond du style de secours et des cartes en cours de chargement. */
-  background: '#EEF1EC',
-  business: '#F28C1B',
-  dropoff: '#0B7A4B',
-  driverFree: '#0B7A4B',
-  driverBusy: '#2563EB',
-  searching: '#DC2626',
-  sos: '#DC2626',
-  driverInk: '#16202A',
+  /** Itinéraire devant le livreur : cobalt 6 px sur un liseré blanc de 2 px, ombre douce, chevrons blancs. */
+  route: COBALT_MAP.cobalt,
+  casing: COBALT_MAP.white,
+  shadow: rgba(COBALT_MAP.ink, 0.22),
+  /** Lignes droites (vers la cible sans itinéraire, livraison qui attend un livreur) : cobalt en tirets. */
+  dashed: COBALT_MAP.cobalt,
+  /** Trajet retrait → destinataire à venir (ou effectué) : encre à 30 % en pointillés. */
+  next: rgba(COBALT_MAP.ink, 0.32),
+  /** Fond du style de secours et des cartes en cours de chargement (terre du fond Cobalt). */
+  background: COBALT_MAP.land,
+  /** Entreprise : carré encre arrondi (initiales ou boutique). */
+  business: COBALT_MAP.ink,
+  /** Destinataire : goutte cobalt. */
+  dropoff: COBALT_MAP.cobalt,
+  /** Livreur libre : disque blanc, véhicule encre atténuée, pastille menthe (disponible). */
+  driverFree: COBALT_MAP.inkMuted,
+  /** Livreur en livraison : disque blanc, véhicule et encoche cobalt. */
+  driverBusy: COBALT_MAP.cobalt,
+  driverDisc: COBALT_MAP.white,
+  available: COBALT_MAP.mint,
+  /** SOS : point corail, étiquette corail foncé (texte blanc 4,83:1). */
+  sos: COBALT_MAP.coral,
+  sosFill: COBALT_MAP.coralFill,
+  label: COBALT_MAP.label,
 } as const;
 
-/** Style MapLibre minimal embarqué (aucune requête réseau), le même que celui de l'application mobile. */
+/** Style MapLibre minimal embarqué (aucune requête réseau) : la terre du fond Cobalt, comme l'application mobile. */
 export const FALLBACK_STYLE = {
   version: 8 as const,
-  name: 'Yaar (secours)',
+  name: 'Yaar Cobalt (secours)',
   sources: {},
-  layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': MAP_COLORS.background } }],
+  layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': COBALT_MAP.land } }],
 };

@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { RoleGuard } from '../../components/RoleGuard';
 import { BusinessProvider } from '../../state/business';
-import { colors } from '../../theme';
+import { typeface } from '../../fonts';
+import { palette } from '../../theme';
 import { hideWebSplash } from '../../lib/webShell';
 
 /** Espace Entreprise (rôle SELLER de l'API) : livraisons en cours, nouvelle demande, historique, profil. */
@@ -13,8 +14,11 @@ export default function BusinessLayout() {
       <BusinessProvider>
         <Stack
           screenOptions={{
-            headerTintColor: colors.orange,
-            headerTitleStyle: { color: colors.text },
+            headerTintColor: palette.cobalt,
+            headerTitleStyle: { color: palette.ink, fontWeight: '700', ...typeface(700) },
+            headerStyle: { backgroundColor: palette.canvas },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: palette.canvas },
             headerBackButtonDisplayMode: 'minimal',
           }}
         >

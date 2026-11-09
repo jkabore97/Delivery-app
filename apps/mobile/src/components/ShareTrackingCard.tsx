@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import {
   copyText,
   recipientCallName,
@@ -9,10 +10,9 @@ import {
   shareFeedback,
   shareTrackingLink,
 } from '../lib/share';
-import { colors, dark, radius, spacing } from '../theme';
+import { palette, spacing } from '../theme';
 import { Icon } from './design/Icon';
 import { Pill } from './design/Pill';
-import { Button } from './ui';
 
 /** Message après un envoi ou une copie : réussite (effacée après quelques secondes) ou échec (reste affiché). */
 export interface ShareNotice {
@@ -21,12 +21,11 @@ export interface ShareNotice {
 }
 
 /**
- * Message de partage : pictogramme du système de design (coche ou alerte) et texte, annoncé aux lecteurs d'écran.
- * `tone="dark"` : sur une feuille sombre.
+ * Message de partage : pictogramme du système de design (coche ou alerte) et texte, annoncé aux lecteurs d'écran
+ * (réussite en vert, échec en brun lisible). `tone` : @deprecated (même rendu clair).
  */
-export function ShareFeedback({ notice, tone = 'light', testID }: { notice: ShareNotice; tone?: 'light' | 'dark'; testID?: string }) {
-  const d = tone === 'dark';
-  const color = notice.ok ? (d ? dark.green : colors.green) : d ? dark.amber : '#9A4F00';
+export function ShareFeedback({ notice, tone: _tone, testID }: { notice: ShareNotice; /** @deprecated */ tone?: 'light' | 'dark'; testID?: string }) {
+  const color = notice.ok ? palette.mintText : palette.amberText;
   return (
     <View style={styles.feedbackRow} testID={testID}>
       <Icon name={notice.ok ? 'check' : 'alert'} size={16} color={color} strokeWidth={2.6} />
@@ -51,7 +50,8 @@ export function useShareNotice(): [ShareNotice | null, (n: ShareNotice | null) =
 /**
  * « Envoyer le lien de suivi au destinataire » : il n'a pas de compte, le lien lui ouvre la carte en direct
  * (livreur, heure d'arrivée, code à donner au livreur). Feuille de partage du téléphone ; sur le web,
- * navigator.share ou WhatsApp, et « Copier le lien ». `tone="dark"` : version pour une feuille sombre.
+ * navigator.share ou WhatsApp, et « Copier le lien ». Carte remplie (cobaltTint quand elle est mise en avant), bouton
+ * cobalt. `tone` : 'dark' garde le libellé court du bouton (feuilles de suivi), sinon même rendu.
  */
 export function ShareTrackingCard({
   url,
@@ -74,11 +74,11 @@ export function ShareTrackingCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useShareNotice();
-  const d = tone === 'dark';
+  const short = tone === 'dark';
   if (!url) {
     return (
-      <View style={[styles.box, d && styles.boxDark]}>
-        <Text style={[styles.muted, d && styles.mutedDark]}>Le lien de suivi sera disponible dans un instant.</Text>
+      <View style={styles.box}>
+        <Text style={styles.muted}>Le lien de suivi sera disponible dans un instant.</Text>
       </View>
     );
   }
@@ -103,28 +103,29 @@ export function ShareTrackingCard({
   };
 
   return (
-    <View style={[styles.box, d && styles.boxDark, prominent && (d ? styles.prominentDark : styles.prominent)]} testID="share-tracking">
+    <View style={[styles.box, prominent && styles.prominent]} testID="share-tracking">
       <View style={styles.titleRow}>
-        <Icon name="share" size={20} color={d ? dark.green : colors.green} />
-        <Text style={[styles.title, d && styles.titleDark]}>{prominent ? 'Prévenez le destinataire' : 'Lien de suivi du destinataire'}</Text>
+        <View style={[styles.titleIcon, prominent && styles.titleIconProminent]}>
+          <Icon name="share" size={18} color={prominent ? palette.onCobalt : palette.cobalt} strokeWidth={2.3} />
+        </View>
+        <Text style={styles.title}>{prominent ? 'Prévenez le destinataire' : 'Lien de suivi du destinataire'}</Text>
       </View>
-      <Text style={[styles.muted, d && styles.mutedDark]}>
+      <Text style={styles.muted}>
         {who} suivra le livreur en direct sur la carte, sans créer de compte, et y trouvera le code à donner au livreur.
       </Text>
-      {d ? (
-        <Pill label={shareButtonShortLabel()} icon="share" tone="green" size="lg" onPress={send} loading={busy} style={styles.stretch} testID="share-link-button" />
-      ) : (
-        <Button title={shareButtonLabel()} color={colors.green} onPress={send} loading={busy} testID="share-link-button" />
-      )}
-      {Platform.OS === 'web' ? (
-        d ? (
-          <Pill label="Copier le lien" icon="link" tone="outline" onPress={copy} style={styles.center} testID="copy-link-button" />
-        ) : (
-          <Button title="Copier le lien" variant="outline" small onPress={copy} testID="copy-link-button" />
-        )
-      ) : null}
-      {notice ? <ShareFeedback notice={notice} tone={tone} /> : null}
-      <Text style={[styles.url, d && styles.urlDark]} selectable numberOfLines={1} testID="tracking-url">
+      <Pill
+        label={short ? shareButtonShortLabel() : shareButtonLabel()}
+        icon="share"
+        tone="cobalt"
+        size="lg"
+        onPress={send}
+        loading={busy}
+        style={styles.stretch}
+        testID="share-link-button"
+      />
+      {Platform.OS === 'web' ? <Pill label="Copier le lien" icon="link" tone="outline" onPress={copy} style={styles.center} testID="copy-link-button" /> : null}
+      {notice ? <ShareFeedback notice={notice} /> : null}
+      <Text style={styles.url} selectable numberOfLines={1} testID="tracking-url">
         {url.replace(/^https?:\/\//, '')}
       </Text>
     </View>
@@ -132,27 +133,17 @@ export function ShareTrackingCard({
 }
 
 const styles = StyleSheet.create({
-  box: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  boxDark: { backgroundColor: dark.raised, borderColor: dark.border, borderRadius: 18, gap: 10 },
-  prominent: { borderColor: colors.green, borderWidth: 2, backgroundColor: colors.greenLight },
-  prominentDark: { borderColor: dark.green, borderWidth: 2, backgroundColor: '#13261E' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  title: { flex: 1, fontSize: 16, fontWeight: '900', color: colors.text },
-  titleDark: { color: dark.text, fontSize: 17 },
-  muted: { fontSize: 13, color: colors.textMuted },
-  mutedDark: { color: dark.textMuted, fontSize: 13.5, lineHeight: 19 },
+  box: { borderRadius: 20, backgroundColor: palette.raised, padding: spacing.lg, gap: spacing.md },
+  prominent: { backgroundColor: palette.cobaltTint },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  titleIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.white },
+  titleIconProminent: { backgroundColor: palette.cobalt },
+  title: { flex: 1, fontSize: 16, lineHeight: 21, fontWeight: '700', color: palette.ink },
+  muted: { fontSize: 13.5, lineHeight: 19, fontWeight: '500', color: palette.inkMuted },
   stretch: { alignSelf: 'stretch', justifyContent: 'center' },
   center: { alignSelf: 'center' },
   feedbackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  feedback: { flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
-  url: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
-  // Lien sur la carte mise en avant (#13261E) : textMuted (7,0:1) plutôt que textFaint (4,6:1), il doit se lire.
-  urlDark: { color: dark.textMuted },
+  feedback: { flexShrink: 1, fontSize: 13, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
+  // Lien lisible sur les deux fonds (inkMuted : 5,5:1 sur raised, 5,1:1 sur cobaltTint).
+  url: { fontSize: 12, lineHeight: 16, fontWeight: '500', color: palette.inkMuted, textAlign: 'center' },
 });

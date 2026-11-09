@@ -1,5 +1,5 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Text } from '../components/Text';
 import DriverReadyScreen from '../app/driver/ready';
 import { useReadyScreenGate } from '../hooks/useReadyScreen';
 import { markReadyScreenShown, readyScreenShownThisSession, resetReadyScreenSession, shouldShowReadyScreen } from '../lib/readyScreen';

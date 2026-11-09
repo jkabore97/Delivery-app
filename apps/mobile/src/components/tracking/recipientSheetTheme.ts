@@ -1,10 +1,8 @@
 import type { TrackingTheme } from './TrackingParts';
 
 /**
- * THÈME DE LA PAGE PUBLIQUE DE SUIVI (destinataire, /suivi/<jeton>) : un seul interrupteur pour toute la page
- * (feuille du bas ou panneau latéral, boutons ronds, code, montant, écrans « lien expiré » / « connexion
- * impossible »). 'dark' : feuille sombre sur carte claire, comme les écrans du livreur et de l'entreprise ;
- * 'light' : feuille blanche. L'écran de chargement reste clair dans les deux cas (suite de l'écran de démarrage
- * du HTML, public/index.html).
+ * Thème de la page publique de suivi (destinataire, /suivi/<jeton>). Cobalt n'a qu'un rendu, clair : feuille blanche,
+ * carte Cobalt, code en tuile cobalt, montant en tuile soleil. Gardé pour les écrans qui le transmettent encore aux
+ * éléments de suivi (@deprecated : leur prop `theme` n'a plus d'effet).
  */
-export const RECIPIENT_SHEET_THEME: TrackingTheme = 'dark';
+export const RECIPIENT_SHEET_THEME: TrackingTheme = 'light';

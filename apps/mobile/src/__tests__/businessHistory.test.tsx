@@ -30,8 +30,8 @@ describe('Historique de l’entreprise', () => {
     // Détail de la livraison : « Encaissé auprès du destinataire 16 500 FCFA » (amountsToCollect) ; plus 15 000.
     expect(r.getByTestId('history-collected-h-1')).toHaveTextContent(/^Encaissé auprès du destinataire/);
     expect(r.getByTestId('history-collected-h-1-value')).toHaveTextContent('16 500 FCFA');
-    // Carte de colis : destinataire, état « LIVRÉE », date et frais (payés par le destinataire).
-    expect(r.getByTestId('history-h-1')).toHaveTextContent(/LIVRÉE.*Awa Kaboré/);
+    // Carte de colis : destinataire, état « Livrée » (puce Cobalt en minuscules), date et frais (payés par le destinataire).
+    expect(r.getByTestId('history-h-1')).toHaveTextContent(/Livrée.*Awa Kaboré/);
     expect(r.getByTestId('history-h-1')).toHaveTextContent(/08\/11\/2026 14:51 · livraison 1\s500\sFCFA payée par le destinataire/);
     expect(r.getByText('1 livraison terminée')).toBeTruthy();
     expect(r.getByText(/Touchez une livraison pour revoir son détail/)).toBeTruthy();
@@ -43,7 +43,7 @@ describe('Historique de l’entreprise', () => {
     mockApi.listDeliveries.mockResolvedValueOnce({ items: [cancelled], total: 1, page: 1, pageSize: 20 });
     const r = await render(<BusinessHistoryScreen />);
     await waitFor(() => expect(r.getByTestId('history-h-2')).toBeTruthy());
-    expect(r.getByTestId('history-h-2')).toHaveTextContent(/ANNULÉE.*Motif : Annulée par l’entreprise/);
+    expect(r.getByTestId('history-h-2')).toHaveTextContent(/Annulée.*Motif : Annulée par l’entreprise/);
     expect(r.queryByTestId('history-collected-h-2')).toBeNull();
     r.unmount();
     mockApi.listDeliveries.mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 });

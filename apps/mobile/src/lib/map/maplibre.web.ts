@@ -1,6 +1,7 @@
 import type { GeoJSONSource, Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import type { MapTheme } from '../../components/map/types';
-import { MAP_PALETTES, mapThemeConfig, MAX_PIXEL_RATIO } from './style';
+import { CHEVRON_IMAGE_ID, CHEVRON_SPACING_PX, chevronImage } from './chevron';
+import { MAP_PALETTE, mapThemeConfig, MAX_PIXEL_RATIO, resolveMapStyleUrl } from './style';
 import { initialMapStyle, RemoteStyleLoader, sessionStyleCache, type StyleJson } from './styleLoader';
 
 /**
@@ -81,35 +82,36 @@ export interface BaseMapOptions {
   allowRotate?: boolean;
   /** Style prêt (secours au premier affichage, puis distant dès qu'il arrive) : (ré)ajouter les couches de l'application. */
   onStyleReady?: (map: MlMap, fallback: boolean) => void;
-  /** Fond de carte (clair par défaut) : choisit le style distant et le style de secours. */
+  /** @deprecated Plus de fond sombre : accepté, ignoré (fond Cobalt). */
   theme?: MapTheme;
-  /** Remplace l'URL du style distant du fond choisi. */
+  /** Remplace l'URL du style distant (défaut : style Cobalt, MAP_STYLE_URL). */
   styleUrl?: string;
 }
 
 export interface BaseMap {
   map: MlMap;
   usingFallback(): boolean;
-  /** Change de fond (style distant en cache ou secours aussitôt, puis style distant) ; sans effet si identique. */
+  /** @deprecated Plus de fond sombre : sans effet (une seule apparence, Cobalt). */
   setTheme(theme: MapTheme): void;
   destroy(): void;
 }
 
 /**
- * Crée une carte MapLibre affichée aussitôt avec le style distant déjà reçu pendant la session pour ce fond, sinon
- * avec le style de secours embarqué ; dans ce cas le style distant (OpenFreeMap « positron », ou « dark » pour un
- * fond sombre) est demandé en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué (setStyle) : la carte
- * n'y renonce jamais. Il n'est gardé en cache (et réutilisé par les cartes suivantes) qu'une fois chargé par MapLibre
- * (« style.load ») ; un style que MapLibre refuse (exception, ou erreur de validation à la place de « style.load »)
- * n'est pas gardé : la carte revient au style de secours, et la suivante redemandera le style distant. Densité de
- * pixels plafonnée à 2 ; rotation et inclinaison désactivées sauf pour le livreur ; taille suivie (ResizeObserver).
+ * Crée une carte MapLibre affichée aussitôt avec le style Cobalt déjà reçu pendant la session, sinon avec le style de
+ * secours embarqué ; dans ce cas le style Cobalt (`/map/cobalt-style.json`, ou EXPO_PUBLIC_MAP_STYLE_URL) est demandé
+ * en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué (setStyle) : la carte n'y renonce jamais. Il n'est
+ * gardé en cache (et réutilisé par les cartes suivantes) qu'une fois chargé par MapLibre (« style.load ») ; un style
+ * que MapLibre refuse (exception, ou erreur de validation à la place de « style.load ») n'est pas gardé : la carte
+ * revient au style de secours, et la suivante redemandera le style distant. Densité de pixels plafonnée à 2 ; rotation
+ * et inclinaison désactivées sauf pour le livreur ; taille suivie (ResizeObserver).
  */
 export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMapOptions): BaseMap {
   ensureMaplibreCoreCss();
   const allowRotate = opts.allowRotate === true;
-  let theme: MapTheme = opts.theme ?? 'light';
-  const urlFor = (t: MapTheme) => (t === (opts.theme ?? 'light') && opts.styleUrl ? opts.styleUrl : mapThemeConfig(t).styleUrl);
-  const first = initialMapStyle(urlFor(theme), mapThemeConfig(theme).fallback, sessionStyleCache);
+  const config = mapThemeConfig();
+  const url = opts.styleUrl ? resolveMapStyleUrl(opts.styleUrl) : config.styleUrl;
+  const fallbackStyle = config.fallback as unknown as StyleSpecification;
+  const first = initialMapStyle(url, config.fallback, sessionStyleCache);
   const map = new ml.Map({
     container,
     style: first.style as unknown as StyleSpecification,
@@ -133,40 +135,25 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
   let destroyed = false;
   let loader: RemoteStyleLoader | null = null;
   /** Style distant appliqué (setStyle) mais pas encore chargé par MapLibre : mis en cache à son « style.load ». */
-  let pending: { url: string; style: StyleJson } | null = null;
-  /** Style distant refusé par MapLibre : rien en cache, retour au style de secours du fond en cours. */
+  let pending: StyleJson | null = null;
+  /** Style distant refusé par MapLibre : rien en cache, retour au style de secours. */
   const rejectRemote = () => {
     pending = null;
     remote = false;
-    map.setStyle(mapThemeConfig(theme).fallback as unknown as StyleSpecification, { diff: false });
+    map.setStyle(fallbackStyle, { diff: false });
   };
   /** Idem, appelé pendant l'émission d'une erreur par MapLibre : le style de secours est appliqué juste après. */
   const rejectRemoteLater = () => {
     pending = null;
     remote = false;
-    const t = theme;
     setTimeout(() => {
-      if (!destroyed && !pending && t === theme && !remote) rejectRemote();
+      if (!destroyed && !pending && !remote) rejectRemote();
     }, 0);
-  };
-  /** Style distant du fond `t` : demandé (et redemandé) jusqu'à son arrivée, puis appliqué. */
-  const loadRemote = (t: MapTheme) => {
-    const url = urlFor(t);
-    loader = new RemoteStyleLoader(url, (style) => {
-      if (destroyed || t !== theme) return;
-      pending = { url, style };
-      try {
-        map.setStyle(style as unknown as StyleSpecification, { diff: false });
-      } catch {
-        rejectRemote();
-      }
-    });
-    loader.start();
   };
   map.on('style.load', () => {
     if (pending) {
-      // Style distant chargé : gardé pour les cartes suivantes (même fond), qui l'affichent aussitôt.
-      sessionStyleCache.set(pending.url, pending.style);
+      // Style distant chargé : gardé pour les cartes suivantes, qui l'affichent aussitôt.
+      sessionStyleCache.set(url, pending);
       pending = null;
       remote = true;
     }
@@ -177,7 +164,19 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
     // (tuiles ou sprites indisponibles après le chargement du style) sont ignorées : la carte reste utilisable.
     if (pending && !destroyed) rejectRemoteLater();
   });
-  if (!first.remote) loadRemote(theme);
+  if (!first.remote) {
+    // Style distant demandé (et redemandé) jusqu'à son arrivée, puis appliqué.
+    loader = new RemoteStyleLoader(url, (style) => {
+      if (destroyed) return;
+      pending = style;
+      try {
+        map.setStyle(style as unknown as StyleSpecification, { diff: false });
+      } catch {
+        rejectRemote();
+      }
+    });
+    loader.start();
+  }
 
   let observer: ResizeObserver | null = null;
   if (typeof ResizeObserver !== 'undefined') {
@@ -188,16 +187,8 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
   return {
     map,
     usingFallback: () => !remote,
-    setTheme(next) {
-      if (destroyed || next === theme) return;
-      theme = next;
-      loader?.dispose();
-      loader = null;
-      pending = null; // style distant de l'ancien fond, remplacé avant d'avoir été chargé
-      const s = initialMapStyle(urlFor(next), mapThemeConfig(next).fallback, sessionStyleCache);
-      remote = s.remote;
-      map.setStyle(s.style as unknown as StyleSpecification, { diff: false });
-      if (!s.remote) loadRemote(next);
+    setTheme() {
+      /* une seule apparence (Cobalt) : rien à changer */
     },
     destroy() {
       destroyed = true;
@@ -209,7 +200,7 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
 }
 
 /* ------------------------------------------------------------------ */
-/* Couches des itinéraires                                             */
+/* Couches des itinéraires et des zones                                */
 /* ------------------------------------------------------------------ */
 
 export const LINES_SOURCE = 'yaar-lines';
@@ -218,7 +209,7 @@ export const ZONES_SOURCE = 'yaar-zones';
 
 export type LineFeature = {
   type: 'Feature';
-  properties: { kind: 'route' | 'dashed' };
+  properties: { kind: 'route' | 'dashed' | 'pending' };
   geometry: { type: 'LineString'; coordinates: Array<[number, number]> };
 };
 
@@ -231,25 +222,32 @@ export type ZoneFeature = {
 const EMPTY = { type: 'FeatureCollection' as const, features: [] as LineFeature[] };
 const EMPTY_ZONES = { type: 'FeatureCollection' as const, features: [] as ZoneFeature[] };
 
-/** Premier calque de texte du style : l'itinéraire passe dessous pour garder les noms de rues lisibles. */
-function firstSymbolLayerId(map: MlMap): string | undefined {
-  return map.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
+/** Premier calque de texte du fond de carte (noms des quartiers) : les zones passent dessous, les tracés dessus. */
+function firstStyleSymbolLayerId(map: MlMap): string | undefined {
+  return map.getStyle().layers?.find((l) => l.type === 'symbol' && !l.id.startsWith('yaar-'))?.id;
 }
 
+/** Épaisseur selon le zoom : `at14` px au zoom 14 (vue d'un trajet), un peu moins vue de loin, un peu plus de près. */
+const width = (at14: number) => ['interpolate', ['linear'], ['zoom'], 10, at14 * 0.7, 14, at14, 17, at14 * 1.25] as const;
+
 /**
- * Ajoute (après chaque changement de style) les sources et les calques des zones et des itinéraires, aux couleurs
- * du fond de carte (`theme`, clair par défaut : couleurs d'origine).
+ * Calques Cobalt des zones et des tracés (après chaque changement de style), de bas en haut :
+ * - zones approximatives (sous les noms des quartiers) : cercle translucide, bord en tirets (cobalt : livraison ;
+ *   encre : retrait) ;
+ * - étape à venir (`pending`) : encre à 30 % en pointillés ronds ;
+ * - lignes droites (`dashed`) : cobalt en tirets de 2,5 px ;
+ * - itinéraire (`route`) : ombre douce, liseré blanc de 2 px, ligne cobalt de 6 px, petits chevrons blancs.
+ * `theme` est accepté pour compatibilité et ignoré.
  */
-export function ensureLineLayers(map: MlMap, theme: MapTheme = 'light'): void {
-  const c = MAP_PALETTES[theme];
+export function ensureLineLayers(map: MlMap, _theme?: MapTheme): void {
+  const c = MAP_PALETTE;
   if (!map.getSource(ZONES_SOURCE)) map.addSource(ZONES_SOURCE, { type: 'geojson', data: EMPTY_ZONES });
   if (!map.getSource(LINES_SOURCE)) map.addSource(LINES_SOURCE, { type: 'geojson', data: EMPTY });
-  const before = firstSymbolLayerId(map);
-  const isRoute = ['==', ['get', 'kind'], 'route'] as const;
-  const width = (min: number, max: number) => ['interpolate', ['linear'], ['zoom'], 10, min, 16, max] as const;
+  if (!map.hasImage(CHEVRON_IMAGE_ID)) map.addImage(CHEVRON_IMAGE_ID, chevronImage(2), { pixelRatio: 2 });
+  const belowLabels = firstStyleSymbolLayerId(map);
+  const isKind = (k: LineFeature['properties']['kind']) => ['==', ['get', 'kind'], k] as const;
   const byZone = (v: { pickup: string; dropoff: string }) => ['match', ['get', 'kind'], 'pickup', v.pickup, v.dropoff] as const;
-  const layers = [
-    // Zones d'abord : sous les tracés et les marqueurs.
+  const zones = [
     {
       id: 'yaar-zone-fill',
       type: 'fill' as const,
@@ -261,47 +259,76 @@ export function ensureLineLayers(map: MlMap, theme: MapTheme = 'light'): void {
       type: 'line' as const,
       source: ZONES_SOURCE,
       layout: { 'line-join': 'round' as const },
-      paint: { 'line-color': byZone(c.zoneStroke), 'line-width': 1.6, 'line-dasharray': [2.2, 1.8] },
+      paint: { 'line-color': byZone(c.zoneStroke), 'line-width': 1.5, 'line-dasharray': [3, 2.4] },
+    },
+  ];
+  const lines = [
+    {
+      id: 'yaar-pending',
+      type: 'line' as const,
+      source: LINES_SOURCE,
+      filter: isKind('pending'),
+      // Tirets de longueur nulle à extrémités rondes : des points de 2 px tous les 6 px.
+      layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
+      paint: { 'line-color': c.pending, 'line-width': 2, 'line-dasharray': [0, 3] },
     },
     {
       id: 'yaar-dashed',
       type: 'line' as const,
       source: LINES_SOURCE,
-      filter: ['==', ['get', 'kind'], 'dashed'],
-      layout: { 'line-cap': 'butt' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': c.dashed, 'line-width': width(2.5, 4), 'line-opacity': 0.8, 'line-dasharray': [2, 1.6] },
+      filter: isKind('dashed'),
+      layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
+      paint: { 'line-color': c.dashed, 'line-width': 2.5, 'line-dasharray': [2.4, 2.6] },
     },
     {
       id: 'yaar-route-shadow',
       type: 'line' as const,
       source: LINES_SOURCE,
-      filter: isRoute,
+      filter: isKind('route'),
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': c.shadow, 'line-width': width(9, 15), 'line-blur': 4, 'line-translate': [0, 1.5] },
+      paint: { 'line-color': c.shadow, 'line-width': width(10), 'line-blur': 3, 'line-translate': [0, 1.5] },
     },
     {
       id: 'yaar-route-casing',
       type: 'line' as const,
       source: LINES_SOURCE,
-      filter: isRoute,
+      filter: isKind('route'),
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': c.casing, 'line-width': width(7, 12) },
+      paint: { 'line-color': c.casing, 'line-width': width(10) },
     },
     {
       id: 'yaar-route',
       type: 'line' as const,
       source: LINES_SOURCE,
-      filter: isRoute,
+      filter: isKind('route'),
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': c.route, 'line-width': width(4, 7) },
+      paint: { 'line-color': c.route, 'line-width': width(6) },
+    },
+    {
+      id: 'yaar-route-chevrons',
+      type: 'symbol' as const,
+      source: LINES_SOURCE,
+      filter: isKind('route'),
+      // Vue de loin, l'itinéraire est trop court pour des chevrons lisibles.
+      minzoom: 12,
+      layout: {
+        'symbol-placement': 'line' as const,
+        'symbol-spacing': CHEVRON_SPACING_PX,
+        'icon-image': CHEVRON_IMAGE_ID,
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.8, 14, 1, 17, 1.2],
+        'icon-rotation-alignment': 'map' as const,
+        'icon-pitch-alignment': 'map' as const,
+        'icon-keep-upright': false,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-padding': 0,
+      },
     },
   ];
-  for (const layer of layers) {
-    if (!map.getLayer(layer.id)) {
-      // Les types de MapLibre n'acceptent pas les tableaux `as const` des expressions : cast local.
-      map.addLayer(layer as unknown as Parameters<MlMap['addLayer']>[0], before);
-    }
-  }
+  // Les types de MapLibre n'acceptent pas les tableaux `as const` des expressions : cast local.
+  type AnyLayer = Parameters<MlMap['addLayer']>[0];
+  for (const layer of zones) if (!map.getLayer(layer.id)) map.addLayer(layer as unknown as AnyLayer, belowLabels);
+  for (const layer of lines) if (!map.getLayer(layer.id)) map.addLayer(layer as unknown as AnyLayer);
 }
 
 export function setLineFeatures(map: MlMap, features: LineFeature[]): void {

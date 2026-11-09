@@ -1,7 +1,8 @@
 import { render } from '@testing-library/react-native';
-import { artToSvg, avatarInitials, vehicleSideGlyph } from './markerArt';
-import { avatarPinColor, avatarPinElement, setDriverHeading } from './markerDom.web';
-import { AVATAR_VIEW, AvatarPinView } from './MarkerViews';
+import { artToSvg, avatarInitials, HOUSE_GLYPH, STORE_GLYPH, vehicleSideGlyph } from './markerArt';
+import { avatarPinColor, avatarPinElement, driverElement, dropoffElement, MARKER_Z, PIN_BOX, pickupElement, setDriverHeading } from './markerDom.web';
+import { AVATAR_VIEW, AvatarPinView, DriverMarkerView, PickupMarkerView, PIN_VIEW } from './MarkerViews';
+import { resolveLines } from '../../lib/map/lines';
 import { radarRings, RADAR_PERIOD_MS } from '../../lib/map/radar';
 
 /** Élément DOM minimal (classList, style, premier enfant) pour tester le marqueur web sans navigateur. */
@@ -18,8 +19,8 @@ function fakeDriverElement() {
   return { el: el as unknown as HTMLElement, ring, classes };
 }
 
-describe('marqueur du livreur : pictogramme de profil, toujours droit', () => {
-  it.each(['MOTO', 'BIKE', 'CAR'] as const)('%s : deux roues, dessin blanc sur le disque vert, jamais tourné en bloc', (v) => {
+describe('marqueur du livreur : pictogramme de profil au trait, toujours droit', () => {
+  it.each(['MOTO', 'BIKE', 'CAR'] as const)('%s : deux roues au trait, blanc par défaut (pastilles pleines), jamais tourné en bloc', (v) => {
     const art = vehicleSideGlyph(v);
     expect(art.filter((s) => s.kind === 'circle')).toHaveLength(2);
     const svg = artToSvg(art, 26);
@@ -42,10 +43,37 @@ describe('marqueur du livreur : pictogramme de profil, toujours droit', () => {
     const svgs = (['MOTO', 'BIKE', 'CAR'] as const).map((v) => artToSvg(vehicleSideGlyph(v), 26));
     expect(new Set(svgs).size).toBe(3);
   });
+
+  it.each(['MOTO', 'BIKE', 'CAR'] as const)('%s : au trait (anneaux sans remplissage, traits ronds) dans la couleur demandée', (v) => {
+    const art = vehicleSideGlyph(v, '#2448FF');
+    for (const s of art) {
+      if (s.kind === 'circle') {
+        expect(s.stroke).toBe('#2448FF');
+        expect(s.fill).toBeUndefined();
+      } else {
+        expect(s.fill).toBe('#2448FF');
+        // Trait à extrémités rondes : rayon des coins = demi-épaisseur.
+        expect(s.r).toBeCloseTo(s.h / 2, 5);
+      }
+    }
+    expect(artToSvg(art, 22)).not.toContain('#FFFFFF');
+  });
+
+  it('boutique et maison au trait, blanches (sur le carré encre, sur la goutte cobalt), dans la boîte 24 × 24', () => {
+    for (const glyph of [STORE_GLYPH, HOUSE_GLYPH]) {
+      for (const s of glyph) {
+        if (s.kind === 'circle') continue;
+        expect(s.fill).toBe('#FFFFFF');
+        expect(s.x + s.w / 2).toBeGreaterThan(0);
+        expect(s.x + s.w / 2).toBeLessThan(24);
+        expect(s.y + s.h / 2).toBeLessThan(24);
+      }
+    }
+  });
 });
 
-describe('chevron de cap (web) : seul élément qui tourne', () => {
-  it('cap connu : chevron affiché et tourné ; inconnu ou livreur arrêté : masqué', () => {
+describe('encoche de cap (web) : seul élément qui tourne', () => {
+  it('cap connu : encoche affichée et tournée ; inconnu ou livreur arrêté : masquée', () => {
     const { el, ring, classes } = fakeDriverElement();
     setDriverHeading(el, 38.26);
     expect(classes.has('no-heading')).toBe(false);
@@ -135,33 +163,97 @@ function withFakeDocument<T>(run: () => T): T {
   }
 }
 
-describe('épingle « avatar » (web)', () => {
-  it('initiales en texte (jamais en HTML), couleur du type, type pour les tests de bout en bout', () => {
-    const el = withFakeDocument(() => avatarPinElement('dropoff', '<b>AK</b>', true, 'Awa Kaboré')) as unknown as {
-      className: string;
-      dataset: Record<string, string>;
-      innerHTML: string;
-      title: string;
-      children: Array<{ className: string; textContent: string; innerHTML: string; style: Record<string, string> }>;
-    };
-    expect(el.className).toContain('yaar-avatar');
+describe('marqueurs web Cobalt', () => {
+  type FakeNode = {
+    className: string;
+    dataset: Record<string, string>;
+    innerHTML: string;
+    title: string;
+    textContent: string;
+    style: Record<string, string>;
+    attrs: Record<string, string>;
+    children: FakeNode[];
+  };
+  const build = <T,>(run: () => T) => withFakeDocument(run) as unknown as FakeNode;
+
+  it('destinataire : goutte cobalt cerclée de blanc, initiales en texte (jamais en HTML), halo pulsé', () => {
+    const el = build(() => avatarPinElement('dropoff', '<b>AK</b>', true, 'Awa Kaboré'));
+    expect(el.className).toContain('yaar-dropoff');
     expect(el.dataset.kind).toBe('dropoff');
     expect(el.dataset.avatar).toBe('1');
     expect(el.title).toBe('Awa Kaboré');
-    const [pin, text] = el.children;
-    expect(pin?.style.background).toBe(avatarPinColor('dropoff'));
-    expect(text?.textContent).toBe('<b>');
-    expect(text?.innerHTML).toBe('');
     expect(el.innerHTML).toContain('yaar-pulse');
-    expect(avatarPinColor('pickup')).not.toBe(avatarPinColor('dropoff'));
+    expect(el.innerHTML).toContain(`fill="${avatarPinColor('dropoff')}" stroke="#fff" stroke-width="2.5"`);
+    const [content] = el.children;
+    expect(content?.className).toBe('yaar-pin-content');
+    expect(content?.children[0]?.textContent).toBe('<b>');
+    expect(content?.innerHTML).toBe('');
+    expect(avatarPinColor('dropoff')).toBe('#2448FF');
+  });
+
+  it('destinataire sans initiales : goutte à maison ; sans livraison en cours : pas de halo', () => {
+    const el = build(() => dropoffElement(false, 'Vous'));
+    expect(el.dataset.avatar).toBeUndefined();
+    expect(el.innerHTML).not.toContain('yaar-pulse');
+    expect(el.children[0]?.innerHTML).toContain('<svg');
+    expect(PIN_BOX.tipY).toBeGreaterThan(PIN_BOX.height - 2);
+  });
+
+  it('entreprise : carré encre à ses initiales (ou boutique), radar cobalt pendant la recherche', () => {
+    const el = build(() => pickupElement(true, 'Le Verdoyant', 'LV'));
+    expect(el.className).toContain('yaar-pickup');
+    expect(el.dataset.kind).toBe('pickup');
+    expect(el.dataset.avatar).toBe('1');
+    expect(el.innerHTML.match(/class="yaar-radar( d\d)?"/g)).toHaveLength(3);
+    expect(el.innerHTML).toContain('yaar-radar-glow');
+    const [square] = el.children;
+    expect(square?.className).toBe('yaar-pickup-box');
+    expect(square?.children[0]?.textContent).toBe('LV');
+    expect(avatarPinColor('pickup')).toBe('#0C1222');
+    // Avec initiales via avatarPinElement : le même carré (plus d'épingle pour l'entreprise).
+    expect(build(() => avatarPinElement('pickup', 'PC', false)).className).toContain('yaar-pickup');
+    const plain = build(() => pickupElement(false));
+    expect(plain.innerHTML).toBe('');
+    expect(plain.children[0]?.innerHTML).toContain('<svg');
+  });
+
+  it('livreur : disque blanc, véhicule cobalt, encoche cobalt cachée tant que le cap est inconnu ; variante Sun', () => {
+    const el = build(() => driverElement('BIKE', 'Issouf'));
+    expect(el.className).toBe('yaar-mk yaar-driver no-heading');
+    expect(el.dataset.vehicle).toBe('BIKE');
+    expect(el.innerHTML).toContain('yaar-driver-heading');
+    expect(el.innerHTML).toContain('fill="#2448FF" stroke="#fff"');
+    const sun = build(() => driverElement('MOTO', 'Karim', 'sun'));
+    expect(sun.className).toContain('is-sun');
+    expect(sun.innerHTML).toContain('fill="#E0A400"');
+    expect(sun.innerHTML).toContain('#0C1222');
+    expect(MARKER_Z).toEqual({ pickup: 2, dropoff: 3, driver: 4 });
   });
 });
 
-describe('épingle « avatar » (natif)', () => {
-  it('pointe au bas de la vue, initiales affichées', async () => {
-    expect(AVATAR_VIEW.tipY).toBeCloseTo(4 + 20 + 20 * Math.SQRT2, 1);
+describe('marqueurs natifs Cobalt', () => {
+  it('goutte : pointe au bas de la vue, même géométrie avec ou sans initiales', async () => {
+    expect(AVATAR_VIEW.tipY).toBeCloseTo(3 + 18 + 18 * Math.SQRT2, 5);
     expect(AVATAR_VIEW.tipY).toBeLessThan(AVATAR_VIEW.height);
-    const r = await render(<AvatarPinView initials="PC" color="#F28C1B" />);
-    expect(r.getByText('PC')).toBeTruthy();
+    expect(PIN_VIEW).toBe(AVATAR_VIEW);
+    const r = await render(<AvatarPinView initials="AK" pulse />);
+    expect(r.getByText('AK')).toBeTruthy();
+  });
+
+  it('entreprise à ses initiales, livreur (blanc ou Sun)', async () => {
+    const r = await render(<PickupMarkerView searching initials="LV" />);
+    expect(r.getByText('LV')).toBeTruthy();
+    const d = await render(<DriverMarkerView vehicleType="CAR" tone="sun" />);
+    expect(d.toJSON()).toBeTruthy();
+  });
+});
+
+describe('étape à venir (`pending`)', () => {
+  it('dessinée telle quelle, sans rognage', () => {
+    const pts = [
+      { lat: 12.36, lng: -1.52 },
+      { lat: 12.34, lng: -1.51 },
+    ];
+    expect(resolveLines([{ id: 'n', kind: 'pending', points: pts }], () => ({ lat: 0, lng: 0 }))).toEqual([{ id: 'n', kind: 'pending', points: pts }]);
   });
 });

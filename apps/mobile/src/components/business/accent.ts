@@ -1,8 +1,8 @@
-import { colors } from '../../theme';
+import { palette } from '../../theme';
 
-/** Accent de l'espace Entreprise : l'orange de marque (onglets, « Nouvelle livraison », étapes du parcours). */
-export const BUSINESS_ACCENT = colors.orange;
-/** Texte et pictogrammes posés sur l'orange (contraste 7,6:1 ; le blanc n'en a que 2,4:1). */
-export const ORANGE_INK = '#1F1300';
-/** Texte orange sur fond blanc (6:1 ; l'orange de marque n'a que 2,5:1 sur blanc) : boutons discrets, titres. */
-export const ORANGE_TEXT = '#9A4F00';
+/** Accent de l'espace Entreprise : le cobalt de Cobalt (onglet actif, « Nouvelle livraison », étapes du parcours). */
+export const BUSINESS_ACCENT = palette.cobalt;
+/** Texte et pictogrammes posés sur l'accent : blanc (6,09:1 sur cobalt). Nom d'origine gardé (l'accent était orange). */
+export const ORANGE_INK = palette.onCobalt;
+/** Texte de l'accent sur fond blanc : cobalt (6,09:1 ; 5,26:1 sur canvas). Nom d'origine gardé. */
+export const ORANGE_TEXT = palette.cobalt;

@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import * as Location from 'expo-location';
 import { errorMessage } from '../lib/api';
 import { onlineStatus } from '../lib/driverStatus';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { colors, dark, MIN_TOUCH, spacing } from '../theme';
+import { MIN_TOUCH, palette, shadows, spacing } from '../theme';
 import { confirmAsync, notify } from '../lib/dialog';
 import { Pill } from './design/Pill';
 import { RoundButton } from './design/RoundButton';
 
-const STATUS_DOT = { on: dark.green, pending: dark.amber, paused: dark.amber, off: '#8E9A94' } as const;
+/** Point d'état : vert (suivi actif), soleil (en attente, en pause), gris (hors ligne). */
+const STATUS_DOT = { on: palette.mint, pending: palette.sun, paused: palette.sun, off: '#9AA3B2' } as const;
 
 /**
- * Indicateur légal permanent « En ligne : suivi GPS actif » / « Hors ligne : position non suivie » (pastille sombre
- * posée sur la carte), avec l'éventuelle erreur du GPS. Le suivi n'existe que lorsque le livreur est en ligne.
+ * Indicateur légal permanent « En ligne : suivi GPS actif » / « Hors ligne : position non suivie » (pastille blanche
+ * posée sur la carte, point d'état coloré), avec l'éventuelle erreur du GPS. Le suivi n'existe que lorsque le livreur est en ligne.
  */
 export function OnlineStatusPill() {
   const { profile, gpsActive, gpsPaused, gpsError } = useDriver();
@@ -131,7 +133,7 @@ export function SosButton({ size = 64 }: { size?: number }) {
       accessibilityRole="button"
       accessibilityLabel="SOS, alerter les contrôleurs"
       hitSlop={touchPad || undefined}
-      style={[styles.sos, { width: size, height: size, borderRadius: size / 2 }, busy && { opacity: 0.6 }]}
+      style={({ pressed }) => [styles.sos, shadows.float, { width: size, height: size, borderRadius: size / 2 }, busy && { opacity: 0.6 }, pressed && { opacity: 0.88 }]}
       onPress={() =>
         void confirmAsync({
           title: 'Envoyer un SOS ?',
@@ -156,30 +158,26 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 13, letterSpacing: 0 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   gpsError: {
-    color: '#FFFFFF',
-    // Opaque : blanc sur #C62F2F = 5,5:1 quel que soit le fond de carte dessous (rouge translucide : 4,2:1).
-    backgroundColor: '#C62F2F',
+    color: palette.white,
+    // Opaque : blanc sur coralFill = 4,8:1 quel que soit le fond de carte dessous.
+    backgroundColor: palette.coralFill,
     fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    paddingVertical: 4,
     overflow: 'hidden',
   },
   sos: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.red,
+    backgroundColor: palette.coralFill,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 3,
+    borderColor: palette.white,
   },
-  sosText: { color: colors.white, fontWeight: '900', fontSize: 18 },
+  sosText: { color: palette.white, fontWeight: '800', fontSize: 17, letterSpacing: 0.4 },
 });

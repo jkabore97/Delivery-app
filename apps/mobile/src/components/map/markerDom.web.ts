@@ -1,4 +1,6 @@
 import type { VehicleType } from '@yaar/shared';
+import { fontFor } from '../../fonts';
+import { COBALT_MAP, MARKER_SHADOW, rgba } from '../../lib/map/palette';
 import { MAP_COLORS } from '../../lib/map/style';
 import { artToSvg, HOUSE_GLYPH, STORE_GLYPH, vehicleSideGlyph } from './markerArt';
 
@@ -6,46 +8,59 @@ import { artToSvg, HOUSE_GLYPH, STORE_GLYPH, vehicleSideGlyph } from './markerAr
  * Ne jamais fixer `position` sur l'élément racine d'un marqueur : MapLibre le place avec
  * `.maplibregl-marker { position: absolute }` (une règle de même spécificité injectée après l'écraserait).
  *
- * Marqueurs HTML des cartes MapLibre (web), mêmes formes que la console : entreprise (carré orange), destinataire
- * (épingle verte pulsée), livreur (disque vert cerclé de blanc, véhicule de profil toujours droit, petit chevron
- * séparé sur l'anneau orienté selon le cap, masqué à l'arrêt), radar « recherche d'un livreur ». En option
- * (`initials` d'un marqueur) : épingle « avatar » aux initiales du destinataire ou de l'entreprise.
+ * Marqueurs HTML « Cobalt » des cartes MapLibre (web) :
+ * - entreprise / retrait : carré encre arrondi cerclé de blanc, initiales blanches (ou boutique), radar cobalt doux
+ *   pendant la recherche d'un livreur ;
+ * - destinataire : goutte cobalt cerclée de blanc, initiales blanches (ou maison), halo pulsé sous la pointe ;
+ * - livreur : disque blanc, véhicule cobalt de profil toujours droit, petite encoche de cap sur le bord (masquée à
+ *   l'arrêt) ; variante Sun (`tone: 'sun'`) pour un livreur en route vers l'entreprise, vu par l'entreprise.
+ * Mêmes formes que les marqueurs natifs (MarkerViews.tsx) et que la console.
  */
+
+/** Police des initiales : celle de l'application (src/fonts.ts), puis celle du système. */
+const FONT = `${JSON.stringify(fontFor(800))}, system-ui, sans-serif`;
+const C = COBALT_MAP;
+
+/** Goutte du destinataire (36 × 46) : cercle de rayon 15,5 centré en (18, 18), pointe en (18, 44,6). */
+export const PIN_BOX = { width: 36, height: 46, tipY: 44.6 } as const;
+const PIN_PATH = 'M18 44.6 5.4 27.03A15.5 15.5 0 1 1 30.6 27.03Z';
+/**
+ * Encoche de cap (boîte 60 × 60 centrée sur le disque de 38) : pointe à 27,6 px du centre (8,6 px hors du disque),
+ * base de 14,4 px cachée sous le disque : plus large que l'itinéraire de 6 px, elle se lit comme une flèche même
+ * posée sur lui.
+ */
+const NOTCH_PATH = 'M30 2.4 37.2 12.6C33.4 11.4 26.6 11.4 22.8 12.6Z';
+
 const CSS = `
-.yaar-mk{cursor:default;-webkit-tap-highlight-color:transparent}
+.yaar-mk{cursor:default;-webkit-tap-highlight-color:transparent;font-family:${FONT};font-weight:800}
 .yaar-mk svg{display:block}
-.yaar-pickup{width:38px;height:38px;border-radius:12px;background:${MAP_COLORS.pickup};border:3px solid #fff;box-sizing:border-box;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(15,46,34,.32),0 1px 2px rgba(15,46,34,.2);position:relative;z-index:2}
-.yaar-radar{position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;
-  background:rgba(242,140,27,.28);border:2px solid rgba(242,140,27,.55);box-sizing:border-box;pointer-events:none;z-index:1;
-  animation:yaar-radar 2.7s cubic-bezier(.2,.6,.35,1) infinite}
-.yaar-radar.d2{animation-delay:.9s}.yaar-radar.d3{animation-delay:1.8s}
-@keyframes yaar-radar{0%{transform:scale(1);opacity:.8}100%{transform:scale(4.2);opacity:0}}
-.yaar-dropoff{width:40px;height:42px}
-.yaar-pin{position:absolute;left:3px;top:0;width:34px;height:34px;border-radius:50% 50% 50% 0;background:${MAP_COLORS.dropoff};
-  border:3px solid #fff;box-sizing:border-box;transform:rotate(-45deg);box-shadow:-2px 3px 10px rgba(15,46,34,.32);z-index:2}
-.yaar-pin-glyph{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;transform:rotate(45deg)}
-.yaar-pin-dot{position:absolute;left:50%;bottom:1px;width:8px;height:4px;margin-left:-4px;border-radius:50%;background:rgba(15,46,34,.35)}
-.yaar-pulse{position:absolute;left:50%;bottom:-7px;width:16px;height:16px;margin-left:-8px;border-radius:50%;
-  background:rgba(11,122,75,.32);pointer-events:none;z-index:1;animation:yaar-pulse 2.2s ease-out infinite}
-@keyframes yaar-pulse{0%{transform:scale(.6);opacity:.95}100%{transform:scale(3.4);opacity:0}}
-.yaar-driver{width:44px;height:44px}
-.yaar-driver-disc{position:absolute;inset:0;border-radius:50%;background:${MAP_COLORS.driver};border:3px solid ${MAP_COLORS.driverRing};
-  box-sizing:border-box;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(15,46,34,.36),0 0 0 1px rgba(15,46,34,.08);z-index:2}
+.yaar-initials{color:#fff;font-size:12.5px;line-height:1;letter-spacing:.02em;white-space:nowrap;user-select:none;pointer-events:none}
+.yaar-pickup{width:36px;height:36px}
+.yaar-pickup-box{position:absolute;inset:0;z-index:2;border-radius:12px;background:${C.ink};border:2.5px solid #fff;box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px ${rgba(C.ink, 0.25)},0 8px 16px ${rgba(C.ink, 0.12)}}
+.yaar-radar-glow{position:absolute;left:50%;top:50%;width:132px;height:132px;margin:-66px 0 0 -66px;border-radius:50%;pointer-events:none;z-index:0;
+  background:radial-gradient(closest-side,${rgba(C.cobalt, 0.2)},${rgba(C.cobalt, 0.08)} 55%,${rgba(C.cobalt, 0)})}
+.yaar-radar{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;box-sizing:border-box;
+  border:1.5px solid ${rgba(C.cobalt, 0.5)};background:${rgba(C.cobalt, 0.06)};pointer-events:none;z-index:1;
+  animation:yaar-radar 3s cubic-bezier(.25,.6,.4,1) infinite}
+.yaar-radar.d2{animation-delay:1s}.yaar-radar.d3{animation-delay:2s}
+@keyframes yaar-radar{0%{transform:scale(.9);opacity:0}12%{opacity:1}100%{transform:scale(3.3);opacity:0}}
+.yaar-dropoff{width:${PIN_BOX.width}px;height:${PIN_BOX.height}px}
+.yaar-pin{position:absolute;left:0;top:0;z-index:2;filter:${MARKER_SHADOW.pin}}
+.yaar-pin-content{position:absolute;left:0;top:0;width:36px;height:36px;z-index:3;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.yaar-pin-dot{position:absolute;left:50%;bottom:-2px;width:10px;height:4px;margin-left:-5px;border-radius:50%;background:${rgba(C.ink, 0.28)};z-index:1}
+.yaar-pulse{position:absolute;left:50%;bottom:-7px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:${rgba(C.cobalt, 0.35)};
+  pointer-events:none;z-index:1;animation:yaar-pulse 2.4s ease-out infinite}
+@keyframes yaar-pulse{0%{transform:scale(.5);opacity:.95}100%{transform:scale(3.2);opacity:0}}
+.yaar-driver{width:38px;height:38px}
 .yaar-driver-heading{position:absolute;inset:-11px;pointer-events:none;z-index:1}
-.yaar-driver-chevron{position:absolute;left:50%;top:0;width:16px;height:12px;margin-left:-8px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+.yaar-driver-heading svg{filter:drop-shadow(0 1px 1px ${rgba(C.ink, 0.22)})}
+.yaar-driver-disc{position:absolute;inset:0;z-index:2;border-radius:50%;background:#fff;border:2.5px solid #fff;box-sizing:border-box;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px ${rgba(C.ink, 0.04)},${MARKER_SHADOW.float}}
+.yaar-driver.is-sun .yaar-driver-disc{background:${C.sun}}
 .yaar-driver.no-heading .yaar-driver-heading{display:none}
-.yaar-avatar{width:48px;height:49px}
-.yaar-avatar-pin{position:absolute;left:4px;top:0;width:40px;height:40px;border-radius:50% 50% 50% 0;border:3px solid #fff;
-  box-sizing:border-box;transform:rotate(-45deg);box-shadow:-2px 3px 10px rgba(15,46,34,.34);z-index:2}
-.yaar-avatar-text{position:absolute;left:4px;top:0;width:40px;height:40px;display:flex;align-items:center;justify-content:center;
-  color:#fff;font:900 15px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.3px;
-  z-index:3;pointer-events:none;user-select:none}
 @media (prefers-reduced-motion: reduce){.yaar-radar,.yaar-pulse{animation:none;opacity:.35}}
 `;
-
-/** Chevron de cap : pointe vers le haut (nord de l'élément), vert à liseré blanc. */
-const CHEVRON_SVG = `<svg class="yaar-driver-chevron" viewBox="0 0 16 12" aria-hidden="true" focusable="false"><path d="M1.2 10.8 8 1.2l6.8 9.6L8 8.2Z" fill="${MAP_COLORS.driver}" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 
 let injected = false;
 
@@ -74,60 +89,90 @@ function wrap(className: string, kind: keyof typeof MARKER_Z, title?: string): H
   return el;
 }
 
-export function pickupElement(pulse: boolean, title?: string): HTMLDivElement {
+/**
+ * Contenu d'un carré ou d'une goutte : initiales en texte (jamais en HTML : un nom saisi par l'utilisateur ne peut
+ * pas injecter de balises), sinon le pictogramme.
+ */
+function contentBox(className: string, initials: string | null | undefined, glyphSvg: string): HTMLDivElement {
+  const box = document.createElement('div');
+  box.className = className;
+  if (initials) {
+    const text = document.createElement('span');
+    text.className = 'yaar-initials';
+    text.textContent = initials.slice(0, 3);
+    box.appendChild(text);
+  } else {
+    box.innerHTML = glyphSvg;
+  }
+  return box;
+}
+
+/**
+ * Entreprise / retrait : carré encre arrondi cerclé de blanc, initiales blanches (`initials`) ou boutique ; radar
+ * cobalt doux (`pulse`) pendant la recherche d'un livreur.
+ */
+export function pickupElement(pulse: boolean, title?: string, initials?: string | null): HTMLDivElement {
   ensureMarkerCss();
-  const el = wrap('', 'pickup', title);
-  const radar = pulse ? '<div class="yaar-radar"></div><div class="yaar-radar d2"></div><div class="yaar-radar d3"></div>' : '';
-  el.innerHTML = `${radar}<div class="yaar-pickup">${artToSvg(STORE_GLYPH, 22)}</div>`;
+  const el = wrap('yaar-pickup', 'pickup', title);
+  if (initials) el.dataset.avatar = '1';
+  const radar = pulse
+    ? '<div class="yaar-radar-glow"></div><div class="yaar-radar"></div><div class="yaar-radar d2"></div><div class="yaar-radar d3"></div>'
+    : '';
+  el.innerHTML = radar;
+  el.appendChild(contentBox('yaar-pickup-box', initials, artToSvg(STORE_GLYPH, 20)));
   return el;
 }
 
-export function dropoffElement(pulse: boolean, title?: string): HTMLDivElement {
+/**
+ * Destinataire : goutte cobalt cerclée de blanc dont la pointe touche la position (ancre `bottom`), initiales blanches
+ * (`initials`) ou maison ; halo pulsé sous la pointe (`pulse`, livraison en cours).
+ */
+export function dropoffElement(pulse: boolean, title?: string, initials?: string | null): HTMLDivElement {
   ensureMarkerCss();
   const el = wrap('yaar-dropoff', 'dropoff', title);
-  el.innerHTML = `${pulse ? '<div class="yaar-pulse"></div>' : ''}<div class="yaar-pin-dot"></div><div class="yaar-pin"><div class="yaar-pin-glyph">${artToSvg(HOUSE_GLYPH, 20)}</div></div>`;
+  if (initials) el.dataset.avatar = '1';
+  const svg =
+    `<svg class="yaar-pin" width="${PIN_BOX.width}" height="${PIN_BOX.height}" viewBox="0 0 ${PIN_BOX.width} ${PIN_BOX.height}" aria-hidden="true" focusable="false">` +
+    `<path d="${PIN_PATH}" fill="${MAP_COLORS.dropoff}" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+  el.innerHTML = `${pulse ? '<div class="yaar-pulse"></div>' : ''}<div class="yaar-pin-dot"></div>${svg}`;
+  el.appendChild(contentBox('yaar-pin-content', initials, artToSvg(HOUSE_GLYPH, 16)));
   return el;
 }
 
-/** Couleur de l'épingle « avatar » selon le type : orange pour l'entreprise (retrait), vert pour le destinataire. */
+/** Couleur du marqueur à initiales selon le type : encre pour l'entreprise (retrait), cobalt pour le destinataire. */
 export function avatarPinColor(kind: 'pickup' | 'dropoff'): string {
   return kind === 'pickup' ? MAP_COLORS.pickup : MAP_COLORS.dropoff;
 }
 
 /**
- * Épingle « avatar » : initiales (blanches) dans un disque de la couleur du type, cerclé de blanc, dont la pointe
- * touche la position (ancre `bottom` : la pointe est à 48,3 px du haut d'un élément de 49 px). Destinataire : halo
- * pulsé sous la pointe si `pulse`.
+ * Marqueur à initiales : carré encre de l'entreprise (ancre `center`) ou goutte cobalt du destinataire (ancre
+ * `bottom`) ; halo pulsé du destinataire si `pulse`.
  */
 export function avatarPinElement(kind: 'pickup' | 'dropoff', initials: string, pulse: boolean, title?: string): HTMLDivElement {
-  ensureMarkerCss();
-  const el = wrap('yaar-avatar', kind, title);
-  el.dataset.avatar = '1';
-  const pin = document.createElement('div');
-  pin.className = 'yaar-avatar-pin';
-  pin.style.background = avatarPinColor(kind);
-  const text = document.createElement('div');
-  text.className = 'yaar-avatar-text';
-  // textContent (jamais innerHTML) : un nom saisi par l'utilisateur ne peut pas injecter de HTML.
-  text.textContent = initials.slice(0, 3);
-  el.innerHTML = `${pulse ? '<div class="yaar-pulse"></div>' : ''}<div class="yaar-pin-dot"></div>`;
-  el.appendChild(pin);
-  el.appendChild(text);
-  return el;
+  return kind === 'pickup' ? pickupElement(pulse, title, initials) : dropoffElement(pulse, title, initials);
 }
 
-/** Livreur : disque vert, véhicule de profil droit ; chevron de cap masqué tant que le cap n'est pas connu. */
-export function driverElement(vehicle: VehicleType, title?: string): HTMLDivElement {
+/**
+ * Livreur : disque blanc (Sun avec `tone: 'sun'`), véhicule de profil droit ; encoche de cap masquée tant que le cap
+ * n'est pas connu. Le premier enfant est l'anneau de l'encoche (seul élément tourné, voir setDriverHeading).
+ */
+export function driverElement(vehicle: VehicleType, title?: string, tone?: 'sun'): HTMLDivElement {
   ensureMarkerCss();
-  const el = wrap('yaar-driver no-heading', 'driver', title);
+  const sun = tone === 'sun';
+  const el = wrap(`yaar-driver no-heading${sun ? ' is-sun' : ''}`, 'driver', title);
   el.dataset.vehicle = vehicle;
-  el.innerHTML = `<div class="yaar-driver-heading">${CHEVRON_SVG}</div><div class="yaar-driver-disc">${artToSvg(vehicleSideGlyph(vehicle), 26)}</div>`;
+  const notch = sun ? MAP_COLORS.driverSunNotch : MAP_COLORS.driverGlyph;
+  const glyph = sun ? MAP_COLORS.driverSunInk : MAP_COLORS.driverGlyph;
+  el.innerHTML =
+    '<div class="yaar-driver-heading">' +
+    `<svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true" focusable="false"><path d="${NOTCH_PATH}" fill="${notch}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>` +
+    `</div><div class="yaar-driver-disc">${artToSvg(vehicleSideGlyph(vehicle, glyph, sun ? C.sun : C.white), 22)}</div>`;
   return el;
 }
 
 /**
- * Oriente le chevron de cap (rotation à l'écran, en degrés) ; null = cap inconnu ou livreur arrêté : pas de chevron.
- * Seul le chevron tourne, jamais le pictogramme.
+ * Oriente l'encoche de cap (rotation à l'écran, en degrés) ; null = cap inconnu ou livreur arrêté : pas d'encoche.
+ * Seule l'encoche tourne, jamais le pictogramme.
  */
 export function setDriverHeading(el: HTMLElement, screenDeg: number | null): void {
   const ring = el.firstElementChild as HTMLElement | null;

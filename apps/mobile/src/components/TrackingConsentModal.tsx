@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import {
   TRACKING_CONSENT_ACCEPT,
   TRACKING_CONSENT_INTRO,
@@ -7,7 +8,7 @@ import {
   TRACKING_CONSENT_TITLE,
 } from '../lib/consent';
 import { useDriver } from '../state/driver';
-import { colors, spacing, MAX_APP_WIDTH, SHEET_RADIUS } from '../theme';
+import { colors, spacing, MAX_APP_WIDTH, palette, SHEET_RADIUS } from '../theme';
 import { Icon } from './design/Icon';
 import { Banner, Button, Muted, Subtitle } from './ui';
 
@@ -76,7 +77,7 @@ export function TrackingConsentModal() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  backdrop: { flex: 1, backgroundColor: palette.overlay, justifyContent: 'flex-end' },
   sheet: {
     // Sur le web, la fenêtre modale couvre tout l'écran : la feuille garde la largeur de l'application.
     width: '100%',

@@ -8,8 +8,8 @@ d'audit. Interface en français, montants en FCFA. Maquette de référence : `do
 L'ancien parcours de commande client (repas, produits, panier) est abandonné : ses commandes restent lisibles
 (articles affichés seulement pour elles).
 
-Stack : React 19 + Vite 8 + TypeScript strict, react-router 7, MapLibre GL JS 5 (style OpenFreeMap « positron »,
-chargé à la demande), socket.io-client 4, `@yaar/shared` (types, enums, libellés, schémas zod, calcul de prix,
+Stack : React 19 + Vite 8 + TypeScript strict, react-router 7, MapLibre GL JS 5 (fond « Cobalt », OpenFreeMap
+recoloré, chargé à la demande), socket.io-client 4, `@yaar/shared` (types, enums, libellés, schémas zod, calcul de prix,
 géométrie des cartes `map.ts`).
 Contrat d'API : [`docs/API.md`](../../docs/API.md).
 
@@ -42,23 +42,31 @@ Seuls les comptes `CONTROLLER` et `ADMIN` sont acceptés ; les autres rôles son
 | `npm run preview` | sert le build |
 
 Configuration (variables Vite, lues au build) : `VITE_API_URL`, URL de l'API REST et Socket.IO ; facultatif
-`VITE_MAP_STYLE_URL` (style MapLibre, défaut `https://tiles.openfreemap.org/styles/positron`) et `VITE_MAP_ATTRIBUTION`
+`VITE_MAP_STYLE_URL` (style MapLibre, défaut `/map/cobalt-style.json`, le fond Cobalt servi par la console) et `VITE_MAP_ATTRIBUTION`
 (mention des données pour un autre style). En production, mettre l'origine de la console dans `CORS_ORIGINS` côté API.
 
 ## Cartes (MapLibre)
 
-Même apparence que l'application mobile (`apps/mobile/src/lib/map`, `components/map`) : style vectoriel gratuit
-OpenFreeMap « positron » ; s'il échoue ou n'est pas chargé après 6 s, **fond de secours embarqué** (fond clair, noms
-des quartiers de Ouagadougou ; marqueurs et itinéraires toujours affichés) et mention « Fond de carte indisponible ».
-Mention des données toujours visible. MapLibre (≈ 1 Mo, 275 Ko gzip, + 10 Ko de CSS) est un bloc séparé chargé par la
-première carte affichée (`src/lib/map/engine.ts` → `maplibreModule.ts`) : l'écran de connexion ne le télécharge pas.
+Même apparence que l'application mobile (`apps/mobile/src/lib/map`, `components/map`) : fond « Cobalt », OpenFreeMap
+« positron » recoloré (terre `#F3F5F8`, eau `#A9C9FF`, parcs `#D6EEDC`, rues blanches, grands axes jaunes, noms des
+quartiers seulement), style statique servi par la console : `public/map/cobalt-style.json` → `/map/cobalt-style.json`
+(copie de celui de l'application mobile ; tuiles et polices de `tiles.openfreemap.org`, gratuit, sans clé). S'il échoue
+ou n'est pas chargé après 6 s, **fond de secours embarqué** (terre Cobalt unie, noms des quartiers de Ouagadougou ;
+marqueurs et itinéraires toujours affichés) et mention « Fond de carte indisponible ». Mention des données toujours
+visible. MapLibre (≈ 1 Mo, 275 Ko gzip, + 10 Ko de CSS) est un bloc séparé chargé par la première carte affichée
+(`src/lib/map/engine.ts` → `maplibreModule.ts`) : l'écran de connexion ne le télécharge pas. Palette des cartes :
+`src/lib/map/palette.ts` ; styles des marqueurs injectés par `src/lib/map/markers.ts` et limités aux cadres de carte
+(classe `yaar-cobalt`).
 
-- Marqueurs : entreprise = carré orange arrondi (estompé si fermée) ; destinataire d'une livraison en cours = épingle
-  verte ; livreur = pastille ronde, véhicule (vélo, moto, voiture) toujours droit et petite flèche séparée orientée
-  selon `heading`, anneau vert = libre, bleu = en livraison ; livraison en attente d'un livreur = anneaux rouges
-  pulsés au retrait + numéro cliquable ; SOS = point rouge pulsé + nom.
-- Étape en cours d'un livreur occupé : `MapOrderDto.route` en vert à liseré blanc, rogné à la position du livreur ;
-  pointillés jusqu'à la cible sans itinéraire ou avec la ligne droite de secours (`source: straight`).
+- Marqueurs : entreprise = carré encre arrondi cerclé de blanc, à ses initiales (« LV »), estompé si fermée ;
+  destinataire d'une livraison en cours = goutte cobalt à maison, halo pulsé ; livreur = disque blanc, véhicule (vélo,
+  moto, voiture) au trait toujours droit et petite encoche séparée orientée selon `heading` — cobalt en livraison,
+  encre atténuée avec une pastille menthe quand il est libre ; livraison en attente d'un livreur = radar cobalt doux
+  au retrait + étiquette blanche cliquable (« #1005 ») ; SOS = point corail pulsé + étiquette corail foncé (nom).
+- Étape en cours d'un livreur occupé : `MapOrderDto.route` en cobalt 6 px sur un liseré blanc de 2 px avec de petits
+  chevrons blancs dans le sens de la marche, rogné à la position du livreur ; tirets cobalt jusqu'à la cible sans
+  itinéraire ou avec la ligne droite de secours (`source: straight`). Livraison en attente d'un livreur : tirets
+  cobalt du retrait au destinataire ; trajet à venir (ou effectué) de la fiche : pointillés encre à 30 %.
 - Entre deux rafraîchissements (10 s), les livreurs glissent vers leur nouvelle position en 1,5 s (requestAnimationFrame,
   `src/lib/map/motion.ts`) ; la caméra ne bouge jamais d'elle-même (cadrage initial et bouton « Recentrer »). Aucune
   requête de plus : le budget de polling est inchangé.

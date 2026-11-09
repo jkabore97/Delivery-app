@@ -155,7 +155,8 @@ describe('Accueil du livreur', () => {
     expect(StyleSheet.flatten(sos.props.style)).toMatchObject({ width: 48, height: 48 });
     expect(sos.props.hitSlop).toBe(4);
     const gps = r.getByText('GPS indisponible : vérifiez la localisation.');
-    expect(StyleSheet.flatten(gps.props.style)).toMatchObject({ color: '#FFFFFF', backgroundColor: '#C62F2F' });
+    // Rouge plein Cobalt (coralFill) : blanc dessus 4,8:1 quel que soit le fond de carte.
+    expect(StyleSheet.flatten(gps.props.style)).toMatchObject({ color: '#FFFFFF', backgroundColor: '#D92D20' });
   });
 
   it('offre affichée en plein écran, ou accueil masqué : carte de l’accueil démontée (une carte à la fois)', async () => {

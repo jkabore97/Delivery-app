@@ -43,6 +43,41 @@ if (fs.existsSync(from)) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Préchargement des polices (toutes les pages)                         */
+/* ------------------------------------------------------------------ */
+
+// Graisses chargées au démarrage : `LOADED_WEIGHTS` de src/fonts.ts (le seul fichier qui connaît la police). Les
+// fichiers des paquets @expo-google-fonts portent leur graisse dans leur nom (« …_800ExtraBold.<hash>.ttf ») ; les
+// fichiers non chargés au démarrage (ex. 400) sont dans la sortie mais ne sont pas préchargés.
+const FONT_PLACEHOLDER = '/*YAAR_FONT_PRELOAD*/[]';
+const fontsSrc = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'src', 'fonts.ts'), 'utf8');
+const weightsMatch = /export const LOADED_WEIGHTS[^=]*=\s*\[([^\]]*)\]/.exec(fontsSrc);
+const loadedWeights = new Set((weightsMatch?.[1] ?? '').split(',').map((w) => w.trim()).filter(Boolean));
+const fontFiles = [];
+const walkFonts = (dir) => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkFonts(p);
+    else if (/\.(ttf|otf|woff2?)$/i.test(entry.name) && !/italic/i.test(entry.name)) {
+      const w = /_(\d{3})[A-Za-z]*\./.exec(entry.name)?.[1];
+      if (w && loadedWeights.has(w)) fontFiles.push(`/${path.relative(outDir, p).split(path.sep).join('/')}`);
+    }
+  }
+};
+if (fs.existsSync(path.join(outDir, 'assets'))) walkFonts(path.join(outDir, 'assets'));
+fontFiles.sort();
+{
+  const html = fs.readFileSync(indexPath, 'utf8');
+  if (!html.includes(FONT_PLACEHOLDER)) console.log('web-postexport : pas de liste de polices dans index.html (modèle public/index.html absent ?)');
+  else {
+    fs.writeFileSync(indexPath, html.replace(FONT_PLACEHOLDER, `/*YAAR_FONT_PRELOAD*/${JSON.stringify(fontFiles)}`));
+    const kb = fontFiles.reduce((sum, u) => sum + fs.statSync(path.join(outDir, u)).size, 0) / 1024;
+    console.log(`web-postexport : ${fontFiles.length} police(s) préchargée(s) (graisses ${[...loadedWeights].join(', ') || '?'} ; ${kb.toFixed(0)} ko)`);
+    if (!fontFiles.length) console.warn('web-postexport : AUCUNE police trouvée pour LOADED_WEIGHTS (src/fonts.ts) : vérifier les noms de fichiers');
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Préchargement de la page publique de suivi                          */
 /* ------------------------------------------------------------------ */
 

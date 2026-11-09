@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Text } from '../../components/Text';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { CourierIllustration } from '../../components/design/CourierIllustration';

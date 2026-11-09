@@ -24,3 +24,12 @@ export function hideWebSplash(doc: Document | null = typeof document !== 'undefi
 export function isFullWidthPath(pathname: string | null | undefined): boolean {
   return !!pathname && pathname.startsWith('/suivi/');
 }
+
+/**
+ * Connexion très lente ou économie de données (2G, « 3G lente » annoncée comme 2G, `saveData`) : même règle que
+ * l'écran de démarrage du HTML (public/index.html), qui n'y précharge ni MapLibre ni les polices pour /suivi/.
+ */
+export function isSlowConnection(nav: { connection?: { saveData?: boolean; effectiveType?: string } } | null = typeof navigator !== 'undefined' ? (navigator as never) : null): boolean {
+  const conn = nav?.connection;
+  return !!conn && (conn.saveData === true || /(^|-)2g$/.test(conn.effectiveType ?? ''));
+}

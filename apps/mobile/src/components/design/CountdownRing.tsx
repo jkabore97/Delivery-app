@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useNow } from '../../hooks/useNow';
 import { COUNTDOWN_WARNING_SECONDS, countdownColor, isCountdownWarning, remainingFraction, ringArcPath, secondsLeft } from '../../lib/countdown';
-import { dark } from '../../theme';
+import { palette } from '../../theme';
 
 export interface CountdownState {
   /** Secondes restantes (arrondi supérieur, 0 à la fin). */
@@ -43,8 +43,8 @@ export interface CountdownRingProps {
 }
 
 /**
- * Anneau de compte à rebours (SVG) qui se vide de `startAt` à `endAt` et passe au rouge pendant les dernières
- * secondes. Il a sa propre horloge (`fps` images par seconde) : seul l'anneau est redessiné à chaque image ; son
+ * Anneau de compte à rebours (SVG, cobalt sur une piste encre à 10 %) qui se vide de `startAt` à `endAt` et passe au
+ * rouge pendant les dernières secondes. Il a sa propre horloge (`fps` images par seconde) : seul l'anneau est redessiné à chaque image ; son
  * contenu ne l'est qu'à chaque seconde, et jamais l'écran qui le contient (ni sa carte).
  *
  * Accessibilité : l'anneau (rôle « progressbar ») est posé en position absolue derrière le contenu, à côté de lui et
@@ -55,9 +55,9 @@ export function CountdownRing({
   endAt,
   size,
   strokeWidth = 8,
-  color = dark.green,
-  warningColor = dark.red,
-  trackColor = 'rgba(255,255,255,0.16)',
+  color = palette.cobalt,
+  warningColor = palette.coralFill,
+  trackColor = 'rgba(12, 18, 34, 0.10)',
   warningSeconds = COUNTDOWN_WARNING_SECONDS,
   fps = 15,
   children,

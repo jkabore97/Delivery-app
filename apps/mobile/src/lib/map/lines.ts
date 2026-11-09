@@ -3,7 +3,7 @@ import type { MapPoint, SceneLine, SceneZone } from '../../components/map/types'
 
 export interface DrawnLine {
   id: string;
-  kind: 'route' | 'dashed';
+  kind: SceneLine['kind'];
   points: MapPoint[];
 }
 
@@ -12,7 +12,8 @@ export const OFF_ROUTE_JOIN_M = 35;
 
 /**
  * Lignes à dessiner pour les positions courantes (animées) des livreurs : l'itinéraire est rogné au point le
- * plus proche du livreur (la partie parcourue disparaît), la ligne droite part du livreur.
+ * plus proche du livreur (la partie parcourue disparaît), une ligne droite (`dashed`, `pending`) rattachée à un livreur
+ * part de sa position ; les autres lignes sont dessinées telles quelles.
  */
 export function resolveLines(lines: SceneLine[], positionOf: (markerId: string) => MapPoint | null | undefined): DrawnLine[] {
   const out: DrawnLine[] = [];

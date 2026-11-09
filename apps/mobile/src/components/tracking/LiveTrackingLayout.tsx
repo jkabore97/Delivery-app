@@ -1,26 +1,30 @@
 import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Text } from '../Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFollowCamera } from '../../hooks/useFollowCamera';
 import { trackingPadding } from '../../lib/mapCamera';
 import { MAP_PALETTES } from '../../lib/map/style';
-import { colors, dark, radius, SHEET_RADIUS, spacing } from '../../theme';
+import { palette, radii, SHEET_RADIUS, shadows, spacing } from '../../theme';
+import { useTabBarInset } from '../design/tabBarInset';
 import { LiveMap } from '../map/LiveMap';
 import type { MapPoint, MapTheme, SceneLine, SceneMarker, SceneZone } from '../map/types';
-import { TrackingIcon } from './TrackingIcon';
+import { TrackingIcon, type IconName } from './TrackingIcon';
 
 /** Au-delà de cette largeur (ordinateur, tablette en paysage), la feuille passe à droite de la carte. */
 export const WIDE_LAYOUT_MIN_WIDTH = 900;
 const SIDE_SHEET_WIDTH = 420;
 
 /**
- * Écran de suivi façon Uber / DoorDash : carte plein écran, boutons flottants en haut, feuille blanche en bas
- * (repliable en touchant la poignée), bouton « Recentrer » dès que l'utilisateur déplace la carte. La caméra
- * cadre ce qui reste visible au-dessus de la feuille (marges : feuille + 90 px en bas, 60 px au moins sur les
- * côtés). Sur un grand écran (≥ 900 px), la carte occupe la gauche et la feuille devient un panneau à droite.
+ * Écran de suivi façon Uber / DoorDash, au dessin Cobalt : carte plein écran, pastilles et boutons blancs flottants en
+ * haut, feuille blanche en bas (coins de 32 px, ombre de feuille, poignée 40 × 5, repliable en touchant la poignée),
+ * pastille blanche « Recentrer » dès que l'utilisateur déplace la carte. La caméra cadre ce qui reste visible au-dessus
+ * de la feuille (marges : feuille + 90 px en bas, 60 px au moins sur les côtés). Sur un grand écran (≥ 900 px), la
+ * carte occupe la gauche et la feuille devient un panneau blanc à droite. Sous des onglets, la feuille garde la place de
+ * la barre d'onglets flottante (son contenu n'est jamais dessous).
  *
- * Options (toutes facultatives, sans elles l'écran est exactement celui d'origine) : `sheetTheme="dark"` (feuille
- * sombre, coins de 24 px, contenu à styler en clair sur sombre), `mapTheme="dark"` (fond de carte sombre), `zones`
+ * Options (toutes facultatives) : `sheetTheme` (@deprecated : Cobalt n'a qu'une feuille, blanche ; 'dark' donne le
+ * même rendu), `mapTheme` (transmis à la carte, voir LiveMap), `zones`
  * (cercles approximatifs), `aboveSheet` (élément centré posé sur la carte juste au-dessus de la feuille, ex. grand
  * bouton rond ; la caméra le garde dégagé), `insetBottom={false}` (écran au-dessus d'une barre d'onglets : pas de
  * marge de zone sûre sous la feuille), `mapVisible={false}` (carte démontée, ex. écran masqué : une seule carte
@@ -46,7 +50,7 @@ export function LiveTrackingLayout({
   footer,
   aboveSheet,
   allowWide = false,
-  sheetTheme = 'light',
+  sheetTheme: _sheetTheme,
   mapTheme = 'light',
   insetBottom = true,
   mapVisible = true,
@@ -75,7 +79,7 @@ export function LiveTrackingLayout({
   aboveSheet?: ReactNode;
   /** Page affichée sur toute la largeur de la fenêtre (page publique) : panneau latéral sur grand écran. */
   allowWide?: boolean;
-  /** Feuille claire (défaut) ou sombre. */
+  /** @deprecated Cobalt n'a qu'une feuille (blanche) : 'dark' donne le même rendu. */
   sheetTheme?: 'light' | 'dark';
   /** Fond de carte clair (défaut) ou sombre. */
   mapTheme?: MapTheme;
@@ -110,9 +114,11 @@ export function LiveTrackingLayout({
       ? basePadding
       : { ...basePadding, bottom: sheetHeight + above + fitBottomMargin };
   const covered = wide ? 0 : sheetHeight;
-  const darkSheet = sheetTheme === 'dark';
   const darkMap = mapTheme === 'dark';
-  const bottomPad = insetBottom ? Math.max(insets.bottom, spacing.sm) : spacing.sm;
+  // Sous la barre d'onglets flottante : la feuille va jusqu'en bas de l'écran (la pilule flotte sur elle), son contenu
+  // s'arrête au-dessus de la barre.
+  const tabInset = useTabBarInset();
+  const bottomPad = tabInset > 0 ? tabInset : insetBottom ? Math.max(insets.bottom, spacing.sm) : spacing.sm;
   // Sans bouton à gauche ni à droite, la pastille du milieu dispose de toute la largeur (même centre).
   const sideWidth = topLeft || topRight ? TOP_SIDE_WIDTH : 0;
 
@@ -161,16 +167,11 @@ export function LiveTrackingLayout({
         <Pressable
           accessibilityRole="button"
           onPress={camera.recenter}
-          style={[
-            styles.recenter,
-            darkMap && styles.recenterDark,
-            { bottom: covered + 26 },
-            wide && { right: SIDE_SHEET_WIDTH + spacing.md },
-          ]}
+          style={({ pressed }) => [styles.recenter, shadows.float, { bottom: covered + 26 }, wide && { right: SIDE_SHEET_WIDTH + spacing.md }, pressed && styles.pressed]}
           testID="recenter-button"
         >
-          <TrackingIcon name="recenter" size={20} color={darkMap ? dark.green : colors.green} strokeWidth={2.4} />
-          <Text style={[styles.recenterText, darkMap && { color: dark.text }]}>Recentrer</Text>
+          <TrackingIcon name="recenter" size={20} color={palette.cobalt} strokeWidth={2.4} />
+          <Text style={styles.recenterText}>Recentrer</Text>
         </Pressable>
       ) : null}
       {aboveSheet && !wide ? (
@@ -185,8 +186,8 @@ export function LiveTrackingLayout({
       <View
         style={
           wide
-            ? [styles.sideSheet, darkSheet && styles.sideSheetDark, { paddingTop: insets.top + spacing.md, paddingBottom: bottomPad }]
-            : [styles.sheet, darkSheet && styles.sheetDark, { maxHeight: maxSheet, paddingBottom: bottomPad }]
+            ? [styles.sideSheet, { paddingTop: insets.top + spacing.md, paddingBottom: bottomPad }]
+            : [styles.sheet, shadows.sheet, { maxHeight: maxSheet, paddingBottom: bottomPad }]
         }
         onLayout={(e) => {
           if (!wide) setSheetHeight(Math.round(e.nativeEvent.layout.height));
@@ -207,7 +208,7 @@ export function LiveTrackingLayout({
               style={[styles.handleZone, Platform.OS === 'web' && styles.handleZoneWeb]}
               testID="sheet-handle"
             >
-              <View style={[styles.handle, darkSheet && styles.handleDark]} />
+              <View style={styles.handle} />
             </Pressable>
           </>
         )}
@@ -226,31 +227,41 @@ export function LiveTrackingLayout({
   );
 }
 
-/** Bouton rond flottant (retour, fermer). */
-export function FloatingButton({ label, onPress, accessibilityLabel }: { label: string; onPress: () => void; accessibilityLabel: string }) {
+/**
+ * Bouton rond flottant (retour, fermer) : disque blanc à ombre flottante. `icon` (pictogramme Yaar) de préférence ;
+ * `label` : @deprecated, texte court affiché à la place (un caractère comme « ← » peut manquer à la police).
+ */
+export function FloatingButton({
+  label,
+  icon,
+  onPress,
+  accessibilityLabel,
+}: {
+  label?: string;
+  icon?: IconName;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={styles.fab}>
-      <Text style={styles.fabText}>{label}</Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => [styles.fab, shadows.float, pressed && styles.pressed]}
+    >
+      {icon ? <TrackingIcon name={icon} size={22} color={palette.ink} strokeWidth={2.3} /> : <Text style={styles.fabText}>{label}</Text>}
     </Pressable>
   );
 }
 
-/** Pastille flottante (marque, numéro de course). */
+/** Pastille flottante (marque, numéro de course) : pilule blanche à ombre flottante, texte 14/700. */
 export function FloatingChip({ children, testID }: { children: ReactNode; testID?: string }) {
   return (
-    <View style={styles.chip} testID={testID}>
+    <View style={[styles.chip, shadows.float]} testID={testID}>
       {typeof children === 'string' ? <Text style={styles.chipText}>{children}</Text> : children}
     </View>
   );
 }
-
-const shadow = {
-  shadowColor: '#0F2E22',
-  shadowOpacity: 0.2,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 6,
-} as const;
 
 /** Écart entre le haut de la feuille et l'élément `aboveSheet` (la mention des données de la carte reste visible dessous). */
 const ABOVE_SHEET_GAP = 30;
@@ -264,19 +275,13 @@ const HANDLE_TOUCH = 28;
 const HANDLE_ABOVE_WEB = 4;
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: palette.canvas },
   rootWide: { flexDirection: 'row' },
   mapWide: { flex: 1, position: 'relative' },
   sideSheet: {
     width: SIDE_SHEET_WIDTH,
-    backgroundColor: colors.white,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: colors.border,
-    shadowColor: '#0F2E22',
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: -4, height: 0 },
-    elevation: 6,
+    backgroundColor: palette.card,
+    boxShadow: '-8px 0 32px rgba(12, 18, 34, 0.08)',
   },
   topBar: { position: 'absolute', left: spacing.md, right: spacing.md, flexDirection: 'row', alignItems: 'center' },
   topMiddle: { flex: 1, alignItems: 'center' },
@@ -284,63 +289,50 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.white,
+    backgroundColor: palette.card,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow,
   },
-  fabText: { fontSize: 20, fontWeight: '800', color: colors.text },
+  fabText: { fontSize: 20, fontWeight: '800', color: palette.ink },
   chip: {
-    backgroundColor: colors.white,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
+    backgroundColor: palette.card,
+    borderRadius: radii.pill,
+    minHeight: 40,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    ...shadow,
+    gap: 8,
   },
-  chipText: { fontWeight: '800', color: colors.text, fontSize: 14 },
+  chipText: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.ink, fontVariant: ['tabular-nums'] },
   recenter: {
     position: 'absolute',
     right: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.white,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    ...shadow,
+    minHeight: 44,
+    backgroundColor: palette.card,
+    borderRadius: radii.pill,
+    paddingLeft: 12,
+    paddingRight: 16,
   },
-  recenterDark: { backgroundColor: dark.chip },
-  recenterText: { fontWeight: '800', color: colors.text },
+  recenterText: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.ink },
+  pressed: { opacity: 0.9 },
   aboveSheet: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    ...shadow,
-    shadowOpacity: 0.16,
-    shadowOffset: { width: 0, height: -4 },
-  },
-  sheetDark: {
-    backgroundColor: dark.surface,
+    backgroundColor: palette.card,
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
-    shadowColor: '#000000',
-    shadowOpacity: 0.35,
   },
-  sideSheetDark: { backgroundColor: dark.surface, borderLeftColor: dark.border },
   handleSpace: { height: HANDLE_SPACE },
   handleZone: { position: 'absolute', top: 0, left: 0, right: 0, height: HANDLE_TOUCH, zIndex: 2, alignItems: 'center', paddingTop: 8 },
   handleZoneWeb: { top: -HANDLE_ABOVE_WEB, height: HANDLE_TOUCH + HANDLE_ABOVE_WEB, paddingTop: 8 + HANDLE_ABOVE_WEB },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D5DBE1' },
-  handleDark: { backgroundColor: dark.border },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: palette.handle },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },

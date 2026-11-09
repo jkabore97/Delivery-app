@@ -1,13 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { createBaseMap, loadMaplibre, webglSupported, type BaseMap } from '../../lib/map/maplibre.web';
-import { MAP_COLORS } from '../../lib/map/style';
+import { MAP_PALETTE } from '../../lib/map/style';
+import { Text } from '../Text';
 import { MapAttribution } from './MapAttribution';
 import type { PickerMapHandle, PickerMapProps } from './types';
 
 export type { PickerMapHandle, PickerMapProps } from './types';
 
-/** Carte du choix d'adresse « épingle fixe au centre » (web, MapLibre) : on déplace la carte sous l'épingle. */
+/** Carte du choix d'adresse « épingle fixe au centre » (web, MapLibre, fond Cobalt) : on déplace la carte sous l'épingle. */
 export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function PickerMap(
   { initial, initialZoom = 15, onCenterChange, onMoveStart, style, testID = 'address-map' },
   ref,
@@ -81,7 +82,7 @@ export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function Pi
 });
 
 const styles = StyleSheet.create({
-  wrap: { overflow: 'hidden', backgroundColor: MAP_COLORS.background },
+  wrap: { overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  overlayText: { color: '#7A8691', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  overlayText: { color: MAP_PALETTE.overlayText, fontSize: 13, fontWeight: '600', textAlign: 'center' },
 });

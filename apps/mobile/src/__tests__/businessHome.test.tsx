@@ -96,9 +96,10 @@ describe('Accueil de l’entreprise : carte et livraisons en cours', () => {
     );
     const r = await show();
     expect(r.getByTestId('delivery-del-1')).toHaveTextContent(
-      /^#1052EN LIVRAISONAKAwa KaboréArrivée vers 14:29 · dans 9 minPatte d’Oie, rue 15\.23Repère : Station TotalLivreur : Issouf · Moto 11 JJ 4521$/,
+      /^#1052En livraisonAKAwa KaboréArrivée vers 14:29 · dans 9 minPatte d’Oie, rue 15\.23Repère : Station TotalLivreur : Issouf · Moto 11 JJ 4521$/,
     );
-    expect(r.getByTestId('delivery-del-2')).toHaveTextContent(/^#1053RECHERCHE D’UN LIVREURAKAwa KaboréDemandée il y a 2 min/);
+    // Puces d'état Cobalt (en minuscules) : en livraison, recherche d'un livreur.
+    expect(r.getByTestId('delivery-del-2')).toHaveTextContent(/^#1053Recherche d’un livreurAKAwa KaboréDemandée il y a 2 min/);
     expect(r.getByTestId('summary-on-the-way')).toHaveTextContent('1 en route');
     expect(r.getByTestId('summary-searching')).toHaveTextContent('1 recherche d’un livreur');
     expect(r.getByTestId('summary-searching').props.numberOfLines).toBe(1);

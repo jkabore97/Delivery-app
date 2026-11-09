@@ -6,10 +6,10 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Text } from '../../components/Text';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';

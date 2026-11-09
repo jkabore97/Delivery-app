@@ -1,4 +1,5 @@
-import { Linking, StyleSheet, Text } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
+import { Text } from '../components/Text';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { BUSINESS_ACCENT, ORANGE_INK, ORANGE_TEXT } from '../components/business/accent';
 import { CountdownRing } from '../components/design/CountdownRing';
@@ -7,7 +8,7 @@ import { Pill } from '../components/design/Pill';
 import { RoundButton } from '../components/design/RoundButton';
 import { AmountRow } from '../components/design/Surfaces';
 import { touchTarget } from '../lib/touchTarget';
-import { colors, dark, MIN_TOUCH } from '../theme';
+import { colors, dark, MIN_TOUCH, palette } from '../theme';
 
 /** Contraste WCAG entre deux couleurs #RRGGBB. */
 function contrast(a: string, b: string): number {
@@ -19,33 +20,55 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-describe('couleurs des surfaces sombres', () => {
-  it('textes lisibles (4,5:1 au moins) sur le fond, les feuilles et les cartes relevées', () => {
-    for (const bg of [dark.background, dark.surface, dark.raised]) {
-      for (const fg of [dark.text, dark.textMuted, dark.textFaint, dark.green, dark.amber, dark.red]) {
-        expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
-      }
-    }
-    expect(contrast(dark.textFaint, dark.raised)).toBeCloseTo(4.64, 1);
+describe('couleurs Cobalt : petits textes à 4,5:1 au moins là où ils sont posés', () => {
+  it('palette : chaque couple texte / fond utilisé', () => {
+    const pairs: [string, string, string][] = [
+      ['encre sur blanc', palette.ink, palette.card],
+      ['encre sur canvas', palette.ink, palette.canvas],
+      ['texte secondaire sur blanc', palette.inkMuted, palette.card],
+      ['texte secondaire sur canvas', palette.inkMuted, palette.canvas],
+      ['texte secondaire sur raised (champs, cartes remplies)', palette.inkMuted, palette.raised],
+      ['texte secondaire sur raisedHigh', palette.inkMuted, palette.raisedHigh],
+      ['cobalt (liens, montants) sur blanc', palette.cobalt, palette.card],
+      ['blanc sur cobalt (boutons, onglet actif)', palette.onCobalt, palette.cobalt],
+      ['onCobalt2 sur cobalt (tuile héros)', palette.onCobalt2, palette.cobalt],
+      ['cobaltText sur cobaltTint (puces)', palette.cobaltText, palette.cobaltTint],
+      ['encre sur soleil (espèces)', palette.ink, palette.sun],
+      ['onSun2 sur soleil', palette.onSun2, palette.sun],
+      ['sunText sur sunTint (avertissement)', palette.sunText, palette.sunTint],
+      ['amberText sur blanc (montant en espèces)', palette.amberText, palette.card],
+      ['encre sur mint', palette.ink, palette.mint],
+      ['mintText sur mintTint (livrée)', palette.mintText, palette.mintTint],
+      ['mintText sur blanc', palette.mintText, palette.card],
+      ['blanc sur coralFill (Refuser, SOS)', palette.white, palette.coralFill],
+      ['coralText sur coralTint (erreur)', palette.coralText, palette.coralTint],
+      ['coralText sur blanc', palette.coralText, palette.card],
+    ];
+    for (const [what, fg, bg] of pairs) expect([what, Math.round(contrast(fg, bg) * 100) / 100 >= 4.5]).toEqual([what, true]);
+    // Le corail vif n'est qu'un point ou un pictogramme : le blanc dessus n'atteint pas 4,5:1.
+    expect(contrast(palette.white, palette.coral)).toBeLessThan(4.5);
   });
 
-  it('petits textes des écrans de l’entreprise et du destinataire : 4,5:1 au moins là où ils sont posés', () => {
-    // Fond de la carte « Prévenez le destinataire » (ShareTrackingCard mise en avant).
-    const PROMINENT = '#13261E';
-    const pairs: [string, string, string][] = [
-      ['sur-titre et ligne du livreur des cartes (textFaint / raised)', dark.textFaint, dark.raised],
-      ['date et frais de l’historique (textFaint / raised)', dark.textFaint, dark.raised],
-      ['note de l’historique (textFaint / background)', dark.textFaint, dark.background],
-      ['texte indicatif des champs sombres (textFaint / raised)', dark.textFaint, dark.raised],
-      ['aide sous un champ, titres de section (textFaint / surface)', dark.textFaint, dark.surface],
-      ['lien de suivi sur la carte mise en avant (textMuted / #13261E)', dark.textMuted, PROMINENT],
-      ['textFaint sur la carte mise en avant, s’il y servait', dark.textFaint, PROMINENT],
-      ['« + Nouvelle », disque et boutons orange (ORANGE_INK / orange)', ORANGE_INK, BUSINESS_ACCENT],
-      ['texte orange sur blanc (ORANGE_TEXT)', ORANGE_TEXT, colors.white],
-    ];
-    for (const [what, fg, bg] of pairs) expect([what, contrast(fg, bg) >= 4.5]).toEqual([what, true]);
-    // Pourquoi ORANGE_INK / ORANGE_TEXT : le blanc sur l'orange et l'orange sur le blanc n'atteignent pas 3:1.
-    expect(contrast(colors.white, BUSINESS_ACCENT)).toBeLessThan(3);
+  it('anciens jetons (écrans pas encore redessinés) : remappés en Cobalt clair, toujours lisibles', () => {
+    for (const bg of [dark.background, dark.surface, dark.raised]) {
+      for (const fg of [dark.text, dark.textMuted, dark.textFaint, dark.green, dark.amber, dark.red]) {
+        expect([fg, bg, contrast(fg, bg) >= 4.5]).toEqual([fg, bg, true]);
+      }
+    }
+    // Textes posés sur les fonds doux de leur famille, et sur les fonds pleins.
+    expect(contrast(dark.green, dark.greenSoft)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(dark.red, dark.redSoft)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(dark.amber, dark.amberSoft)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(dark.greenInk, dark.green)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast('#FFFFFF', dark.redFill)).toBeGreaterThanOrEqual(4.5);
+    for (const fg of [colors.text, colors.textMuted, colors.green, colors.red, colors.orange, colors.blue]) {
+      for (const bg of [colors.white, colors.background]) expect([fg, bg, contrast(fg, bg) >= 4.5]).toEqual([fg, bg, true]);
+    }
+    expect(contrast(colors.red, colors.redLight)).toBeGreaterThanOrEqual(4.5);
+    // Accent de l'entreprise : cobalt, texte blanc dessus.
+    expect(BUSINESS_ACCENT).toBe(palette.cobalt);
+    expect(contrast(ORANGE_INK, BUSINESS_ACCENT)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(ORANGE_TEXT, colors.white)).toBeGreaterThanOrEqual(4.5);
   });
 });
 
@@ -150,7 +173,7 @@ describe('PackageCard', () => {
       />,
     );
     expect(r.getByTestId('card')).toHaveTextContent(
-      /AK.*Course #1052.*EN LIVRAISON.*Awa Kaboré.*Patte d’Oie, rue 15\.23.*Repère : Station Total.*2 boîtes de médicaments.*« Appeler en arrivant ».*À encaisser.*16 500 FCFA/,
+      /AK.*Course #1052.*En livraison.*Awa Kaboré.*Patte d’Oie, rue 15\.23.*Repère : Station Total.*2 boîtes de médicaments.*« Appeler en arrivant ».*À encaisser.*16 500 FCFA/,
     );
     // Pas de numéro fourni : pas de boutons de contact.
     expect(r.queryByLabelText(/Appeler/)).toBeNull();
@@ -194,7 +217,8 @@ describe('PackageCard', () => {
     expect(main.props.accessibilityRole).toBe('button');
     expect(main.props.accessibilityLabel).toBe('Awa Kaboré, en livraison, arrivée vers 14:29, dans 9 min');
     // Liste dense : numéro et état, nom, heure d'arrivée juste dessous, adresse, repère, livreur.
-    expect(main).toHaveTextContent(/^#1052EN LIVRAISONAKAwa KaboréArrivée vers 14:29 · dans 9 minPatte d’Oie, rue 15\.23Repère : Station TotalLivreur : Issouf · Moto$/);
+    // Puce d'état en minuscules (Cobalt) : « EN LIVRAISON » → « En livraison ».
+    expect(main).toHaveTextContent(/^#1052En livraisonAKAwa KaboréArrivée vers 14:29 · dans 9 minPatte d’Oie, rue 15\.23Repère : Station TotalLivreur : Issouf · Moto$/);
     expect(within(main).queryByLabelText(/WhatsApp|Appeler/)).toBeNull();
     const card = r.getByTestId('card-card');
     await act(async () => fireEvent.press(within(card).getByLabelText('Appeler Awa Kaboré (+22670112233)')));

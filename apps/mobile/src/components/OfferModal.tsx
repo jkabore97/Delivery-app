@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, Vibration, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, useWindowDimensions, Vibration, View } from 'react-native';
+import { Text } from './Text';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +12,7 @@ import { formatOfferEta, offerPlaces, offerScene, visibleOffer, type OfferScene 
 import { formatFcfa, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { dark, MAX_APP_WIDTH, spacing, typeScale } from '../theme';
+import { dark, MAX_APP_WIDTH, palette, spacing, typeScale } from '../theme';
 import { CountdownRing } from './design/CountdownRing';
 import { Icon } from './design/Icon';
 import { Pill } from './design/Pill';
@@ -306,8 +307,9 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
             ) : null}
 
             <View style={styles.stop} testID="offer-pickup">
-              <View style={[styles.stopIcon, { backgroundColor: 'rgba(242,140,27,0.18)' }]}>
-                {pickupInitials ? <Text style={styles.stopInitials}>{pickupInitials}</Text> : <Icon name="store" size={18} color="#FFAA48" />}
+              {/* Entreprise : carré arrondi encre, initiales blanches (comme son marqueur sur la carte Cobalt). */}
+              <View style={[styles.stopIcon, styles.businessIcon]}>
+                {pickupInitials ? <Text style={styles.stopInitials}>{pickupInitials}</Text> : <Icon name="store" size={18} color={palette.white} />}
               </View>
               <View style={styles.flex}>
                 <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>
@@ -383,8 +385,9 @@ const styles = StyleSheet.create({
   cashSplitWide: { fontSize: 12, marginTop: -4, paddingHorizontal: 2 },
   stop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   stopIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  zoneIcon: { backgroundColor: dark.greenSoft, borderWidth: 1.5, borderColor: 'rgba(47,211,138,0.6)', borderStyle: 'dashed' },
-  stopInitials: { color: '#FFAA48', fontWeight: '900', fontSize: 13 },
+  businessIcon: { backgroundColor: palette.ink, borderRadius: 12 },
+  zoneIcon: { backgroundColor: palette.cobaltTint, borderWidth: 1.5, borderColor: palette.cobalt, borderStyle: 'dashed' },
+  stopInitials: { color: palette.white, fontWeight: '800', fontSize: 13 },
   stopTitle: { color: dark.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
   stopTitleCompact: { fontSize: 15 },
   stopLine: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },

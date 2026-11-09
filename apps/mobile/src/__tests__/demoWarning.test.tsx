@@ -18,7 +18,9 @@ describe('avertissement « démonstration publique »', () => {
   it('écran de connexion (DemoNotice) : code 123456 et avertissement', async () => {
     const r = await render(<DemoNotice onPick={jest.fn()} />);
     expect(r.getByText('Mode démo : utilisez le code 123456')).toBeTruthy();
-    expect(r.getByTestId('demo-data-warning').props.children).toEqual(['⚠️ ', DEMO_DATA_WARNING]);
+    // Pictogramme « alerte » dessiné (Cobalt n'a pas d'émoji) et le texte de l'avertissement.
+    expect(r.getByTestId('demo-data-warning')).toHaveTextContent(DEMO_DATA_WARNING);
+    expect(r.queryByText(/⚠/)).toBeNull();
   });
 
   it('dépôt des pièces KYC : affiché en mode démo seulement', async () => {
