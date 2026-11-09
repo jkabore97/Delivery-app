@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   header: { gap: 14 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 40 },
   title: { ...typography.display, flex: 1, color: palette.ink },
-  titleSmall: { fontSize: 26, lineHeight: 30, letterSpacing: -0.8 },
+  titleSmall: { fontSize: 28, lineHeight: 32, letterSpacing: -0.8 },
   // La pastille s'aligne sur le bord gauche de la carte (par-dessus la place vide du bouton de gauche).
   pillSlot: { alignSelf: 'stretch', alignItems: 'flex-start', marginLeft: -TOP_SIDE_WIDTH },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },

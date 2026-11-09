@@ -222,7 +222,7 @@ export default function BusinessDeliveryScreen() {
       recipientPhone={o.recipientPhone}
       businessName={businessName}
       prominent={promptShare}
-      tone="dark"
+      shortLabel
     />
   );
 

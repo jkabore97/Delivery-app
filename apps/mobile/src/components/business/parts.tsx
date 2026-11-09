@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, View, type PressableStateCallbackType, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type PressableStateCallbackType, type StyleProp, type ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import type { OrderDto, StoreDto } from '@yaar/shared';
 import { Text } from '../Text';
@@ -9,12 +9,12 @@ import { newDeliveryAccess } from '../../lib/storeApproval';
 import { touchTarget } from '../../lib/touchTarget';
 import { MIN_TOUCH, palette, shadows, tabular } from '../../theme';
 import type { TimelineStep } from './dashboardData';
+import { POINTER } from './desktop/layout';
 
 /** État d'un élément pressable sur le web (react-native-web ajoute `hovered` et `focused`). */
 export type WebPressState = PressableStateCallbackType & { hovered?: boolean; focused?: boolean };
 
-/** Curseur « main » sur le web. */
-export const POINTER: ViewStyle | null = Platform.OS === 'web' ? ({ cursor: 'pointer' } as unknown as ViewStyle) : null;
+export { POINTER } from './desktop/layout';
 
 /* ------------------------------------------------------------------------------------------------------------------ */
 /* Pastilles                                                                                                            */

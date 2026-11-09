@@ -51,7 +51,7 @@ export function useShareNotice(): [ShareNotice | null, (n: ShareNotice | null) =
  * « Envoyer le lien de suivi au destinataire » : il n'a pas de compte, le lien lui ouvre la carte en direct
  * (livreur, heure d'arrivée, code à donner au livreur). Feuille de partage du téléphone ; sur le web,
  * navigator.share ou WhatsApp, et « Copier le lien ». Carte remplie (cobaltTint quand elle est mise en avant), bouton
- * cobalt. `tone` : 'dark' garde le libellé court du bouton (feuilles de suivi), sinon même rendu.
+ * cobalt. `shortLabel` : libellé court du bouton (« Envoyer le lien de suivi », colonnes étroites des suivis).
  */
 export function ShareTrackingCard({
   url,
@@ -60,7 +60,8 @@ export function ShareTrackingCard({
   recipientPhone,
   businessName,
   prominent,
-  tone = 'light',
+  shortLabel,
+  tone,
 }: {
   url: string | null | undefined;
   recipientName: string | null;
@@ -70,11 +71,14 @@ export function ShareTrackingCard({
   businessName: string | null;
   /** Juste après la demande : carte mise en avant. */
   prominent?: boolean;
+  /** Libellé court du bouton. */
+  shortLabel?: boolean;
+  /** @deprecated Ancien nom de `shortLabel` ('dark' = libellé court) ; même rendu clair. */
   tone?: 'light' | 'dark';
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useShareNotice();
-  const short = tone === 'dark';
+  const short = shortLabel ?? tone === 'dark';
   if (!url) {
     return (
       <View style={styles.box}>
