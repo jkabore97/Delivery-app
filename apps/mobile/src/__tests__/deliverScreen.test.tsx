@@ -54,23 +54,41 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     expect(mockDriver.setCurrentOrder).not.toHaveBeenCalled();
   });
 
-  it('bon code : livraison confirmée, course terminée, gains du jour', async () => {
-    mockApi.deliverOrder.mockResolvedValue(order({ status: 'DELIVERED', cashCollected: 4500 }));
+  it('bon code : livraison confirmée, course terminée, gain et gains du jour, notation', async () => {
+    mockApi.deliverOrder.mockResolvedValue(order({ status: 'DELIVERED', cashCollected: 4500, driverEarning: 1200 }));
     const r = await render(<DeliverScreen />);
     await waitFor(() => expect(r.getByText('Gains du jour · 9 courses')).toBeTruthy());
     await act(async () => fireEvent.changeText(r.getByTestId('delivery-code-input'), '4821'));
     await act(async () => fireEvent.press(r.getByTestId('deliver-button')));
-    await waitFor(() => expect(r.getByText('Livraison confirmée ✅')).toBeTruthy());
+    await waitFor(() => expect(r.getByTestId('delivery-success')).toBeTruthy());
+    expect(r.getByText('Livraison confirmée')).toBeTruthy();
+    expect(r.getByText('+1\u202f200\u202fFCFA')).toBeTruthy();
+    expect(r.getByText('Gains du jour · 9 courses')).toBeTruthy();
+    expect(r.getByText('Notez le client')).toBeTruthy();
     expect(mockDriver.setCurrentOrder).toHaveBeenCalledWith(null);
     expect(mockDriver.refreshProfile).toHaveBeenCalled();
+  });
+
+  it('après la livraison : la note est envoyée, puis remerciement', async () => {
+    mockApi.deliverOrder.mockResolvedValue(order({ status: 'DELIVERED', cashCollected: 4500 }));
+    mockApi.rateOrder.mockResolvedValue(undefined);
+    const r = await render(<DeliverScreen />);
+    await act(async () => fireEvent.changeText(r.getByTestId('delivery-code-input'), '4821'));
+    await act(async () => fireEvent.press(r.getByTestId('deliver-button')));
+    await waitFor(() => expect(r.getByTestId('rating-submit')).toBeTruthy());
+    await act(async () => fireEvent.press(r.getByTestId('rating-submit')));
+    await waitFor(() => expect(r.getByText('Merci pour votre note.')).toBeTruthy());
+    expect(mockApi.rateOrder).toHaveBeenCalledWith('order-1', { score: 5 });
   });
 
   it('livraison d’entreprise : montant à encaisser (marchandise + frais payés par le destinataire) avant le code', async () => {
     mockDriver.currentOrder = delivery({ feePaidBy: 'RECIPIENT', cashToCollect: 15000, deliveryFee: 1500 });
     const r = await render(<DeliverScreen />);
+    // Montant d'abord, en très grand, puis son détail.
     expect(r.getByTestId('amount-to-collect')).toHaveTextContent(
-      /1\. Encaissez auprès de Awa Kaboré.*Marchandise 15 000 FCFA \+ frais de livraison 1 500 FCFA, en espèces\..*16 500 FCFA/,
+      /1\. Encaissez auprès de Awa Kaboré.*16 500 FCFA.*Marchandise 15 000 FCFA \+ frais de livraison 1 500 FCFA, en espèces\./,
     );
+    expect(r.getByTestId('amount-to-collect-value')).toHaveTextContent('16\u202f500\u202fFCFA');
     expect(r.getByText('2. Demandez le code au destinataire')).toBeTruthy();
     // Solde après la course : 10 000 détenus + 16 500 encaissés.
     expect(r.getByText('26\u202f500 FCFA')).toBeTruthy();
@@ -86,7 +104,7 @@ describe('DeliverScreen (confirmer la livraison)', () => {
 
   it('ancienne commande client : le total en espèces', async () => {
     const r = await render(<DeliverScreen />);
-    expect(r.getByTestId('amount-to-collect')).toHaveTextContent(/Total de la commande, en espèces\..*4 500 FCFA/);
+    expect(r.getByTestId('amount-to-collect')).toHaveTextContent(/Encaissez.*4 500 FCFA.*Total de la commande, en espèces\./);
   });
 
   it('pas de course récupérée : rien à livrer', async () => {

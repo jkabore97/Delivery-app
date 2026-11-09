@@ -1,45 +1,87 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { errorMessage } from '../lib/api';
+import { onlineStatus } from '../lib/driverStatus';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { colors, radius, spacing } from '../theme';
+import { colors, dark, spacing } from '../theme';
 import { confirmAsync, notify } from '../lib/dialog';
+import { Pill } from './design/Pill';
+import { RoundButton } from './design/RoundButton';
+
+const STATUS_DOT = { on: dark.green, pending: dark.amber, paused: dark.amber, off: '#8E9A94' } as const;
 
 /**
- * Bandeau en ligne / hors ligne avec l'indicateur légal « En ligne : suivi GPS actif ».
- * Le suivi n'existe que lorsque le livreur est en ligne.
+ * Indicateur légal permanent « En ligne : suivi GPS actif » / « Hors ligne : position non suivie » (pastille sombre
+ * posée sur la carte), avec l'éventuelle erreur du GPS. Le suivi n'existe que lorsque le livreur est en ligne.
  */
-export function OnlineToggle({ onError }: { onError: (msg: string | null) => void }) {
-  const { profile, gpsActive, gpsPaused, gpsError, togglingOnline, setOnline, currentOrder } = useDriver();
-  const online = profile?.isOnline === true;
-  const label = online
-    ? gpsPaused
-      ? 'En ligne : suivi GPS en pause (Yaar en arrière-plan)'
-      : gpsActive
-      ? 'En ligne : suivi GPS actif'
-      : 'En ligne : activation du GPS…'
-    : 'Hors ligne : position non suivie';
+export function OnlineStatusPill() {
+  const { profile, gpsActive, gpsPaused, gpsError } = useDriver();
+  const status = onlineStatus({ online: profile?.isOnline === true, gpsActive, gpsPaused });
   return (
-    <View style={[styles.toggle, online ? styles.toggleOn : styles.toggleOff]} accessibilityLiveRegion="polite">
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.toggleText, { color: online ? colors.green : colors.textMuted }]}>● {label}</Text>
-        {gpsError ? <Text style={{ color: colors.red, fontSize: 12 }}>{gpsError}</Text> : null}
-      </View>
-      <Switch
-        value={online}
-        disabled={togglingOnline || (online && currentOrder !== null)}
-        onValueChange={async (v) => {
-          onError(null);
-          const err = await setOnline(v);
-          if (err) onError(err);
-        }}
-        trackColor={{ true: colors.green, false: colors.border }}
-        accessibilityLabel={online ? 'Passer hors ligne' : 'Passer en ligne'}
-        testID="online-switch"
+    <View style={styles.statusWrap} pointerEvents="box-none">
+      <Pill
+        label={status.label}
+        tone="dark"
+        floating
+        live
+        numberOfLines={2}
+        leading={<View style={[styles.dot, { backgroundColor: STATUS_DOT[status.tone] }]} />}
+        testID="online-status"
       />
+      {gpsError ? (
+        <Text style={styles.gpsError} accessibilityRole="alert">
+          {gpsError}
+        </Text>
+      ) : null}
     </View>
+  );
+}
+
+/**
+ * Grand bouton rond « Passer en ligne » (accueil hors ligne). Passe par le consentement au suivi GPS la première
+ * fois (setOnline l'ouvre et reprend le passage en ligne après acceptation).
+ */
+export function GoOnlineButton({ onError }: { onError: (msg: string | null) => void }) {
+  const { togglingOnline, setOnline } = useDriver();
+  return (
+    <RoundButton
+      label="Passer en ligne"
+      icon="power"
+      diameter={116}
+      tone="primary"
+      surface="light"
+      labelInside
+      elevated
+      loading={togglingOnline}
+      onPress={async () => {
+        onError(null);
+        const err = await setOnline(true);
+        if (err) onError(err);
+      }}
+      accessibilityHint="Votre position sera suivie tant que vous êtes en ligne."
+      testID="online-switch"
+    />
+  );
+}
+
+/** « Passer hors ligne » (accueil en ligne, sans course en cours). */
+export function GoOfflinePill({ onError }: { onError: (msg: string | null) => void }) {
+  const { togglingOnline, setOnline } = useDriver();
+  return (
+    <Pill
+      label="Passer hors ligne"
+      icon="power"
+      tone="outline"
+      loading={togglingOnline}
+      onPress={async () => {
+        onError(null);
+        const err = await setOnline(false);
+        if (err) onError(err);
+      }}
+      testID="online-switch"
+    />
   );
 }
 
@@ -89,6 +131,7 @@ export function SosButton({ size = 64 }: { size?: number }) {
         })
       }
       disabled={busy}
+      testID="sos-button"
     >
       <Text style={[styles.sosText, size < 56 && { fontSize: 14 }]}>SOS</Text>
     </Pressable>
@@ -96,17 +139,18 @@ export function SosButton({ size = 64 }: { size?: number }) {
 }
 
 const styles = StyleSheet.create({
-  toggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
+  statusWrap: { alignItems: 'center', gap: 4, maxWidth: '100%' },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  gpsError: {
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(217,54,54,0.92)',
+    fontSize: 12,
+    fontWeight: '700',
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    overflow: 'hidden',
   },
-  toggleOn: { backgroundColor: colors.greenLight, borderColor: colors.green },
-  toggleOff: { backgroundColor: colors.white, borderColor: colors.border },
-  toggleText: { fontSize: 15, fontWeight: '800' },
   sos: {
     width: 64,
     height: 64,
@@ -114,6 +158,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.red,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     elevation: 4,
     shadowColor: '#000',
     shadowOpacity: 0.25,

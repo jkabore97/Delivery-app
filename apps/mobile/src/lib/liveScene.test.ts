@@ -176,3 +176,21 @@ describe('arrivée au retrait (entreprise, livreur en route vers elle)', () => {
     expect(arrivalSummary(delivery({ status: 'SEARCHING_DRIVER', driver: null, route: null }), now)).toBeNull();
   });
 });
+
+describe('épingles « avatar » (facultatives)', () => {
+  it('sans initiales (entreprise, destinataire) : marqueurs habituels, rien ne change', () => {
+    const s = buildScene(orderSceneInput(delivery()));
+    expect(s.markers.every((m) => m.initials === undefined)).toBe(true);
+    const t = buildScene(trackingSceneInput(tracking()));
+    expect(t.markers.every((m) => m.initials === undefined)).toBe(true);
+  });
+
+  it('avec initiales (livreur) : posées sur l’entreprise et le destinataire, jamais sur le livreur', () => {
+    const s = buildScene({ ...orderSceneInput(delivery({ status: 'ASSIGNED' })), initials: { pickup: 'PC', dropoff: 'AK' } });
+    expect(s.markers.map((m) => [m.kind, m.initials ?? null])).toEqual([
+      ['pickup', 'PC'],
+      ['dropoff', 'AK'],
+      ['driver', null],
+    ]);
+  });
+});

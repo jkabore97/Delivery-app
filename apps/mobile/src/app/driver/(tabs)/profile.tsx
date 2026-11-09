@@ -32,7 +32,7 @@ function TrackingConsentCard() {
 
   return (
     <Card>
-      <Subtitle>📍 Suivi GPS</Subtitle>
+      <Subtitle style={{ fontWeight: '900' }}>📍 Suivi GPS</Subtitle>
       <KeyValue label="Consentement" value={trackingConsentStatus(profile)} />
       <Muted>
         Position collectée uniquement en ligne ou pendant une course, partagée avec le client pendant sa livraison et avec
@@ -51,7 +51,7 @@ function TrackingConsentCard() {
       ) : (
         <Button
           title="Lire et accepter le suivi"
-          color={colors.blue}
+          color={colors.green}
           onPress={() => {
             setMessage(null);
             openConsentPrompt(false);
@@ -77,7 +77,7 @@ export default function DriverProfile() {
     return null;
   };
   return (
-    <ProfileScreen color={colors.blue} beforeSignOut={beforeSignOut}>
+    <ProfileScreen color={colors.green} beforeSignOut={beforeSignOut}>
       {profile ? (
         <Card>
           <KeyValue label="Statut" value={LABELS.driverStatus[profile.status]} />

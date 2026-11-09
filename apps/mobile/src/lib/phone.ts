@@ -1,7 +1,7 @@
 import { normalizePhone } from '@yaar/shared/schemas';
 
 export { normalizePhone };
-export { telUrl } from './tel';
+export { telUrl, whatsappUrl } from './tel';
 
 /** Affichage lisible : +22670123456 → « 70 12 34 56 ». */
 export function formatPhone(e164: string | null | undefined): string {

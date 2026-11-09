@@ -3,9 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFollowCamera } from '../../hooks/useFollowCamera';
 import { trackingPadding } from '../../lib/mapCamera';
-import { colors, radius, spacing } from '../../theme';
+import { MAP_PALETTES } from '../../lib/map/style';
+import { colors, dark, radius, SHEET_RADIUS, spacing } from '../../theme';
 import { LiveMap } from '../map/LiveMap';
-import type { MapPoint, SceneLine, SceneMarker } from '../map/types';
+import type { MapPoint, MapTheme, SceneLine, SceneMarker, SceneZone } from '../map/types';
 
 /** Au-delà de cette largeur (ordinateur, tablette en paysage), la feuille passe à droite de la carte. */
 export const WIDE_LAYOUT_MIN_WIDTH = 900;
@@ -16,10 +17,18 @@ const SIDE_SHEET_WIDTH = 420;
  * (repliable en touchant la poignée), bouton « Recentrer » dès que l'utilisateur déplace la carte. La caméra
  * cadre ce qui reste visible au-dessus de la feuille (marges : feuille + 90 px en bas, 60 px au moins sur les
  * côtés). Sur un grand écran (≥ 900 px), la carte occupe la gauche et la feuille devient un panneau à droite.
+ *
+ * Options (toutes facultatives, sans elles l'écran est exactement celui d'origine) : `sheetTheme="dark"` (feuille
+ * sombre, coins de 24 px, contenu à styler en clair sur sombre), `mapTheme="dark"` (fond de carte sombre), `zones`
+ * (cercles approximatifs), `aboveSheet` (élément centré posé sur la carte juste au-dessus de la feuille, ex. grand
+ * bouton rond ; la caméra le garde dégagé), `insetBottom={false}` (écran au-dessus d'une barre d'onglets : pas de
+ * marge de zone sûre sous la feuille), `mapVisible={false}` (carte démontée, ex. écran masqué : une seule carte
+ * WebGL à la fois).
  */
 export function LiveTrackingLayout({
   markers,
   lines,
+  zones,
   fitPoints,
   stageKey,
   animationMs,
@@ -29,11 +38,18 @@ export function LiveTrackingLayout({
   topRight,
   children,
   footer,
+  aboveSheet,
   allowWide = false,
+  sheetTheme = 'light',
+  mapTheme = 'light',
+  insetBottom = true,
+  mapVisible = true,
   testID,
 }: {
   markers: SceneMarker[];
   lines: SceneLine[];
+  /** Zones approximatives (cercles) dessinées sous les tracés. */
+  zones?: SceneZone[];
   fitPoints: MapPoint[];
   /** Change à chaque nouvelle étape : recadrage et reprise du suivi. */
   stageKey: string;
@@ -45,8 +61,18 @@ export function LiveTrackingLayout({
   children: ReactNode;
   /** Bloc fixé en bas de la feuille (bouton d'action). */
   footer?: ReactNode;
+  /** Élément centré posé sur la carte, juste au-dessus de la feuille (ex. grand bouton rond « Passer en ligne »). */
+  aboveSheet?: ReactNode;
   /** Page affichée sur toute la largeur de la fenêtre (page publique) : panneau latéral sur grand écran. */
   allowWide?: boolean;
+  /** Feuille claire (défaut) ou sombre. */
+  sheetTheme?: 'light' | 'dark';
+  /** Fond de carte clair (défaut) ou sombre. */
+  mapTheme?: MapTheme;
+  /** false : pas de marge de zone sûre sous la feuille (l'écran est au-dessus d'une barre d'onglets). */
+  insetBottom?: boolean;
+  /** false : carte démontée (fond uni à la place), le reste de l'écran reste affiché. */
+  mapVisible?: boolean;
   testID?: string;
 }) {
   const insets = useSafeAreaInsets();
@@ -54,14 +80,19 @@ export function LiveTrackingLayout({
   const [width, setWidth] = useState(windowWidth);
   const [expanded, setExpanded] = useState(false);
   const [sheetHeight, setSheetHeight] = useState(Math.round(height * 0.45));
+  const [aboveHeight, setAboveHeight] = useState(0);
   const camera = useFollowCamera(stageKey, fitPoints.length);
   const maxSheet = Math.round(height * (expanded ? 0.86 : 0.56));
   const wide = allowWide && width >= WIDE_LAYOUT_MIN_WIDTH;
   const mapWidth = wide ? width - SIDE_SHEET_WIDTH : width;
+  const above = aboveSheet && !wide ? aboveHeight + ABOVE_SHEET_GAP : 0;
   const padding = wide
     ? { top: insets.top + 104, right: 80, bottom: 80, left: 80 }
-    : trackingPadding(sheetHeight, insets.top, mapWidth);
+    : trackingPadding(sheetHeight + above, insets.top, mapWidth);
   const covered = wide ? 0 : sheetHeight;
+  const darkSheet = sheetTheme === 'dark';
+  const darkMap = mapTheme === 'dark';
+  const bottomPad = insetBottom ? Math.max(insets.bottom, spacing.sm) : spacing.sm;
 
   return (
     <View
@@ -73,19 +104,25 @@ export function LiveTrackingLayout({
       }}
     >
       <View style={wide ? styles.mapWide : StyleSheet.absoluteFill}>
-        <LiveMap
-          style={StyleSheet.absoluteFill}
-          markers={markers}
-          lines={lines}
-          fitPoints={fitPoints}
-          follow={camera.follow}
-          recenterKey={camera.recenterKey}
-          onUserGesture={camera.onUserGesture}
-          padding={padding}
-          bottomInset={covered}
-          animationMs={animationMs}
-          allowRotate={allowRotate}
-        />
+        {mapVisible ? (
+          <LiveMap
+            style={StyleSheet.absoluteFill}
+            markers={markers}
+            lines={lines}
+            fitPoints={fitPoints}
+            follow={camera.follow}
+            recenterKey={camera.recenterKey}
+            onUserGesture={camera.onUserGesture}
+            padding={padding}
+            bottomInset={covered}
+            animationMs={animationMs}
+            allowRotate={allowRotate}
+            {...(zones ? { zones } : {})}
+            {...(darkMap ? { theme: 'dark' as const } : {})}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: MAP_PALETTES[mapTheme].background }]} />
+        )}
       </View>
       <View style={[styles.topBar, { top: insets.top + spacing.sm }, wide && { right: SIDE_SHEET_WIDTH + spacing.md }]} pointerEvents="box-none">
         <View style={styles.topSide} pointerEvents="box-none">
@@ -98,22 +135,36 @@ export function LiveTrackingLayout({
           {topRight}
         </View>
       </View>
-      {camera.showRecenter ? (
+      {camera.showRecenter && mapVisible ? (
         <Pressable
           accessibilityRole="button"
           onPress={camera.recenter}
-          style={[styles.recenter, { bottom: covered + 26 }, wide && { right: SIDE_SHEET_WIDTH + spacing.md }]}
+          style={[
+            styles.recenter,
+            darkMap && styles.recenterDark,
+            { bottom: covered + 26 },
+            wide && { right: SIDE_SHEET_WIDTH + spacing.md },
+          ]}
           testID="recenter-button"
         >
-          <Text style={styles.recenterIcon}>◎</Text>
-          <Text style={styles.recenterText}>Recentrer</Text>
+          <Text style={[styles.recenterIcon, darkMap && { color: dark.green }]}>◎</Text>
+          <Text style={[styles.recenterText, darkMap && { color: dark.text }]}>Recentrer</Text>
         </Pressable>
+      ) : null}
+      {aboveSheet && !wide ? (
+        <View
+          style={[styles.aboveSheet, { bottom: covered + ABOVE_SHEET_GAP }]}
+          pointerEvents="box-none"
+          onLayout={(e) => setAboveHeight(Math.round(e.nativeEvent.layout.height))}
+        >
+          {aboveSheet}
+        </View>
       ) : null}
       <View
         style={
           wide
-            ? [styles.sideSheet, { paddingTop: insets.top + spacing.md, paddingBottom: Math.max(insets.bottom, spacing.sm) }]
-            : [styles.sheet, { maxHeight: maxSheet, paddingBottom: Math.max(insets.bottom, spacing.sm) }]
+            ? [styles.sideSheet, darkSheet && styles.sideSheetDark, { paddingTop: insets.top + spacing.md, paddingBottom: bottomPad }]
+            : [styles.sheet, darkSheet && styles.sheetDark, { maxHeight: maxSheet, paddingBottom: bottomPad }]
         }
         onLayout={(e) => {
           if (!wide) setSheetHeight(Math.round(e.nativeEvent.layout.height));
@@ -127,7 +178,7 @@ export function LiveTrackingLayout({
             onPress={() => setExpanded((v) => !v)}
             style={styles.handleZone}
           >
-            <View style={styles.handle} />
+            <View style={[styles.handle, darkSheet && styles.handleDark]} />
           </Pressable>
         )}
         <ScrollView
@@ -169,6 +220,9 @@ const shadow = {
   shadowOffset: { width: 0, height: 4 },
   elevation: 6,
 } as const;
+
+/** Écart entre le haut de la feuille et l'élément `aboveSheet`. */
+const ABOVE_SHEET_GAP = 16;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
@@ -221,8 +275,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     ...shadow,
   },
+  recenterDark: { backgroundColor: dark.chip },
   recenterIcon: { fontSize: 16, color: colors.green, fontWeight: '900' },
   recenterText: { fontWeight: '800', color: colors.text },
+  aboveSheet: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   sheet: {
     position: 'absolute',
     left: 0,
@@ -235,8 +291,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowOffset: { width: 0, height: -4 },
   },
+  sheetDark: {
+    backgroundColor: dark.surface,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+  },
+  sideSheetDark: { backgroundColor: dark.surface, borderLeftColor: dark.border },
   handleZone: { alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D5DBE1' },
+  handleDark: { backgroundColor: dark.border },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },

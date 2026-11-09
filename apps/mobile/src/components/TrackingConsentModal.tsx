@@ -7,7 +7,7 @@ import {
   TRACKING_CONSENT_TITLE,
 } from '../lib/consent';
 import { useDriver } from '../state/driver';
-import { colors, radius, spacing, MAX_APP_WIDTH } from '../theme';
+import { colors, spacing, MAX_APP_WIDTH, SHEET_RADIUS } from '../theme';
 import { Banner, Button, Muted, Subtitle } from './ui';
 
 /**
@@ -37,7 +37,7 @@ export function TrackingConsentModal() {
       <View style={styles.backdrop}>
         <View style={styles.sheet} testID="tracking-consent">
           <ScrollView contentContainerStyle={{ gap: spacing.md }}>
-            <Subtitle>📍 {TRACKING_CONSENT_TITLE}</Subtitle>
+            <Subtitle style={{ fontWeight: '900' }}>📍 {TRACKING_CONSENT_TITLE}</Subtitle>
             <Muted>{TRACKING_CONSENT_INTRO}</Muted>
             {TRACKING_CONSENT_POINTS.map((p) => (
               <View key={p} style={styles.point}>
@@ -49,7 +49,7 @@ export function TrackingConsentModal() {
           {error ? <Banner message={error} /> : null}
           <Button
             title={TRACKING_CONSENT_ACCEPT}
-            color={colors.blue}
+            color={colors.green}
             onPress={accept}
             loading={consentBusy}
             testID="accept-tracking-consent"
@@ -79,14 +79,14 @@ const styles = StyleSheet.create({
     maxWidth: MAX_APP_WIDTH,
     alignSelf: 'center',
     backgroundColor: colors.white,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
     padding: spacing.lg,
     gap: spacing.md,
     paddingBottom: spacing.xl * 1.5,
     maxHeight: '90%',
   },
   point: { flexDirection: 'row', gap: spacing.sm },
-  bullet: { color: colors.blue, fontWeight: '900', fontSize: 15 },
+  bullet: { color: colors.green, fontWeight: '900', fontSize: 15 },
   pointText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
 });

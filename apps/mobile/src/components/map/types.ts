@@ -9,6 +9,9 @@ export interface MapPoint {
 /** pickup = entreprise / retrait (carré orange) ; dropoff = destinataire (épingle verte) ; driver = livreur. */
 export type MarkerKind = 'pickup' | 'dropoff' | 'driver';
 
+/** Apparence du fond de carte : claire (défaut partout) ou sombre (offre de course du livreur). */
+export type MapTheme = 'light' | 'dark';
+
 export interface SceneMarker extends MapPoint {
   id: string;
   kind: MarkerKind;
@@ -25,8 +28,26 @@ export interface SceneMarker extends MapPoint {
   nudge?: boolean;
   /** pickup : radar « recherche d'un livreur » ; dropoff : halo pulsé. */
   pulse?: boolean;
+  /**
+   * pickup / dropoff : épingle « avatar » (initiales dans un disque posé sur une épingle, couleur du type) à la place
+   * du pictogramme habituel ; absent = marqueur habituel (carré de l'entreprise, épingle à maison du destinataire).
+   * Une ou deux lettres (voir `avatarInitials`). Ignoré pour le livreur.
+   */
+  initials?: string | null;
   /** Texte d'accessibilité / info-bulle. */
   title?: string;
+}
+
+/**
+ * Zone approximative (cercle géographique doux, contour en pointillés) : quartier de livraison d'une offre, que le
+ * livreur voit AVANT d'accepter, sans jamais la position exacte du destinataire.
+ */
+export interface SceneZone extends MapPoint {
+  id: string;
+  /** pickup = zone de retrait (orange) ; dropoff = zone de livraison (vert). */
+  kind: 'pickup' | 'dropoff';
+  /** Rayon du cercle, en mètres. */
+  radiusM: number;
 }
 
 /** Décalage à l'écran (px, x vers la droite, y vers le bas) du livreur arrivé chez l'entreprise. */
@@ -54,6 +75,13 @@ export interface MapPadding {
 export interface LiveMapProps {
   markers: SceneMarker[];
   lines: SceneLine[];
+  /** Zones approximatives (cercles) ; aucune par défaut. */
+  zones?: SceneZone[];
+  /**
+   * Fond de carte clair (défaut) ou sombre. Web : style distant OpenFreeMap « positron » ou « dark » (avec son style
+   * de secours embarqué) ; Android : style Google Maps clair ou de nuit ; iOS : Apple Plans clair ou sombre.
+   */
+  theme?: MapTheme;
   /** Points à garder visibles (livreur + cible en cours, ou retrait + livraison). */
   fitPoints: MapPoint[];
   /** La caméra suit (recadre à chaque nouvelle position) ; false après un geste de l'utilisateur. */

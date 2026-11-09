@@ -14,8 +14,10 @@ import { clampBasePadding, nativeFitPadding, withDefaultPadding } from '../../li
 import { activeLegPoints, pointsKey, resolveLines, type DrawnLine } from '../../lib/map/lines';
 import { DriverMotion } from '../../lib/map/motion';
 import { radarRings, RADAR_PERIOD_MS, RADAR_STEP_MS } from '../../lib/map/radar';
-import { ANDROID_MAP_STYLE, MAP_COLORS } from '../../lib/map/style';
+import { ANDROID_MAP_STYLE, ANDROID_MAP_STYLE_DARK, MAP_COLORS, MAP_PALETTES, type MapPalette } from '../../lib/map/style';
 import {
+  AVATAR_VIEW,
+  AvatarPinView,
   CHEVRON_VIEW_SIZE,
   DRIVER_VIEW_SIZE,
   DriverMarkerView,
@@ -23,7 +25,15 @@ import {
   HeadingChevronView,
   PickupMarkerView,
 } from './MarkerViews';
-import { DRIVER_NUDGE_PX, type LiveMapProps, type MapPadding, type MapPoint, type SceneLine, type SceneMarker } from './types';
+import {
+  DRIVER_NUDGE_PX,
+  type LiveMapProps,
+  type MapPadding,
+  type MapPoint,
+  type SceneLine,
+  type SceneMarker,
+  type SceneZone,
+} from './types';
 
 /** Mise à jour du tracé rogné pendant le glissement d'un livreur : au plus une fois par seconde. */
 const TRIM_REFRESH_MS = 1000;
@@ -46,6 +56,9 @@ const NUDGE_OFFSET = { x: DRIVER_NUDGE_PX[0], y: DRIVER_NUDGE_PX[1] };
 const NO_OFFSET = { x: 0, y: 0 };
 /** Épingle du destinataire (vue 64 × 56, pointe à 45 px du haut) : pointe sur la position, sur iOS aussi. */
 const DROPOFF_CENTER_OFFSET = { x: 0, y: -(45 - 28) };
+/** Épingle « avatar » (vue 56 × 60, pointe à 52,3 px du haut). */
+const AVATAR_ANCHOR = { x: 0.5, y: AVATAR_VIEW.tipY / AVATAR_VIEW.height };
+const AVATAR_CENTER_OFFSET = { x: 0, y: -(AVATAR_VIEW.tipY - AVATAR_VIEW.height / 2) };
 
 /** Marker.Animated accepte une AnimatedRegion et des enfants (vue personnalisée) ; ses types ne le disent pas. */
 const AnimatedMarker = MarkerAnimated as unknown as ComponentType<
@@ -104,20 +117,47 @@ function SearchRadar({ center }: { center: MapPoint }) {
   );
 }
 
-/** Marqueur fixe (entreprise, destinataire) : vue statique capturée une seule fois. */
+/** Zones approximatives : cercles natifs doux, contour en pointillés (iOS ; trait plein sur Android). */
+function ZoneCircles({ zones, palette }: { zones: SceneZone[]; palette: MapPalette }) {
+  return (
+    <>
+      {zones.map((z) => (
+        <Circle
+          key={z.id}
+          center={ll(z)}
+          radius={z.radiusM}
+          fillColor={palette.zoneFill[z.kind]}
+          strokeColor={palette.zoneStroke[z.kind]}
+          strokeWidth={1.5}
+          lineDashPattern={[8, 6]}
+          zIndex={0}
+        />
+      ))}
+    </>
+  );
+}
+
+/** Marqueur fixe (entreprise, destinataire, ou épingle « avatar ») : vue statique capturée une seule fois. */
 const StaticMarker = memo(function StaticMarker({ marker }: { marker: SceneMarker }) {
   const isDropoff = marker.kind === 'dropoff';
-  const tracks = useCaptureOnce(`${marker.kind}|${marker.pulse ? 1 : 0}`);
+  const avatar = marker.kind !== 'driver' && marker.initials ? marker.initials : null;
+  const tracks = useCaptureOnce(`${marker.kind}|${marker.pulse ? 1 : 0}|${avatar ?? ''}`);
   return (
     <Marker
       coordinate={ll(marker)}
-      anchor={isDropoff ? { x: 0.5, y: 45 / 56 } : CENTER}
-      centerOffset={isDropoff ? DROPOFF_CENTER_OFFSET : NO_OFFSET}
+      anchor={avatar ? AVATAR_ANCHOR : isDropoff ? { x: 0.5, y: 45 / 56 } : CENTER}
+      centerOffset={avatar ? AVATAR_CENTER_OFFSET : isDropoff ? DROPOFF_CENTER_OFFSET : NO_OFFSET}
       tracksViewChanges={tracks}
       title={marker.title}
       zIndex={isDropoff ? 3 : 2}
     >
-      {isDropoff ? <DropoffMarkerView pulse={marker.pulse} /> : <PickupMarkerView searching={marker.pulse} />}
+      {avatar ? (
+        <AvatarPinView initials={avatar} color={isDropoff ? MAP_COLORS.dropoff : MAP_COLORS.pickup} pulse={isDropoff && marker.pulse} />
+      ) : isDropoff ? (
+        <DropoffMarkerView pulse={marker.pulse} />
+      ) : (
+        <PickupMarkerView searching={marker.pulse} />
+      )}
     </Marker>
   );
 }, (a, b) =>
@@ -126,6 +166,7 @@ const StaticMarker = memo(function StaticMarker({ marker }: { marker: SceneMarke
   a.marker.lat === b.marker.lat &&
   a.marker.lng === b.marker.lng &&
   a.marker.pulse === b.marker.pulse &&
+  a.marker.initials === b.marker.initials &&
   a.marker.title === b.marker.title,
 );
 
@@ -224,7 +265,17 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
 }
 
 /** Tracés (itinéraire rogné à la position animée du livreur, pointillés) : seul composant re-rendu pendant un glissement. */
-function TrimmedLines({ lines, markers, store }: { lines: SceneLine[]; markers: SceneMarker[]; store: PositionStore }) {
+function TrimmedLines({
+  lines,
+  markers,
+  store,
+  palette,
+}: {
+  lines: SceneLine[];
+  markers: SceneMarker[];
+  store: PositionStore;
+  palette: MapPalette;
+}) {
   const compute = () => resolveLines(lines, (id) => store.get(id) ?? markers.find((m) => m.id === id) ?? null);
   const [drawn, setDrawn] = useState<DrawnLine[]>(compute);
   const keyOf = (d: DrawnLine[]) => d.map((l) => `${l.id}:${l.kind}:${pointsKey(l.points)}`).join(';');
@@ -250,7 +301,7 @@ function TrimmedLines({ lines, markers, store }: { lines: SceneLine[]; markers: 
             <Polyline
               key={`${l.id}-casing`}
               coordinates={l.points.map(ll)}
-              strokeColor={MAP_COLORS.casing}
+              strokeColor={palette.casing}
               strokeWidth={10}
               lineCap="round"
               lineJoin="round"
@@ -259,7 +310,7 @@ function TrimmedLines({ lines, markers, store }: { lines: SceneLine[]; markers: 
             <Polyline
               key={l.id}
               coordinates={l.points.map(ll)}
-              strokeColor={MAP_COLORS.route}
+              strokeColor={palette.route}
               strokeWidth={5.5}
               lineCap="round"
               lineJoin="round"
@@ -270,7 +321,7 @@ function TrimmedLines({ lines, markers, store }: { lines: SceneLine[]; markers: 
           <Polyline
             key={l.id}
             coordinates={l.points.map(ll)}
-            strokeColor={MAP_COLORS.dashed}
+            strokeColor={palette.dashed}
             strokeWidth={3.5}
             lineDashPattern={[10, 8]}
             zIndex={1}
@@ -281,15 +332,20 @@ function TrimmedLines({ lines, markers, store }: { lines: SceneLine[]; markers: 
   );
 }
 
+const NO_ZONES: SceneZone[] = [];
+
 /**
  * Carte de suivi en direct (Android / iOS) : react-native-maps, Google Maps au style discret sur Android,
  * Apple Plans `mutedStandard` sur iOS, marqueurs personnalisés statiques, itinéraire à liseré blanc rogné au fil
  * de l'avancée du livreur, caméra qui suit jusqu'au premier geste de l'utilisateur. Le logo Google et le lien
- * « Mentions légales » d'Apple restent au-dessus de la feuille (`mapPadding`).
+ * « Mentions légales » d'Apple restent au-dessus de la feuille (`mapPadding`). `theme="dark"` : Google Maps de nuit
+ * (Android), Apple Plans sombre (iOS), tracés en vert vif ; zones approximatives en cercles natifs (`zones`).
  */
 export function LiveMap({
   markers,
   lines,
+  zones = NO_ZONES,
+  theme = 'light',
   fitPoints,
   follow,
   recenterKey = 0,
@@ -352,9 +408,11 @@ export function LiveMap({
   }, [ready, size, fitKey, recenterKey, follow, padKey]);
 
   const radarAt = markers.find((m) => m.kind === 'pickup' && m.pulse) ?? null;
+  const dark = theme === 'dark';
+  const palette = MAP_PALETTES[theme];
   return (
     <View
-      style={[styles.wrap, style]}
+      style={[styles.wrap, { backgroundColor: palette.background }, style]}
       testID={testID}
       onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
@@ -365,7 +423,9 @@ export function LiveMap({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={android ? PROVIDER_GOOGLE : undefined}
-        customMapStyle={android ? ANDROID_MAP_STYLE : undefined}
+        customMapStyle={android ? (dark ? ANDROID_MAP_STYLE_DARK : ANDROID_MAP_STYLE) : undefined}
+        // Fond sombre seulement sur demande : les cartes claires gardent exactement leurs réglages d'origine.
+        userInterfaceStyle={dark ? 'dark' : undefined}
         mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
         initialRegion={initialRegion}
         mapPadding={mapPadding}
@@ -384,12 +444,13 @@ export function LiveMap({
         }}
       >
         {radarAt ? <SearchRadar center={radarAt} /> : null}
-        <TrimmedLines lines={linesKeyed} markers={markersKeyed} store={store} />
+        {zones.length ? <ZoneCircles zones={zones} palette={palette} /> : null}
+        <TrimmedLines lines={linesKeyed} markers={markersKeyed} store={store} palette={palette} />
         {markers.map((m) =>
           m.kind === 'driver' ? (
             <DriverMarker key={m.id} marker={m} fallbackMs={animationMs} store={store} />
           ) : (
-            <StaticMarker key={`${m.id}|${m.pulse ? 1 : 0}`} marker={m} />
+            <StaticMarker key={`${m.id}|${m.pulse ? 1 : 0}|${m.initials ?? ''}`} marker={m} />
           ),
         )}
       </MapView>
@@ -398,5 +459,5 @@ export function LiveMap({
 }
 
 const styles = StyleSheet.create({
-  wrap: { overflow: 'hidden', backgroundColor: MAP_COLORS.background },
+  wrap: { overflow: 'hidden' },
 });

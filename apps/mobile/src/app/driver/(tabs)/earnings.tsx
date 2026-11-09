@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
+import { StyleSheet } from 'react-native';
 import { Banner, Card, KeyValue, Loading, Muted, ProgressBar, Row, Screen, SectionTitle, Stat, Title } from '../../../components/ui';
 import { useAsync } from '../../../hooks/useAsync';
 import { formatDateTime, formatFcfa } from '../../../lib/format';
@@ -20,7 +21,7 @@ export default function DriverEarnings() {
 
   return (
     <Screen refreshing={earnings.loading} onRefresh={earnings.reload}>
-      <Title>Mes gains</Title>
+      <Title style={styles.title}>Mes gains</Title>
       {earnings.error ? <Banner message={earnings.error} /> : null}
       {!e ? <Loading /> : null}
       {e ? (
@@ -60,3 +61,5 @@ export default function DriverEarnings() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({ title: { fontWeight: '900', letterSpacing: -0.4 } });

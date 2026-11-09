@@ -1,5 +1,5 @@
 import { splitPolylineAt } from '@yaar/shared';
-import type { MapPoint, SceneLine } from '../../components/map/types';
+import type { MapPoint, SceneLine, SceneZone } from '../../components/map/types';
 
 export interface DrawnLine {
   id: string;
@@ -56,4 +56,40 @@ export function activeLegPoints(lines: SceneLine[], positionOf: (markerId: strin
 /** Clé stable d'une liste de points (≈ 1 m) : évite de redessiner pour des changements insignifiants. */
 export function pointsKey(points: ReadonlyArray<MapPoint>): string {
   return points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|');
+}
+
+/* ------------------------------------------------------------------ */
+/* Zones approximatives (cercles)                                      */
+/* ------------------------------------------------------------------ */
+
+const EARTH_R_M = 6371008.8;
+
+/** Point à `distM` mètres de `center` vers le cap `bearingDeg` (0 = nord) : petite distance, Terre sphérique. */
+function offsetPoint(center: MapPoint, distM: number, bearingDeg: number): MapPoint {
+  const b = (bearingDeg * Math.PI) / 180;
+  const dLat = (distM * Math.cos(b)) / EARTH_R_M;
+  const dLng = (distM * Math.sin(b)) / (EARTH_R_M * Math.cos((center.lat * Math.PI) / 180));
+  return { lat: center.lat + (dLat * 180) / Math.PI, lng: center.lng + (dLng * 180) / Math.PI };
+}
+
+/** Contour [lng, lat] fermé (premier point répété à la fin) d'un cercle géographique, pour un polygone GeoJSON. */
+export function circleRing(center: MapPoint, radiusM: number, steps = 64): Array<[number, number]> {
+  const n = Math.max(8, Math.round(steps));
+  const ring: Array<[number, number]> = [];
+  for (let i = 0; i < n; i++) {
+    const p = offsetPoint(center, radiusM, (360 * i) / n);
+    ring.push([Math.round(p.lng * 1e6) / 1e6, Math.round(p.lat * 1e6) / 1e6]);
+  }
+  ring.push(ring[0]!);
+  return ring;
+}
+
+/** Quatre points cardinaux du cercle d'une zone : à ajouter au cadrage pour que tout le cercle reste visible. */
+export function zoneExtentPoints(zone: Pick<SceneZone, 'lat' | 'lng' | 'radiusM'>): MapPoint[] {
+  return [0, 90, 180, 270].map((deg) => offsetPoint(zone, zone.radiusM, deg));
+}
+
+/** Clé stable d'une liste de zones (≈ 1 m) : évite de redessiner pour rien. */
+export function zonesKey(zones: ReadonlyArray<SceneZone>): string {
+  return zones.map((z) => `${z.id}:${z.kind}:${z.lat.toFixed(5)},${z.lng.toFixed(5)}:${Math.round(z.radiusM)}`).join(';');
 }

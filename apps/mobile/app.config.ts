@@ -30,7 +30,8 @@ const config: ExpoConfig = {
       monochromeImage: './assets/android-icon-monochrome.png',
     },
     // Localisation au premier plan uniquement : aucun suivi en arrière-plan (exigence légale).
-    permissions: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAMERA'],
+    // VIBRATE : vibration à l'arrivée d'une offre de course (permission normale, sans demande à l'utilisateur).
+    permissions: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAMERA', 'VIBRATE'],
     blockedPermissions: ['android.permission.ACCESS_BACKGROUND_LOCATION'],
     predictiveBackGestureEnabled: false,
   },

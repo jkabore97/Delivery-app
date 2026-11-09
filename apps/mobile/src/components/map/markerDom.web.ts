@@ -8,7 +8,8 @@ import { artToSvg, HOUSE_GLYPH, STORE_GLYPH, vehicleSideGlyph } from './markerAr
  *
  * Marqueurs HTML des cartes MapLibre (web), mêmes formes que la console : entreprise (carré orange), destinataire
  * (épingle verte pulsée), livreur (disque vert cerclé de blanc, véhicule de profil toujours droit, petit chevron
- * séparé sur l'anneau orienté selon le cap, masqué à l'arrêt), radar « recherche d'un livreur ».
+ * séparé sur l'anneau orienté selon le cap, masqué à l'arrêt), radar « recherche d'un livreur ». En option
+ * (`initials` d'un marqueur) : épingle « avatar » aux initiales du destinataire ou de l'entreprise.
  */
 const CSS = `
 .yaar-mk{cursor:default;-webkit-tap-highlight-color:transparent}
@@ -34,6 +35,12 @@ const CSS = `
 .yaar-driver-heading{position:absolute;inset:-11px;pointer-events:none;z-index:1}
 .yaar-driver-chevron{position:absolute;left:50%;top:0;width:16px;height:12px;margin-left:-8px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
 .yaar-driver.no-heading .yaar-driver-heading{display:none}
+.yaar-avatar{width:48px;height:49px}
+.yaar-avatar-pin{position:absolute;left:4px;top:0;width:40px;height:40px;border-radius:50% 50% 50% 0;border:3px solid #fff;
+  box-sizing:border-box;transform:rotate(-45deg);box-shadow:-2px 3px 10px rgba(15,46,34,.34);z-index:2}
+.yaar-avatar-text{position:absolute;left:4px;top:0;width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+  color:#fff;font:900 15px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:.3px;
+  z-index:3;pointer-events:none;user-select:none}
 @media (prefers-reduced-motion: reduce){.yaar-radar,.yaar-pulse{animation:none;opacity:.35}}
 `;
 
@@ -79,6 +86,33 @@ export function dropoffElement(pulse: boolean, title?: string): HTMLDivElement {
   ensureMarkerCss();
   const el = wrap('yaar-dropoff', 'dropoff', title);
   el.innerHTML = `${pulse ? '<div class="yaar-pulse"></div>' : ''}<div class="yaar-pin-dot"></div><div class="yaar-pin"><div class="yaar-pin-glyph">${artToSvg(HOUSE_GLYPH, 20)}</div></div>`;
+  return el;
+}
+
+/** Couleur de l'épingle « avatar » selon le type : orange pour l'entreprise (retrait), vert pour le destinataire. */
+export function avatarPinColor(kind: 'pickup' | 'dropoff'): string {
+  return kind === 'pickup' ? MAP_COLORS.pickup : MAP_COLORS.dropoff;
+}
+
+/**
+ * Épingle « avatar » : initiales (blanches) dans un disque de la couleur du type, cerclé de blanc, dont la pointe
+ * touche la position (ancre `bottom` : la pointe est à 48,3 px du haut d'un élément de 49 px). Destinataire : halo
+ * pulsé sous la pointe si `pulse`.
+ */
+export function avatarPinElement(kind: 'pickup' | 'dropoff', initials: string, pulse: boolean, title?: string): HTMLDivElement {
+  ensureMarkerCss();
+  const el = wrap('yaar-avatar', kind, title);
+  el.dataset.avatar = '1';
+  const pin = document.createElement('div');
+  pin.className = 'yaar-avatar-pin';
+  pin.style.background = avatarPinColor(kind);
+  const text = document.createElement('div');
+  text.className = 'yaar-avatar-text';
+  // textContent (jamais innerHTML) : un nom saisi par l'utilisateur ne peut pas injecter de HTML.
+  text.textContent = initials.slice(0, 3);
+  el.innerHTML = `${pulse ? '<div class="yaar-pulse"></div>' : ''}<div class="yaar-pin-dot"></div>`;
+  el.appendChild(pin);
+  el.appendChild(text);
   return el;
 }
 

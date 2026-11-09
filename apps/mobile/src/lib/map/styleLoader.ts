@@ -177,3 +177,50 @@ export class RemoteStyleLoader {
     }, styleRetryDelayMs(this.failures));
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Cache des styles reçus pendant la session                           */
+/* ------------------------------------------------------------------ */
+
+/** Copie profonde d'un style JSON (MapLibre peut garder des références vers l'objet passé à setStyle). */
+function cloneStyle(style: StyleJson): StyleJson {
+  return JSON.parse(JSON.stringify(style)) as StyleJson;
+}
+
+/**
+ * Styles distants déjà reçus pendant la session, rangés par URL, donc par fond de carte (« positron » clair,
+ * « dark » sombre) : une carte rouverte (autre écran, offre suivante) affiche aussitôt le bon style, sans repasser
+ * par le style de secours ni retélécharger le JSON ; un fond ne remplace jamais l'autre.
+ */
+export class StyleCache {
+  private readonly styles = new Map<string, StyleJson>();
+
+  get(url: string): StyleJson | null {
+    const s = this.styles.get(url);
+    return s ? cloneStyle(s) : null;
+  }
+
+  set(url: string, style: StyleJson): void {
+    this.styles.set(url, cloneStyle(style));
+  }
+
+  has(url: string): boolean {
+    return this.styles.has(url);
+  }
+
+  clear(): void {
+    this.styles.clear();
+  }
+}
+
+/** Cache partagé par toutes les cartes web de l'application. */
+export const sessionStyleCache = new StyleCache();
+
+/**
+ * Style d'une carte à sa création : le style distant déjà reçu pour cette URL (`remote: true`, aucun chargement à
+ * lancer), sinon le style de secours embarqué (le chargement du style distant démarre alors).
+ */
+export function initialMapStyle<F>(url: string, fallback: F, cache: StyleCache = sessionStyleCache): { style: StyleJson | F; remote: boolean } {
+  const cached = cache.get(url);
+  return cached ? { style: cached, remote: true } : { style: fallback, remote: false };
+}

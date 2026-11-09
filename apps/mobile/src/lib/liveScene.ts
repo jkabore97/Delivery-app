@@ -66,6 +66,11 @@ export interface SceneInput {
   route: RouteDto | null | undefined;
   labels?: { pickup?: string; dropoff?: string; driver?: string };
   /**
+   * Épingles « avatar » (facultatif) : initiales de l'entreprise (retrait) et du destinataire à la place des
+   * pictogrammes. Sans elles, les marqueurs habituels (écrans de l'entreprise et du destinataire).
+   */
+  initials?: { pickup?: string | null; dropoff?: string | null };
+  /**
    * Page du destinataire : pendant que le livreur va chez l'entreprise, la caméra garde aussi l'épingle du
    * destinataire (« vous ») dans le cadre.
    */
@@ -107,7 +112,14 @@ export function buildScene(input: SceneInput): LiveScene {
   const markers: SceneMarker[] = [];
   const showPickup = stage !== 'toDropoff' && stage !== 'delivered';
   if (pickup && showPickup) {
-    markers.push({ id: `${prefix}pickup`, kind: 'pickup', ...pickup, pulse: stage === 'searching', title: input.labels?.pickup });
+    markers.push({
+      id: `${prefix}pickup`,
+      kind: 'pickup',
+      ...pickup,
+      pulse: stage === 'searching',
+      title: input.labels?.pickup,
+      ...(input.initials?.pickup ? { initials: input.initials.pickup } : {}),
+    });
   }
   if (dropoff) {
     markers.push({
@@ -116,6 +128,7 @@ export function buildScene(input: SceneInput): LiveScene {
       ...dropoff,
       pulse: stage !== 'delivered' && stage !== 'cancelled',
       title: input.labels?.dropoff,
+      ...(input.initials?.dropoff ? { initials: input.initials.dropoff } : {}),
     });
   }
   if (driver) {

@@ -1,6 +1,7 @@
 import type { GeoJSONSource, Map as MlMap, StyleSpecification } from 'maplibre-gl';
-import { FALLBACK_STYLE, MAP_COLORS, MAP_STYLE_URL, MAX_PIXEL_RATIO } from './style';
-import { RemoteStyleLoader } from './styleLoader';
+import type { MapTheme } from '../../components/map/types';
+import { MAP_PALETTES, mapThemeConfig, MAX_PIXEL_RATIO } from './style';
+import { initialMapStyle, RemoteStyleLoader, sessionStyleCache } from './styleLoader';
 
 /**
  * MapLibre GL JS pour la version web (react-native-maps n'a pas de rendu web). Le module (~1 Mo) est chargé
@@ -80,27 +81,36 @@ export interface BaseMapOptions {
   allowRotate?: boolean;
   /** Style prêt (secours au premier affichage, puis distant dès qu'il arrive) : (ré)ajouter les couches de l'application. */
   onStyleReady?: (map: MlMap, fallback: boolean) => void;
+  /** Fond de carte (clair par défaut) : choisit le style distant et le style de secours. */
+  theme?: MapTheme;
+  /** Remplace l'URL du style distant du fond choisi. */
   styleUrl?: string;
 }
 
 export interface BaseMap {
   map: MlMap;
   usingFallback(): boolean;
+  /** Change de fond (style distant en cache ou secours aussitôt, puis style distant) ; sans effet si identique. */
+  setTheme(theme: MapTheme): void;
   destroy(): void;
 }
 
 /**
- * Crée une carte MapLibre affichée aussitôt avec le style de secours embarqué ; le style distant (OpenFreeMap
- * « positron » par défaut) est demandé en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué
- * (setStyle) : la carte n'y renonce jamais. Densité de pixels plafonnée à 2 ; rotation et inclinaison désactivées
- * sauf pour le livreur ; taille suivie (ResizeObserver).
+ * Crée une carte MapLibre affichée aussitôt avec le style distant déjà reçu pendant la session pour ce fond, sinon
+ * avec le style de secours embarqué ; dans ce cas le style distant (OpenFreeMap « positron », ou « dark » pour un
+ * fond sombre) est demandé en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué (setStyle) et gardé en
+ * cache : la carte n'y renonce jamais. Densité de pixels plafonnée à 2 ; rotation et inclinaison désactivées sauf
+ * pour le livreur ; taille suivie (ResizeObserver).
  */
 export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMapOptions): BaseMap {
   ensureMaplibreCoreCss();
   const allowRotate = opts.allowRotate === true;
+  let theme: MapTheme = opts.theme ?? 'light';
+  const urlFor = (t: MapTheme) => (t === (opts.theme ?? 'light') && opts.styleUrl ? opts.styleUrl : mapThemeConfig(t).styleUrl);
+  const first = initialMapStyle(urlFor(theme), mapThemeConfig(theme).fallback, sessionStyleCache);
   const map = new ml.Map({
     container,
-    style: FALLBACK_STYLE as unknown as StyleSpecification,
+    style: first.style as unknown as StyleSpecification,
     center: [opts.center.lng, opts.center.lat],
     zoom: opts.zoom,
     pixelRatio: Math.min(MAX_PIXEL_RATIO, window.devicePixelRatio || 1),
@@ -117,21 +127,28 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
     map.keyboard.disableRotation();
   }
 
-  let remote = false;
+  let remote = first.remote;
   let destroyed = false;
-  const loader = new RemoteStyleLoader(opts.styleUrl ?? MAP_STYLE_URL, (style) => {
-    if (destroyed) return;
-    remote = true;
-    try {
-      map.setStyle(style as unknown as StyleSpecification, { diff: false });
-    } catch {
-      remote = false; // style refusé par MapLibre : on garde le secours
-    }
-  });
+  let loader: RemoteStyleLoader | null = null;
+  /** Style distant du fond `t` : demandé (et redemandé) jusqu'à son arrivée, puis appliqué et mis en cache. */
+  const loadRemote = (t: MapTheme) => {
+    const url = urlFor(t);
+    loader = new RemoteStyleLoader(url, (style) => {
+      if (destroyed || t !== theme) return;
+      sessionStyleCache.set(url, style);
+      remote = true;
+      try {
+        map.setStyle(style as unknown as StyleSpecification, { diff: false });
+      } catch {
+        remote = false; // style refusé par MapLibre : on garde le secours
+      }
+    });
+    loader.start();
+  };
   map.on('style.load', () => opts.onStyleReady?.(map, !remote));
   // Tuiles ou sprites indisponibles après le chargement du style : la carte reste utilisable (pas de bruit en console).
   map.on('error', () => undefined);
-  loader.start();
+  if (!first.remote) loadRemote(theme);
 
   let observer: ResizeObserver | null = null;
   if (typeof ResizeObserver !== 'undefined') {
@@ -142,9 +159,19 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
   return {
     map,
     usingFallback: () => !remote,
+    setTheme(next) {
+      if (destroyed || next === theme) return;
+      theme = next;
+      loader?.dispose();
+      loader = null;
+      const s = initialMapStyle(urlFor(next), mapThemeConfig(next).fallback, sessionStyleCache);
+      remote = s.remote;
+      map.setStyle(s.style as unknown as StyleSpecification, { diff: false });
+      if (!s.remote) loadRemote(next);
+    },
     destroy() {
       destroyed = true;
-      loader.dispose();
+      loader?.dispose();
       observer?.disconnect();
       map.remove();
     },
@@ -156,6 +183,8 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
 /* ------------------------------------------------------------------ */
 
 export const LINES_SOURCE = 'yaar-lines';
+/** Zones approximatives (cercles doux de l'offre de course). */
+export const ZONES_SOURCE = 'yaar-zones';
 
 export type LineFeature = {
   type: 'Feature';
@@ -163,27 +192,54 @@ export type LineFeature = {
   geometry: { type: 'LineString'; coordinates: Array<[number, number]> };
 };
 
+export type ZoneFeature = {
+  type: 'Feature';
+  properties: { kind: 'pickup' | 'dropoff' };
+  geometry: { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
+};
+
 const EMPTY = { type: 'FeatureCollection' as const, features: [] as LineFeature[] };
+const EMPTY_ZONES = { type: 'FeatureCollection' as const, features: [] as ZoneFeature[] };
 
 /** Premier calque de texte du style : l'itinéraire passe dessous pour garder les noms de rues lisibles. */
 function firstSymbolLayerId(map: MlMap): string | undefined {
   return map.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
 }
 
-/** Ajoute (après chaque changement de style) la source et les calques des itinéraires. */
-export function ensureLineLayers(map: MlMap): void {
+/**
+ * Ajoute (après chaque changement de style) les sources et les calques des zones et des itinéraires, aux couleurs
+ * du fond de carte (`theme`, clair par défaut : couleurs d'origine).
+ */
+export function ensureLineLayers(map: MlMap, theme: MapTheme = 'light'): void {
+  const c = MAP_PALETTES[theme];
+  if (!map.getSource(ZONES_SOURCE)) map.addSource(ZONES_SOURCE, { type: 'geojson', data: EMPTY_ZONES });
   if (!map.getSource(LINES_SOURCE)) map.addSource(LINES_SOURCE, { type: 'geojson', data: EMPTY });
   const before = firstSymbolLayerId(map);
   const isRoute = ['==', ['get', 'kind'], 'route'] as const;
   const width = (min: number, max: number) => ['interpolate', ['linear'], ['zoom'], 10, min, 16, max] as const;
+  const byZone = (v: { pickup: string; dropoff: string }) => ['match', ['get', 'kind'], 'pickup', v.pickup, v.dropoff] as const;
   const layers = [
+    // Zones d'abord : sous les tracés et les marqueurs.
+    {
+      id: 'yaar-zone-fill',
+      type: 'fill' as const,
+      source: ZONES_SOURCE,
+      paint: { 'fill-color': byZone(c.zoneFill), 'fill-antialias': true },
+    },
+    {
+      id: 'yaar-zone-line',
+      type: 'line' as const,
+      source: ZONES_SOURCE,
+      layout: { 'line-join': 'round' as const },
+      paint: { 'line-color': byZone(c.zoneStroke), 'line-width': 1.6, 'line-dasharray': [2.2, 1.8] },
+    },
     {
       id: 'yaar-dashed',
       type: 'line' as const,
       source: LINES_SOURCE,
       filter: ['==', ['get', 'kind'], 'dashed'],
       layout: { 'line-cap': 'butt' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': MAP_COLORS.dashed, 'line-width': width(2.5, 4), 'line-opacity': 0.8, 'line-dasharray': [2, 1.6] },
+      paint: { 'line-color': c.dashed, 'line-width': width(2.5, 4), 'line-opacity': 0.8, 'line-dasharray': [2, 1.6] },
     },
     {
       id: 'yaar-route-shadow',
@@ -191,7 +247,7 @@ export function ensureLineLayers(map: MlMap): void {
       source: LINES_SOURCE,
       filter: isRoute,
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': MAP_COLORS.shadow, 'line-width': width(9, 15), 'line-blur': 4, 'line-translate': [0, 1.5] },
+      paint: { 'line-color': c.shadow, 'line-width': width(9, 15), 'line-blur': 4, 'line-translate': [0, 1.5] },
     },
     {
       id: 'yaar-route-casing',
@@ -199,7 +255,7 @@ export function ensureLineLayers(map: MlMap): void {
       source: LINES_SOURCE,
       filter: isRoute,
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': MAP_COLORS.casing, 'line-width': width(7, 12) },
+      paint: { 'line-color': c.casing, 'line-width': width(7, 12) },
     },
     {
       id: 'yaar-route',
@@ -207,7 +263,7 @@ export function ensureLineLayers(map: MlMap): void {
       source: LINES_SOURCE,
       filter: isRoute,
       layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-      paint: { 'line-color': MAP_COLORS.route, 'line-width': width(4, 7) },
+      paint: { 'line-color': c.route, 'line-width': width(4, 7) },
     },
   ];
   for (const layer of layers) {
@@ -220,5 +276,10 @@ export function ensureLineLayers(map: MlMap): void {
 
 export function setLineFeatures(map: MlMap, features: LineFeature[]): void {
   const source = map.getSource(LINES_SOURCE) as GeoJSONSource | undefined;
+  source?.setData({ type: 'FeatureCollection', features } as unknown as Parameters<GeoJSONSource['setData']>[0]);
+}
+
+export function setZoneFeatures(map: MlMap, features: ZoneFeature[]): void {
+  const source = map.getSource(ZONES_SOURCE) as GeoJSONSource | undefined;
   source?.setData({ type: 'FeatureCollection', features } as unknown as Parameters<GeoJSONSource['setData']>[0]);
 }

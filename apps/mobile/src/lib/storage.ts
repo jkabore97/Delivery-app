@@ -1,4 +1,4 @@
-import { keyValueStore } from './secureStorage';
+import { keyValueStore, type KeyValueStore } from './secureStorage';
 import type { UserDto } from '@yaar/shared';
 
 const KEY = 'yaar.session';
@@ -30,4 +30,34 @@ export async function saveSession(session: StoredSession): Promise<void> {
 
 export async function clearSession(): Promise<void> {
   await keyValueStore().deleteItem(KEY);
+}
+
+/* ------------------------------------------------------------------ */
+/* Écran « Vous êtes prêt ! » du livreur                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Clé (par utilisateur) de l'écran « Vous êtes prêt ! » écarté avec « Plus tard ». Caractères limités à ceux
+ * qu'accepte expo-secure-store (lettres, chiffres, « . », « - », « _ »).
+ */
+export function driverReadyKey(userId: string): string {
+  return `yaar.driverReady.${userId.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+}
+
+/** true si ce livreur a déjà écarté l'écran « Vous êtes prêt ! » sur cet appareil (false si stockage illisible). */
+export async function loadDriverReadyDismissed(userId: string, store: KeyValueStore = keyValueStore()): Promise<boolean> {
+  try {
+    return (await store.getItem(driverReadyKey(userId))) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Mémorise (sur cet appareil) que ce livreur a écarté l'écran « Vous êtes prêt ! ». */
+export async function saveDriverReadyDismissed(userId: string, store: KeyValueStore = keyValueStore()): Promise<void> {
+  try {
+    await store.setItem(driverReadyKey(userId), new Date().toISOString());
+  } catch {
+    /* stockage indisponible : l'écran pourra revenir au prochain lancement */
+  }
 }

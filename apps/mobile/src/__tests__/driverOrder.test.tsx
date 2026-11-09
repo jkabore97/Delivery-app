@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { render } from '@testing-library/react-native';
+import { Linking } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OrderDto } from '@yaar/shared';
 import DriverOrderScreen from '../app/driver/order';
@@ -30,8 +31,11 @@ jest.mock('../state/driver', () => ({ useDriver: () => mockDriver }));
 jest.mock('../components/map/LiveMap', () => {
   const { Text: RNText } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    LiveMap: (p: { markers: { kind: string }[]; lines: { kind: string }[]; allowRotate?: boolean }) => (
-      <RNText testID="live-map">{`${p.markers.map((m) => m.kind).join(',')}|${p.lines.map((l) => l.kind).join(',')}|${p.allowRotate ? 'rotation' : ''}`}</RNText>
+    LiveMap: (p: { markers: { kind: string; initials?: string | null }[]; lines: { kind: string }[]; allowRotate?: boolean; theme?: string }) => (
+      <>
+        <RNText testID="live-map">{`${p.markers.map((m) => m.kind).join(',')}|${p.lines.map((l) => l.kind).join(',')}|${p.allowRotate ? 'rotation' : ''}`}</RNText>
+        <RNText testID="live-map-avatars">{`${p.markers.map((m) => `${m.kind}:${m.initials ?? '-'}`).join(',')}|${p.theme ?? 'light'}`}</RNText>
+      </>
     ),
   };
 });
@@ -51,22 +55,51 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     });
     mockDriver.position = { lat: 12.3729, lng: -1.4985, at: 0, heading: 265 };
     const r = await render(wrap(<DriverOrderScreen />));
-    expect(r.getByTestId('next-step')).toHaveTextContent(/Récupérer chez Pharmacie du Centre · \d,\d km · \d+ min/);
+    // Étape, entreprise, puis distance et durée restantes de l'itinéraire.
+    expect(r.getByTestId('next-step')).toHaveTextContent(/1 · RÉCUPÉRER.*Pharmacie du Centre.*Avenue Kwame Nkrumah.*\d,\d km · \d+ min/);
     expect(r.getByTestId('collect-at-pickup')).toHaveTextContent(/À encaisser auprès de l’entreprise.*1 700 FCFA/);
     expect(r.getByTestId('collect-at-dropoff')).toHaveTextContent(/Ensuite, à encaisser auprès du destinataire.*8 000 FCFA/);
     expect(r.getByTestId('live-map').props.children).toBe('pickup,dropoff,driver|route,dashed|rotation');
+    // Carte claire ; entreprise et destinataire en épingles « avatar » à leurs initiales.
+    expect(r.getByTestId('live-map-avatars').props.children).toBe('pickup:PC,dropoff:AK,driver:-|light');
     expect(r.getByTestId('pickup-button')).toBeTruthy();
+    expect(r.getByTestId('tracking-sheet')).toBeTruthy();
+  });
+
+  it('retrait : WhatsApp de l’entreprise avec un message prérempli, appel de l’entreprise', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    mockDriver.currentOrder = delivery({ status: 'ASSIGNED', route: null });
+    mockDriver.position = null;
+    const r = await render(wrap(<DriverOrderScreen />));
+    await act(async () => fireEvent.press(r.getByTestId('whatsapp-contact')));
+    expect(open).toHaveBeenLastCalledWith(expect.stringMatching(/^https:\/\/wa\.me\/22671000001\?text=Bonjour/));
+    expect(decodeURIComponent(String(open.mock.calls.at(-1)?.[0]))).toContain('récupérer la course #1052');
+    await act(async () => fireEvent.press(r.getByTestId('call-contact')));
+    expect(open).toHaveBeenLastCalledWith('tel:+22671000001');
+    open.mockRestore();
   });
 
   it('livraison : destinataire, montant à encaisser = marchandise + frais (payés par le destinataire)', async () => {
     mockDriver.currentOrder = delivery();
     mockDriver.position = { lat: 12.3536, lng: -1.5191, at: 0, heading: null };
     const r = await render(wrap(<DriverOrderScreen />));
-    expect(r.getByTestId('next-step')).toHaveTextContent(/Livrer à Awa Kaboré · \d,\d km · \d+ min/);
+    expect(r.getByTestId('next-step')).toHaveTextContent(/2 · LIVRER.*Colis pour Awa Kaboré.*Patte d’Oie, rue 15\.23 · Repère : Station Total.*\d,\d km · \d+ min/);
     expect(r.getByTestId('collect-at-dropoff')).toHaveTextContent(
       /À encaisser auprès du destinataire.*Marchandise 15 000 FCFA \+ frais de livraison 1 500 FCFA, en espèces.*16 500 FCFA/,
     );
     expect(r.queryByTestId('collect-at-pickup')).toBeNull();
+    expect(r.getByTestId('collect-at-dropoff-value')).toHaveTextContent('16\u202f500\u202fFCFA');
+    expect(r.getByText('2 boîtes de médicaments')).toBeTruthy();
     expect(r.getByTestId('go-deliver')).toBeTruthy();
+  });
+
+  it('livraison : « Livré » ouvre la saisie du code ; « Signaler un problème » reste replié', async () => {
+    const { router } = jest.requireMock<{ router: { push: jest.Mock } }>('expo-router');
+    mockDriver.currentOrder = delivery();
+    const r = await render(wrap(<DriverOrderScreen />));
+    expect(r.getByTestId('dispute-open')).toBeTruthy();
+    expect(r.queryByText('Envoyer au support')).toBeNull();
+    await act(async () => fireEvent.press(r.getByTestId('go-deliver')));
+    expect(router.push).toHaveBeenCalledWith('/driver/deliver');
   });
 });

@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { VehicleType } from '@yaar/shared';
 import { MAP_COLORS } from '../../lib/map/style';
 import { HOUSE_GLYPH, STORE_GLYPH, vehicleSideGlyph, type ArtShape } from './markerArt';
@@ -92,6 +92,31 @@ export function DropoffMarkerView({ pulse }: { pulse?: boolean }) {
   );
 }
 
+/**
+ * Épingle « avatar » (vue 56 × 60) : disque de 40 dp tourné de -45° (coin inférieur gauche pointu), donc pointe à
+ * 4 + 20 + 20·√2 ≈ 52,3 dp du haut, au milieu de la largeur.
+ */
+export const AVATAR_VIEW = { width: 56, height: 60, tipY: 52.3 } as const;
+
+/** Entreprise ou destinataire en épingle « avatar » : initiales blanches dans un disque de couleur cerclé de blanc. */
+export function AvatarPinView({ initials, color, pulse }: { initials: string; color: string; pulse?: boolean }) {
+  return (
+    <View style={styles.avatarBox}>
+      {pulse ? (
+        <View style={styles.avatarPulseAnchor}>
+          <View style={styles.dropoffHalo} />
+        </View>
+      ) : null}
+      <View style={[styles.avatarPin, { backgroundColor: color }]} />
+      <View style={styles.avatarTextBox}>
+        <Text style={styles.avatarText} numberOfLines={1} allowFontScaling={false}>
+          {initials.slice(0, 3)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /** Taille (dp) de la vue du marqueur livreur (disque de 44 + marge pour l'ombre). */
 export const DRIVER_VIEW_SIZE = 52;
 /** Taille (dp) de la vue du chevron de cap (le chevron est posé sur l'anneau, en haut). */
@@ -172,6 +197,35 @@ const styles = StyleSheet.create({
   // Pointe de l'épingle : top 4 + 17 + 24 (demi-diagonale) ≈ 45.
   pulseAnchor: { position: 'absolute', top: 37, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
   dropoffHalo: { width: 22, height: 12, borderRadius: 11, backgroundColor: 'rgba(11,122,75,0.3)' },
+  avatarBox: { width: AVATAR_VIEW.width, height: AVATAR_VIEW.height },
+  avatarPin: {
+    position: 'absolute',
+    top: 4,
+    left: 8,
+    width: 40,
+    height: 40,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 0,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    transform: [{ rotate: '-45deg' }],
+    ...shadow,
+    shadowOffset: { width: -1, height: 3 },
+  },
+  avatarTextBox: { position: 'absolute', top: 4, left: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#FFFFFF', fontWeight: '900', fontSize: 15, letterSpacing: 0.3 },
+  // Halo sous la pointe (52,3 dp) : boîte de 16 dp centrée sur la pointe.
+  avatarPulseAnchor: {
+    position: 'absolute',
+    top: AVATAR_VIEW.tipY - 8,
+    left: AVATAR_VIEW.width / 2 - 8,
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   driverBox: { width: DRIVER_VIEW_SIZE, height: DRIVER_VIEW_SIZE, alignItems: 'center', justifyContent: 'center' },
   driver: {
     width: 44,

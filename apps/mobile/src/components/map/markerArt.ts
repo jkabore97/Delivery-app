@@ -141,3 +141,34 @@ export function artToSvg(shapes: ArtShape[], size: number): string {
     .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
 }
+
+/* ------------------------------------------------------------------ */
+/* Épingle « avatar » (initiales)                                      */
+/* ------------------------------------------------------------------ */
+
+/** Mots ignorés après le premier (« Pharmacie du Centre » → PC, « Maquis Le Verdoyant » → MV). */
+const NAME_PARTICLES = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'et', 'au', 'aux', 'chez', 'en']);
+/** Élisions en tête (« L’Escale » → E). */
+const ELIDED = new Set(['l', 'd']);
+const FIRST_CHAR = /[A-Za-z0-9À-ÖØ-öø-ɏ]/;
+
+/**
+ * Une ou deux lettres pour une épingle « avatar » ou une pastille : initiales des deux premiers mots significatifs
+ * (« Awa Kaboré » → AK, « Pharmacie du Centre » → PC, « Le Verdoyant » → LV, « L’Escale » → E) ; null sans nom
+ * exploitable (la carte garde alors le marqueur habituel).
+ */
+export function avatarInitials(name: string | null | undefined): string | null {
+  if (!name) return null;
+  let words = name
+    .replace(/[’'`.\-_/()]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length > 1 && ELIDED.has(words[0]!.toLowerCase())) words = words.slice(1);
+  const significant = words.filter((w, i) => i === 0 || !NAME_PARTICLES.has(w.toLowerCase()));
+  const letters = significant
+    .map((w) => FIRST_CHAR.exec(w)?.[0] ?? '')
+    .filter(Boolean)
+    .slice(0, 2);
+  return letters.length ? letters.join('').toUpperCase() : null;
+}

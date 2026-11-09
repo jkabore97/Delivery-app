@@ -39,12 +39,12 @@ export default function DriverDocuments() {
 
   return (
     <Screen>
-      <Title>Mes documents</Title>
+      <Title style={styles.title}>Mes documents</Title>
       {/* Démo publique : aucune vraie pièce d'identité ne doit être déposée. */}
       {config?.demoMode ? <Banner message={`⚠️ ${DEMO_DATA_WARNING}`} tone="orange" /> : null}
       <Card>
         <KeyValue label={`Dossier : ${LABELS.driverStatus[profile.status]}`} value={`${done} / ${total}`} strong />
-        <ProgressBar value={total ? done / total : 0} color={colors.blue} />
+        <ProgressBar value={total ? done / total : 0} color={colors.green} />
         <Muted>
           {LABELS.vehicleType[profile.vehicleType]}
           {profile.plate ? ` · ${profile.plate}` : ''} · Vos documents sont chiffrés et consultés uniquement par les contrôleurs
@@ -60,7 +60,7 @@ export default function DriverDocuments() {
         <Button
           title="Changer de véhicule"
           variant="ghost"
-          color={colors.blue}
+          color={colors.green}
           onPress={() => router.push('/driver/onboarding')}
           disabled={profile.isOnline}
         />
@@ -107,7 +107,7 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
   return (
     <Card highlight={item.state === 'ok' ? undefined : item.state === 'expired' ? colors.red : colors.orange}>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Subtitle style={{ fontSize: 16, flex: 1 }}>{item.label}</Subtitle>
+        <Subtitle style={{ fontSize: 16, flex: 1, fontWeight: '800' }}>{item.label}</Subtitle>
         <Badge label={badge.label} tone={badge.tone} />
       </Row>
       <Muted>{HINTS[item.type]}</Muted>
@@ -132,7 +132,7 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
       <Row>
         <Button
           title={item.type === 'SELFIE' ? '🤳 Prendre le selfie' : '📷 Photographier'}
-          color={colors.blue}
+          color={colors.green}
           small
           style={{ flex: 1 }}
           onPress={() => void upload('camera')}
@@ -148,6 +148,7 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
 }
 
 const styles = StyleSheet.create({
+  title: { fontWeight: '900', letterSpacing: -0.4 },
   previewWrap: { borderRadius: radius.md, overflow: 'hidden' },
   preview: { width: '100%', height: 140 },
 });

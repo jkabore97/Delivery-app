@@ -1,4 +1,7 @@
+import type { ReactElement } from 'react';
+import { Platform, Vibration } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ApiError } from '../lib/api';
 import { OfferModal } from '../components/OfferModal';
 import { driverProfile, offer, order } from './fixtures';
@@ -13,37 +16,96 @@ const mockDriver = {
   offers: [offer()],
   profile: driverProfile({ isOnline: true }),
   currentOrder: null as ReturnType<typeof order> | null,
+  position: null as { lat: number; lng: number; at: number; heading: number | null } | null,
   removeOffer: jest.fn(),
   setCurrentOrder: jest.fn(),
   refreshProfile: jest.fn(async () => undefined),
 };
 jest.mock('../state/driver', () => ({ useDriver: () => mockDriver }));
 
-const T0 = Date.parse('2026-11-06T09:43:00.000Z');
+/** Carte simulée : on lit ce qu'elle reçoit (fond, marqueurs, zones, tracés). */
+const mockMapProps: { current: Record<string, unknown> | null } = { current: null };
+jest.mock('../components/map/LiveMap', () => {
+  const { Text: RNText } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    LiveMap: (p: Record<string, unknown>) => {
+      mockMapProps.current = p;
+      return <RNText testID="live-map">map</RNText>;
+    },
+  };
+});
 
-describe('OfferModal', () => {
+const T0 = Date.parse('2026-11-06T09:43:00.000Z');
+const metrics = { frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+const wrap = (el: ReactElement) => <SafeAreaProvider initialMetrics={metrics}>{el}</SafeAreaProvider>;
+const show = () => render(wrap(<OfferModal />));
+
+describe('OfferModal (plein écran)', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: T0 });
     jest.clearAllMocks();
     mockDriver.offers = [offer()];
     mockDriver.profile = driverProfile({ isOnline: true });
     mockDriver.currentOrder = null;
+    mockDriver.position = null;
+    mockMapProps.current = null;
   });
   afterEach(() => jest.useRealTimers());
 
-  it('affiche l’offre avec le compte à rebours et le gain', async () => {
-    const r = await render(<OfferModal />);
-    expect(r.getByText('Nouvelle course 🔔')).toBeTruthy();
-    expect(r.getByText('0:30')).toBeTruthy();
+  it('affiche l’offre avec le compte à rebours, le véhicule et le gain', async () => {
+    const r = await show();
+    expect(r.getByTestId('offer-screen')).toBeTruthy();
+    expect(r.getByTestId('offer-title')).toHaveTextContent('Nouvelle course · Moto');
+    expect(r.getByText('30 s')).toBeTruthy();
     expect(r.getByText(/Maquis Le Verdoyant/)).toBeTruthy();
+    expect(r.getByTestId('offer-earning')).toHaveTextContent(/Votre gain.*1 200 FCFA/);
+    expect(r.getByTestId('reject-offer')).toBeTruthy();
+  });
+
+  it('temps jusqu’au retrait : distance de l’API à la vitesse moyenne du véhicule (1 min au moins)', async () => {
+    const r = await show();
+    // 1,2 km à moto (22 km/h) : 3,3 min → 4 min.
+    expect(r.getByTestId('offer-eta')).toHaveTextContent('≈ 4 min · 1,2 km');
   });
 
   it('entreprise : nom et adresse du retrait, zone de livraison seulement (pas d’adresse du destinataire)', async () => {
-    const r = await render(<OfferModal />);
+    const r = await show();
     expect(r.getByText('Récupérer chez Maquis Le Verdoyant')).toBeTruthy();
     expect(r.getByText(/Avenue Kwame Nkrumah, centre-ville · Secteur Centre-ville/)).toBeTruthy();
     expect(r.getByText('Livrer : Secteur Patte d’Oie')).toBeTruthy();
     expect(r.getByText(/adresse exacte du destinataire s’affiche une fois la course acceptée/)).toBeTruthy();
+  });
+
+  it('carte sombre : livreur, entreprise en épingle à initiales, zone de livraison en cercle (jamais de point exact)', async () => {
+    mockDriver.position = { lat: 12.372, lng: -1.515, at: T0, heading: null };
+    mockDriver.offers = [
+      offer({
+        orderType: 'PARCEL',
+        pickup: {
+          address: 'Avenue Kwame Nkrumah',
+          name: 'Pharmacie du Centre',
+          distanceFromDriverKm: 1.1,
+          zone: 'Secteur Centre-ville',
+          location: { lat: 12.3686, lng: -1.5275 },
+        },
+        dropoff: { address: 'Secteur Patte d’Oie', zone: 'Secteur Patte d’Oie', approxLocation: { lat: 12.3395, lng: -1.517 } },
+      }),
+    ];
+    await show();
+    const p = mockMapProps.current as {
+      theme: string;
+      markers: Array<{ kind: string; initials?: string | null; lat: number; lng: number }>;
+      zones: Array<{ kind: string; lat: number; lng: number; radiusM: number }>;
+      lines: Array<{ kind: string; points: Array<{ lat: number; lng: number }> }>;
+    };
+    expect(p.theme).toBe('dark');
+    expect(p.markers.map((m) => m.kind).sort()).toEqual(['driver', 'pickup']);
+    expect(p.markers.find((m) => m.kind === 'pickup')?.initials).toBe('PC');
+    expect(p.markers.some((m) => m.kind === 'dropoff')).toBe(false);
+    expect(p.zones).toEqual([expect.objectContaining({ kind: 'dropoff', lat: 12.3395, lng: -1.517 })]);
+    expect(p.lines).toEqual([
+      expect.objectContaining({ kind: 'dashed', points: [{ lat: 12.3686, lng: -1.5275 }, { lat: 12.3395, lng: -1.517 }] }),
+    ]);
   });
 
   it('livraison d’entreprise (colis) : entreprise, véhicule et montants', async () => {
@@ -58,7 +120,7 @@ describe('OfferModal', () => {
         driverEarning: 1250,
       }),
     ];
-    const r = await render(<OfferModal />);
+    const r = await show();
     expect(r.getByText('Récupérer chez Pharmacie du Campus')).toBeTruthy();
     expect(r.getByText(/Avenue de l’Université, Zogona · Secteur Zogona/)).toBeTruthy();
     expect(r.getByTestId('offer-vehicle')).toHaveTextContent(/Moto · 5,4 km de course/);
@@ -70,9 +132,10 @@ describe('OfferModal', () => {
 
   it('détail des espèces de l’API : retrait (frais payés par l’entreprise) et livraison', async () => {
     mockDriver.offers = [offer({ cashToCollect: 9700, cashAtPickup: 1700, cashAtDelivery: 8000, driverEarning: 1280 })];
-    const r = await render(<OfferModal />);
+    const r = await show();
     expect(r.getByTestId('offer-cash')).toHaveTextContent(/9 700 FCFA/);
-    expect(r.getByTestId('offer-cash-split')).toHaveTextContent('1\u202f700\u202fFCFA au retrait · 8\u202f000\u202fFCFA à la livraison');
+    expect(r.getByTestId('offer-cash-total')).toHaveTextContent('9 700 FCFA');
+    expect(r.getByTestId('offer-cash-split')).toHaveTextContent('1 700 FCFA au retrait · 8 000 FCFA à la livraison');
     expect(r.getByTestId('offer-earning')).toHaveTextContent(/1 280 FCFA/);
   });
 
@@ -80,29 +143,40 @@ describe('OfferModal', () => {
     mockDriver.offers = [
       offer({
         orderType: 'PARCEL',
-        pickup: { address: 'Secteur Zogona', name: null, distanceFromDriverKm: 0.8, zone: 'Secteur Zogona' },
-        dropoff: { address: 'Secteur Tampouy', zone: 'Secteur Tampouy' },
+        pickup: { address: 'Secteur Zogona', name: null, distanceFromDriverKm: 0.8, zone: 'Secteur Zogona', approxLocation: { lat: 12.38, lng: -1.4986 } },
+        dropoff: { address: 'Secteur Tampouy', zone: 'Secteur Tampouy', approxLocation: { lat: 12.4, lng: -1.54 } },
       }),
     ];
-    const r = await render(<OfferModal />);
+    const r = await show();
     expect(r.getByText('Récupérer : Secteur Zogona')).toBeTruthy();
     expect(r.getByText('à 0,8 km de vous')).toBeTruthy();
     expect(r.getByText('Livrer : Secteur Tampouy')).toBeTruthy();
+    // Retrait chez un particulier : un cercle de zone, pas d'épingle.
+    const p = mockMapProps.current as { markers: Array<{ kind: string }>; zones: Array<{ kind: string }> };
+    expect(p.markers.some((m) => m.kind === 'pickup')).toBe(false);
+    expect(p.zones.map((z) => z.kind)).toEqual(['pickup', 'dropoff']);
   });
 
   it('hors ligne ou déjà en course : aucune offre affichée', async () => {
     mockDriver.profile = driverProfile({ isOnline: false });
-    const r = await render(<OfferModal />);
-    expect(r.queryByText('Nouvelle course 🔔')).toBeNull();
+    const r = await show();
+    expect(r.queryByTestId('offer-screen')).toBeNull();
     mockDriver.profile = driverProfile({ isOnline: true });
     mockDriver.currentOrder = order();
-    await r.rerender(<OfferModal />);
-    expect(r.queryByText('Nouvelle course 🔔')).toBeNull();
+    await r.rerender(wrap(<OfferModal />));
+    expect(r.queryByTestId('offer-screen')).toBeNull();
+  });
+
+  it('nouvelle offre : vibration sur téléphone', async () => {
+    const vibrate = jest.spyOn(Vibration, 'vibrate');
+    await show();
+    expect(Platform.OS).not.toBe('web');
+    expect(vibrate).toHaveBeenCalledTimes(1);
   });
 
   it('accepter : enregistre la course et ouvre l’écran de course', async () => {
     mockApi.acceptOffer.mockResolvedValue(order());
-    const r = await render(<OfferModal />);
+    const r = await show();
     await act(async () => fireEvent.press(r.getByTestId('accept-offer')));
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/driver/order'));
     expect(mockApi.acceptOffer).toHaveBeenCalledWith('offer-1');
@@ -110,9 +184,17 @@ describe('OfferModal', () => {
     expect(mockDriver.removeOffer).toHaveBeenCalledWith('offer-1');
   });
 
+  it('refuser : l’offre est refusée puis retirée', async () => {
+    const r = await show();
+    await act(async () => fireEvent.press(r.getByTestId('reject-offer')));
+    await waitFor(() => expect(mockDriver.removeOffer).toHaveBeenCalledWith('offer-1'));
+    expect(mockApi.rejectOffer).toHaveBeenCalledWith('offer-1');
+    expect(mockApi.acceptOffer).not.toHaveBeenCalled();
+  });
+
   it('OFFER_EXPIRED : l’offre est retirée sans navigation', async () => {
     mockApi.acceptOffer.mockRejectedValue(new ApiError(409, 'OFFER_EXPIRED', 'Offre expirée'));
-    const r = await render(<OfferModal />);
+    const r = await show();
     await act(async () => fireEvent.press(r.getByTestId('accept-offer')));
     await waitFor(() => expect(mockDriver.removeOffer).toHaveBeenCalledWith('offer-1'));
     expect(mockPush).not.toHaveBeenCalled();
@@ -120,17 +202,33 @@ describe('OfferModal', () => {
 
   it('autre erreur : message affiché, offre conservée', async () => {
     mockApi.acceptOffer.mockRejectedValue(new ApiError(409, 'DRIVER_BUSY', 'Vous avez déjà une course.'));
-    const r = await render(<OfferModal />);
+    const r = await show();
     await act(async () => fireEvent.press(r.getByTestId('accept-offer')));
     await waitFor(() => expect(r.getByText('Vous avez une course en cours : terminez-la d’abord.')).toBeTruthy());
     expect(mockDriver.removeOffer).not.toHaveBeenCalled();
   });
 
-  it('après 30 s : l’offre expire et disparaît', async () => {
-    await render(<OfferModal />);
+  it('anneau du compte à rebours : normal, puis « dernières secondes » (rouge) pendant les 10 dernières secondes', async () => {
+    const r = await show();
+    expect(r.getByTestId('offer-countdown').props.accessibilityValue).toEqual(expect.objectContaining({ now: 30, text: '30 s' }));
+    await act(async () => {
+      jest.advanceTimersByTime(21_500);
+    });
+    expect(r.getByText('9 s')).toBeTruthy();
+    expect(r.getByTestId('offer-countdown').props.accessibilityValue).toEqual(
+      expect.objectContaining({ now: 9, text: '9 s, dernières secondes' }),
+    );
+    expect(r.getByTestId('offer-countdown-arc')).toBeTruthy();
+  });
+
+  it('après 30 s : l’offre expire, « Accepter » est désactivé, puis l’offre disparaît', async () => {
+    const r = await show();
     await act(async () => {
       jest.advanceTimersByTime(31_000);
     });
+    expect(r.getByText('Expirée')).toBeTruthy();
+    await act(async () => fireEvent.press(r.getByTestId('accept-offer')));
+    expect(mockApi.acceptOffer).not.toHaveBeenCalled();
     await act(async () => {
       jest.advanceTimersByTime(1_000);
     });
