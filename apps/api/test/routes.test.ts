@@ -306,18 +306,27 @@ describe('visibilité de l’itinéraire et ETA', () => {
     expect(forSeller.driver?.lastLocation).not.toBeNull(); // position et ETA, sans le tracé
     expect(forSeller.etaMinutes).toBeGreaterThan(0);
     expect((await call(t.app, 'GET', `/orders/${o.id}`, otherClient.accessToken)).statusCode).toBe(404);
-    // Listes : pas de tracé (charge utile), l'ETA reste.
+    // Listes : pas de tracé (charge utile), l'ETA reste, et la date de calcul du tracé (rechargé seulement si elle change).
     const list = (await call(t.app, 'GET', '/orders', client.accessToken)).json<Paginated<OrderDto>>();
     expect(list.items[0]!.route).toBeNull();
     expect(list.items[0]!.etaMinutes).toBeGreaterThan(0);
+    expect(list.items[0]!.routeComputedAt).toBe(forClient.route!.computedAt);
+    expect(forClient.routeComputedAt).toBe(forClient.route!.computedAt);
+    expect(forSeller.routeComputedAt).toBeNull(); // même visibilité que le tracé
 
     await call(t.app, 'POST', `/orders/${o.id}/pickup`, driver.accessToken, {});
     await t.ctx.work.settled();
-    expect((await get(client.accessToken)).route?.target).toBe('DROPOFF');
+    const dropoffLeg = await get(client.accessToken);
+    expect(dropoffLeg.route?.target).toBe('DROPOFF');
+    expect(dropoffLeg.routeComputedAt).toBe(dropoffLeg.route!.computedAt);
     expect((await get(seller.accessToken)).route).toBeNull();
     const code = (await t.prisma.order.findUniqueOrThrow({ where: { id: o.id } })).deliveryCode;
     await call(t.app, 'POST', `/orders/${o.id}/deliver`, driver.accessToken, { code });
-    for (const tok of [client.accessToken, driver.accessToken, staff.accessToken]) expect((await get(tok)).route).toBeNull();
+    for (const tok of [client.accessToken, driver.accessToken, staff.accessToken]) {
+      const done = await get(tok);
+      expect(done.route).toBeNull();
+      expect(done.routeComputedAt).toBeNull();
+    }
   });
 
   it('ETA = part restante × durée (+ 2 min de remise + retrait → livraison pendant ASSIGNED) ; repli sans itinéraire', async () => {

@@ -234,8 +234,11 @@ export function toOrderDto(o: OrderWithRelations | OrderWithEvents, viewer: Auth
   const profile = o.driver?.driverProfile ?? null;
   const showDriverLive = active && (isClient || isRequester || isSeller || isController);
   const showDriverPhone = isController || ((isClient || isRequester || isSeller) && active);
-  const showRoute = (opts.includeRoute ?? true) && active && (isClient || isRequester || isDriver || isController);
-  const route = showRoute ? currentRoute(o) : null;
+  // Itinéraire de l'étape en cours : tracé complet sauf dans les listes (`includeRoute: false`), qui gardent sa date
+  // de calcul (`routeComputedAt`) pour qu'un écran le recharge (GET /orders/:id) seulement quand il change.
+  const routeVisible = active && (isClient || isRequester || isDriver || isController);
+  const cachedRoute = routeVisible ? currentRoute(o) : null;
+  const route = (opts.includeRoute ?? true) ? cachedRoute : null;
 
   const myRating = o.ratings.find((r) => r.fromUserId === viewer.id)?.score ?? null;
   const canRate =
@@ -312,6 +315,7 @@ export function toOrderDto(o: OrderWithRelations | OrderWithEvents, viewer: Auth
     canRate,
     etaMinutes: showDriverLive || driverSeesDetails ? estimateEtaFromRoute(o, profile) : null,
     route: route ? toRouteDto(route) : null,
+    routeComputedAt: cachedRoute ? iso(cachedRoute.computedAt) : null,
     feePaidBy: o.feePaidBy,
     cashToCollect: o.cashToCollect,
     recipientIsBusiness: o.recipientIsBusiness,

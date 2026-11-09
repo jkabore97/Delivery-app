@@ -280,6 +280,12 @@ export interface OrderDto {
    * client de la commande, le livreur affecté et la console, uniquement pendant ASSIGNED / PICKED_UP ; null sinon.
    */
   route?: RouteDto | null;
+  /**
+   * Date de calcul de cet itinéraire (même visibilité que `route`), présente AUSSI dans les listes, qui omettent le
+   * tracé : un écran qui garde le tracé en cache ne le recharge (GET /orders/:id) que lorsque cette date change.
+   * null sans itinéraire pour l'étape en cours.
+   */
+  routeComputedAt?: IsoDateString | null;
   /** Livraison d'entreprise : qui paie les frais (SENDER = l'entreprise au retrait, RECIPIENT = le destinataire). */
   feePaidBy?: 'SENDER' | 'RECIPIENT' | null;
   /** Livraison d'entreprise : valeur de la marchandise à encaisser auprès du destinataire (reversée à l'entreprise). */

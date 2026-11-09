@@ -1561,6 +1561,7 @@ Implemented by the API (`toOrderDto` in `apps/api/src/services/serializers.ts`);
 | `driver.phone` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | own | yes |
 | `driver.lastLocation` (with `heading`), `etaMinutes` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | no position (ETA yes) | while `ASSIGNED`/`PICKED_UP` |
 | `route` (not in lists) | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | **no** | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` |
+| `routeComputedAt` (also in lists: reload the route with `GET /orders/:id` only when it changes) | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` | **no** | while `ASSIGNED`/`PICKED_UP` | while `ASSIGNED`/`PICKED_UP` |
 | `trackingUrl` | n/a | yes | no | no | yes |
 | `commission` | no | no | no | no | yes |
 | `driverEarning` | no | no | no | yes | yes |

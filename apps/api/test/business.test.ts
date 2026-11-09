@@ -130,6 +130,18 @@ describe('devis et demande de livraison', () => {
     expect(off.json<ApiErrorBody>().error.code).toBe('PRICING_UNAVAILABLE');
   });
 
+  it('liste des livraisons : date de calcul de l’itinéraire sans le tracé (rechargé par GET /orders/:id)', async () => {
+    const { business } = await createBusiness(t, P.centre);
+    const driver = await createDriver(t, 'MOTO', near);
+    const o = await create(business.accessToken);
+    await assign(o.id, driver.accessToken);
+    const detail = (await call(t.app, 'GET', `/orders/${o.id}`, business.accessToken)).json<OrderDto>();
+    expect(detail.route?.target).toBe('PICKUP');
+    const list = (await call(t.app, 'GET', '/business/deliveries', business.accessToken)).json<Paginated<OrderDto>>();
+    expect(list.items[0]!.route).toBeNull();
+    expect(list.items[0]!.routeComputedAt).toBe(detail.route!.computedAt);
+  });
+
   it('offre : position de l’entreprise pour la carte, centre du quartier seulement pour la livraison', async () => {
     const { business } = await createBusiness(t, P.centre, { name: 'Pharmacie du Centre' });
     const driver = await createDriver(t, 'MOTO', near);
