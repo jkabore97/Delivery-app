@@ -80,15 +80,13 @@ export default function DriverReadyScreen() {
       <Text style={[typeScale.hero, styles.title]} accessibilityRole="header">
         Vous êtes prêt !
       </Text>
-      <Text style={styles.body}>Votre dossier est validé. Passez en ligne pour recevoir vos premières courses.</Text>
+      <Text style={styles.body}>Votre dossier est validé. Passez en ligne pour recevoir des courses.</Text>
       {message ? (
         <Text style={styles.error} accessibilityRole="alert">
           {message}
         </Text>
       ) : null}
-      <Text style={styles.note}>
-        Avant votre premier passage en ligne, Yaar vous demandera d’accepter le suivi de votre position pendant le service.
-      </Text>
+      <Text style={styles.note}>Avant de passer en ligne, Yaar vous demandera d’accepter le suivi de votre position pendant le service.</Text>
     </DarkScreen>
   );
 }

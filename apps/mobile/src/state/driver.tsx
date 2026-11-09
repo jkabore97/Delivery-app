@@ -8,6 +8,7 @@ import { formatOrderNumber } from '../lib/format';
 import { useDriverLocationTracking, type TrackedPosition } from '../hooks/useDriverLocationTracking';
 import { useApi } from './auth';
 import { POLL_MS } from '../lib/publicConfig';
+import { saveDriverReadyDismissed } from '../lib/storage';
 import { usePolling, useRealtimeMode, useSocketEvent } from './socket';
 
 interface DriverContextValue {
@@ -122,6 +123,17 @@ export function DriverProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refreshProfile();
   }, [refreshProfile]);
+
+  // « Vous êtes prêt ! » ne s'adresse qu'aux livreurs jamais passés en ligne : dès qu'un profil avec consentement au
+  // suivi GPS est vu sur cet appareil (livreur déjà passé en ligne), c'est mémorisé pour ce livreur, et l'écran ne
+  // revient plus, même après un retrait du consentement (DELETE /driver/consent).
+  const consentedUserId = profile?.trackingConsentAt ? profile.userId : null;
+  const consentSavedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!consentedUserId || consentSavedForRef.current === consentedUserId) return;
+    consentSavedForRef.current = consentedUserId;
+    void saveDriverReadyDismissed(consentedUserId);
+  }, [consentedUserId]);
 
   useEffect(() => {
     if (!approved) return;

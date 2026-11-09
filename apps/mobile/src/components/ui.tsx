@@ -154,6 +154,7 @@ export function Button({
   loading,
   style,
   small,
+  icon,
   testID,
 }: {
   title: string;
@@ -164,6 +165,8 @@ export function Button({
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
   small?: boolean;
+  /** Pictogramme avant le titre, dessiné de la couleur du texte (ex. `(c) => <Icon name="camera" color={c} />`). */
+  icon?: (color: string) => ReactNode;
   testID?: string;
 }) {
   const inactive = disabled || loading;
@@ -191,6 +194,11 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator color={textColor} />
+      ) : icon ? (
+        <View style={styles.buttonContent}>
+          {icon(textColor)}
+          <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: textColor }]}>{title}</Text>
+        </View>
       ) : (
         <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: textColor }]}>{title}</Text>
       )}
@@ -265,11 +273,22 @@ export function Badge({ label, tone = 'grey' }: { label: string; tone?: Tone }) 
   );
 }
 
-export function Banner({ message, tone = 'red' }: { message: string; tone?: Tone }) {
+export function Banner({
+  message,
+  tone = 'red',
+  icon,
+}: {
+  message: string;
+  tone?: Tone;
+  /** Pictogramme avant le message, dessiné de la couleur du texte. */
+  icon?: (color: string) => ReactNode;
+}) {
   const t = TONES[tone];
+  const text = <Text style={[{ color: t.fg, fontWeight: '600' }, icon ? styles.flex : null]}>{message}</Text>;
   return (
-    <View style={[styles.banner, { backgroundColor: t.bg }]} accessibilityRole="alert">
-      <Text style={{ color: t.fg, fontWeight: '600' }}>{message}</Text>
+    <View style={[styles.banner, { backgroundColor: t.bg }, icon ? styles.bannerRow : null]} accessibilityRole="alert">
+      {icon ? icon(t.fg) : null}
+      {text}
     </View>
   );
 }
@@ -386,6 +405,7 @@ export const styles = StyleSheet.create({
   buttonPressed: { opacity: 0.8 },
   buttonText: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   buttonTextSmall: { fontSize: 14 },
+  buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   chip: {
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
@@ -411,6 +431,7 @@ export const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, alignSelf: 'flex-start' },
   badgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   banner: { padding: spacing.md, borderRadius: radius.md },
+  bannerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   empty: { alignItems: 'center', padding: spacing.xl, gap: spacing.sm },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.textMuted, textAlign: 'center' },

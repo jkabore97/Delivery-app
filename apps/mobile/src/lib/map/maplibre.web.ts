@@ -1,7 +1,7 @@
 import type { GeoJSONSource, Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import type { MapTheme } from '../../components/map/types';
 import { MAP_PALETTES, mapThemeConfig, MAX_PIXEL_RATIO } from './style';
-import { initialMapStyle, RemoteStyleLoader, sessionStyleCache } from './styleLoader';
+import { initialMapStyle, RemoteStyleLoader, sessionStyleCache, type StyleJson } from './styleLoader';
 
 /**
  * MapLibre GL JS pour la version web (react-native-maps n'a pas de rendu web). Le module (~1 Mo) est chargé
@@ -98,9 +98,11 @@ export interface BaseMap {
 /**
  * Crée une carte MapLibre affichée aussitôt avec le style distant déjà reçu pendant la session pour ce fond, sinon
  * avec le style de secours embarqué ; dans ce cas le style distant (OpenFreeMap « positron », ou « dark » pour un
- * fond sombre) est demandé en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué (setStyle) et gardé en
- * cache : la carte n'y renonce jamais. Densité de pixels plafonnée à 2 ; rotation et inclinaison désactivées sauf
- * pour le livreur ; taille suivie (ResizeObserver).
+ * fond sombre) est demandé en parallèle, redemandé tant qu'il n'est pas arrivé, puis appliqué (setStyle) : la carte
+ * n'y renonce jamais. Il n'est gardé en cache (et réutilisé par les cartes suivantes) qu'une fois chargé par MapLibre
+ * (« style.load ») ; un style que MapLibre refuse (exception, ou erreur de validation à la place de « style.load »)
+ * n'est pas gardé : la carte revient au style de secours, et la suivante redemandera le style distant. Densité de
+ * pixels plafonnée à 2 ; rotation et inclinaison désactivées sauf pour le livreur ; taille suivie (ResizeObserver).
  */
 export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMapOptions): BaseMap {
   ensureMaplibreCoreCss();
@@ -130,24 +132,51 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
   let remote = first.remote;
   let destroyed = false;
   let loader: RemoteStyleLoader | null = null;
-  /** Style distant du fond `t` : demandé (et redemandé) jusqu'à son arrivée, puis appliqué et mis en cache. */
+  /** Style distant appliqué (setStyle) mais pas encore chargé par MapLibre : mis en cache à son « style.load ». */
+  let pending: { url: string; style: StyleJson } | null = null;
+  /** Style distant refusé par MapLibre : rien en cache, retour au style de secours du fond en cours. */
+  const rejectRemote = () => {
+    pending = null;
+    remote = false;
+    map.setStyle(mapThemeConfig(theme).fallback as unknown as StyleSpecification, { diff: false });
+  };
+  /** Idem, appelé pendant l'émission d'une erreur par MapLibre : le style de secours est appliqué juste après. */
+  const rejectRemoteLater = () => {
+    pending = null;
+    remote = false;
+    const t = theme;
+    setTimeout(() => {
+      if (!destroyed && !pending && t === theme && !remote) rejectRemote();
+    }, 0);
+  };
+  /** Style distant du fond `t` : demandé (et redemandé) jusqu'à son arrivée, puis appliqué. */
   const loadRemote = (t: MapTheme) => {
     const url = urlFor(t);
     loader = new RemoteStyleLoader(url, (style) => {
       if (destroyed || t !== theme) return;
-      sessionStyleCache.set(url, style);
-      remote = true;
+      pending = { url, style };
       try {
         map.setStyle(style as unknown as StyleSpecification, { diff: false });
       } catch {
-        remote = false; // style refusé par MapLibre : on garde le secours
+        rejectRemote();
       }
     });
     loader.start();
   };
-  map.on('style.load', () => opts.onStyleReady?.(map, !remote));
-  // Tuiles ou sprites indisponibles après le chargement du style : la carte reste utilisable (pas de bruit en console).
-  map.on('error', () => undefined);
+  map.on('style.load', () => {
+    if (pending) {
+      // Style distant chargé : gardé pour les cartes suivantes (même fond), qui l'affichent aussitôt.
+      sessionStyleCache.set(pending.url, pending.style);
+      pending = null;
+      remote = true;
+    }
+    opts.onStyleReady?.(map, !remote);
+  });
+  map.on('error', () => {
+    // Style distant invalide : MapLibre émet « error » (validation) au lieu de « style.load ». Les autres erreurs
+    // (tuiles ou sprites indisponibles après le chargement du style) sont ignorées : la carte reste utilisable.
+    if (pending && !destroyed) rejectRemoteLater();
+  });
   if (!first.remote) loadRemote(theme);
 
   let observer: ResizeObserver | null = null;
@@ -164,6 +193,7 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
       theme = next;
       loader?.dispose();
       loader = null;
+      pending = null; // style distant de l'ancien fond, remplacé avant d'avoir été chargé
       const s = initialMapStyle(urlFor(next), mapThemeConfig(next).fallback, sessionStyleCache);
       remote = s.remote;
       map.setStyle(s.style as unknown as StyleSpecification, { diff: false });

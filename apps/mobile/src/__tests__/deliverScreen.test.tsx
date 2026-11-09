@@ -90,7 +90,8 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     );
     expect(r.getByTestId('amount-to-collect-value')).toHaveTextContent('16\u202f500\u202fFCFA');
     expect(r.getByText('2. Demandez le code au destinataire')).toBeTruthy();
-    // Solde après la course : 10 000 détenus + 16 500 encaissés.
+    // Solde après la course : 10 000 détenus + 16 500 encaissés (même libellé que l'accueil : « Espèces détenues »).
+    expect(r.getByText('Espèces détenues après cette course')).toBeTruthy();
     expect(r.getByText('26\u202f500 FCFA')).toBeTruthy();
   });
 

@@ -42,6 +42,8 @@ export default function DriverHistory() {
             kicker={`Course ${formatOrderNumber(o.number)}`}
             status={{ label: 'LIVRÉE', tone: 'green' }}
             name={o.store?.name ?? 'Colis'}
+            // Sans entreprise, « Colis » n'a pas d'initiales qui aient un sens : pictogramme du colis.
+            avatarIcon={o.store ? undefined : 'package'}
             meta={[o.deliveredAt ? formatDateTime(o.deliveredAt) : null, formatKm(o.distanceKm)].filter(Boolean).join(' · ')}
             description={o.cashCollected !== null && o.cashCollected > 0 ? `Encaissé ${formatFcfa(o.cashCollected)}` : null}
             descriptionIcon="cash"

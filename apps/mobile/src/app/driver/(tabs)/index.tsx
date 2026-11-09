@@ -28,7 +28,10 @@ function orderChip(o: OrderDto): { label: string; tone: ChipTone } {
   return { label: LABELS.orderStatus[o.status].toUpperCase(), tone: o.status === 'PICKED_UP' ? 'green' : 'amber' };
 }
 
-/** Course en cours : carte de colis (étape, cible, montant de l'étape) et « Ouvrir la course ». */
+/**
+ * Course en cours : carte de colis (étape, cible, montant de l'étape) et « Ouvrir la course ». La carte elle-même
+ * n'est pas un bouton : un seul bouton, sans bouton imbriqué dans un autre (lecteurs d'écran, web).
+ */
 function CurrentOrderCard({ order: o }: { order: OrderDto }) {
   const pickupStage = o.status === 'ASSIGNED';
   const amounts = amountsToCollect(o);
@@ -44,7 +47,6 @@ function CurrentOrderCard({ order: o }: { order: OrderDto }) {
       address={(pickupStage ? o.pickup?.address : o.dropoff?.address) ?? null}
       description={o.parcelDescription}
       amount={collect > 0 ? { label: pickupStage && amounts.atPickup > 0 ? 'À encaisser au retrait' : 'À encaisser à la livraison', value: collect } : null}
-      onPress={open}
       footer={<Pill label="Ouvrir la course" icon="chevronRight" tone="green" size="lg" onPress={open} style={styles.stretch} testID="open-order" />}
       testID="current-order"
     />
@@ -67,15 +69,18 @@ function TodayBlock({ profile, earnings }: { profile: DriverProfileDto; earnings
           {earnings ? `${earnings.deliveries} course${earnings.deliveries > 1 ? 's' : ''}` : ''}
         </Text>
       </View>
+      {/* Libellé et montant sur une ligne ; sur un écran étroit, le montant « 52 000 / 50 000 FCFA » passe entier dessous. */}
       <View style={styles.cashRow}>
         <Text style={styles.cashLabel}>Espèces détenues</Text>
-        <Text style={styles.cashValue} testID="cash-held">
+        <Text style={styles.cashValue} testID="cash-held" numberOfLines={1}>
           {formatFcfa(profile.cashHeld)}
           <Text style={styles.cashLimit}> / {formatFcfa(profile.cashLimit)}</Text>
         </Text>
       </View>
       <DarkProgress value={ratio} color={ratio >= 0.8 ? dark.red : dark.amber} />
-      <Text style={styles.small}>À déposer auprès de Yaar avant d’atteindre le plafond.</Text>
+      <Text style={styles.small}>
+        {profile.cashBlocked ? 'Plafond atteint : à déposer auprès de Yaar.' : 'À déposer auprès de Yaar avant d’atteindre le plafond.'}
+      </Text>
     </View>
   );
 }
@@ -178,6 +183,8 @@ export default function DriverHome() {
   }
 
   const online = profile.isOnline;
+  // Plafond d'espèces atteint : le serveur refuse le passage en ligne (CASH_LIMIT_REACHED) tant que rien n'est déposé.
+  const cashBlocked = profile.cashBlocked;
   const message = error ?? availabilityError;
   // Une offre affichée en plein écran a sa propre carte : celle de l'accueil est démontée (une carte WebGL à la fois).
   const offerShown = !!visibleOffer(profile, currentOrder, offers);
@@ -196,7 +203,7 @@ export default function DriverHome() {
       mapVisible={focused && !offerShown}
       topCenter={<OnlineStatusPill />}
       topRight={<SosButton size={48} />}
-      aboveSheet={!online ? <GoOnlineButton onError={setError} /> : null}
+      aboveSheet={!online ? <GoOnlineButton onError={setError} blocked={cashBlocked} /> : null}
       testID="driver-home"
     >
       {message ? (
@@ -209,9 +216,11 @@ export default function DriverHome() {
           <Text style={styles.notice}>{`${orderNotice} (toucher pour masquer)`}</Text>
         </Pressable>
       ) : null}
-      {profile.cashBlocked ? (
-        <Text style={styles.error} accessibilityRole="alert">
-          {`Plafond d’espèces atteint (${formatFcfa(profile.cashHeld)}). Déposez l’argent auprès de Yaar pour recevoir des courses.`}
+      {cashBlocked ? (
+        <Text style={styles.error} accessibilityRole="alert" testID="cash-blocked">
+          {online
+            ? `Plafond d’espèces atteint (${formatFcfa(profile.cashHeld)}). Déposez l’argent auprès de Yaar pour recevoir des courses.`
+            : `Plafond d’espèces atteint (${formatFcfa(profile.cashHeld)}). Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré.`}
         </Text>
       ) : null}
 
@@ -233,12 +242,12 @@ export default function DriverHome() {
             Vous êtes hors ligne
           </Text>
           <Text style={styles.muted}>
-            Passez en ligne pour recevoir des courses. Votre position n’est suivie et partagée que lorsque vous êtes en ligne.
+            {cashBlocked
+              ? 'Votre position n’est suivie et partagée que lorsque vous êtes en ligne.'
+              : 'Passez en ligne pour recevoir des courses. Votre position n’est suivie et partagée que lorsque vous êtes en ligne.'}
           </Text>
-          {!hasTrackingConsent(profile) ? (
-            <Text style={styles.small}>
-              Avant votre premier passage en ligne, Yaar vous demandera d’accepter le suivi de votre position pendant le service.
-            </Text>
+          {!hasTrackingConsent(profile) && !cashBlocked ? (
+            <Text style={styles.small}>Avant de passer en ligne, Yaar vous demandera d’accepter le suivi de votre position pendant le service.</Text>
           ) : null}
         </View>
       )}
@@ -270,8 +279,16 @@ const styles = StyleSheet.create({
   todayTop: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   todayEarnings: { color: dark.green, fontSize: 28, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
   todayCount: { color: dark.textMuted, fontSize: 14, fontWeight: '800', paddingBottom: 4 },
-  cashRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm, marginTop: 4 },
-  cashLabel: { color: dark.textMuted, fontSize: 14, fontWeight: '700' },
-  cashValue: { color: dark.text, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  cashRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    columnGap: spacing.sm,
+    rowGap: 2,
+    marginTop: 4,
+  },
+  cashLabel: { flexShrink: 0, color: dark.textMuted, fontSize: 14, fontWeight: '700' },
+  cashValue: { flexShrink: 0, color: dark.text, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
   cashLimit: { color: dark.textFaint, fontSize: 13, fontWeight: '700' },
 });

@@ -37,14 +37,18 @@ export async function clearSession(): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 /**
- * Clé (par utilisateur) de l'écran « Vous êtes prêt ! » écarté avec « Plus tard ». Caractères limités à ceux
- * qu'accepte expo-secure-store (lettres, chiffres, « . », « - », « _ »).
+ * Clé (par utilisateur) de l'écran « Vous êtes prêt ! » qui n'a plus lieu d'être sur cet appareil : écarté avec
+ * « Plus tard », ou livreur déjà vu avec son consentement au suivi GPS (déjà passé en ligne, voir state/driver).
+ * Caractères limités à ceux qu'accepte expo-secure-store (lettres, chiffres, « . », « - », « _ »).
  */
 export function driverReadyKey(userId: string): string {
   return `yaar.driverReady.${userId.replace(/[^A-Za-z0-9._-]/g, '_')}`;
 }
 
-/** true si ce livreur a déjà écarté l'écran « Vous êtes prêt ! » sur cet appareil (false si stockage illisible). */
+/**
+ * true si l'écran « Vous êtes prêt ! » n'est plus à montrer à ce livreur sur cet appareil (écarté, ou livreur déjà
+ * passé en ligne) ; false si stockage illisible.
+ */
 export async function loadDriverReadyDismissed(userId: string, store: KeyValueStore = keyValueStore()): Promise<boolean> {
   try {
     return (await store.getItem(driverReadyKey(userId))) !== null;
@@ -53,7 +57,7 @@ export async function loadDriverReadyDismissed(userId: string, store: KeyValueSt
   }
 }
 
-/** Mémorise (sur cet appareil) que ce livreur a écarté l'écran « Vous êtes prêt ! ». */
+/** Mémorise (sur cet appareil) que l'écran « Vous êtes prêt ! » n'est plus à montrer à ce livreur. */
 export async function saveDriverReadyDismissed(userId: string, store: KeyValueStore = keyValueStore()): Promise<void> {
   try {
     await store.setItem(driverReadyKey(userId), new Date().toISOString());

@@ -8,6 +8,7 @@ import {
 } from '../lib/consent';
 import { useDriver } from '../state/driver';
 import { colors, spacing, MAX_APP_WIDTH, SHEET_RADIUS } from '../theme';
+import { Icon } from './design/Icon';
 import { Banner, Button, Muted, Subtitle } from './ui';
 
 /**
@@ -37,7 +38,10 @@ export function TrackingConsentModal() {
       <View style={styles.backdrop}>
         <View style={styles.sheet} testID="tracking-consent">
           <ScrollView contentContainerStyle={{ gap: spacing.md }}>
-            <Subtitle style={{ fontWeight: '900' }}>📍 {TRACKING_CONSENT_TITLE}</Subtitle>
+            <View style={styles.heading}>
+              <Icon name="pin" size={20} color={colors.green} />
+              <Subtitle style={styles.headingText}>{TRACKING_CONSENT_TITLE}</Subtitle>
+            </View>
             <Muted>{TRACKING_CONSENT_INTRO}</Muted>
             {TRACKING_CONSENT_POINTS.map((p) => (
               <View key={p} style={styles.point}>
@@ -86,6 +90,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl * 1.5,
     maxHeight: '90%',
   },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headingText: { flex: 1, fontWeight: '900' },
   point: { flexDirection: 'row', gap: spacing.sm },
   bullet: { color: colors.green, fontWeight: '900', fontSize: 15 },
   pointText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },

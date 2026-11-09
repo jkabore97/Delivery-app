@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { DEMO_DATA_WARNING, LABELS } from '@yaar/shared';
+import { GalleryIcon } from '../../../components/design/GalleryIcon';
+import { Icon } from '../../../components/design/Icon';
 import { Badge, Banner, Button, Card, Field, KeyValue, Loading, Muted, ProgressBar, Row, Screen, Subtitle, Title } from '../../../components/ui';
 import { errorMessage } from '../../../lib/api';
 import { formatDateTime } from '../../../lib/format';
@@ -41,7 +43,9 @@ export default function DriverDocuments() {
     <Screen>
       <Title style={styles.title}>Mes documents</Title>
       {/* Démo publique : aucune vraie pièce d'identité ne doit être déposée. */}
-      {config?.demoMode ? <Banner message={`⚠️ ${DEMO_DATA_WARNING}`} tone="orange" /> : null}
+      {config?.demoMode ? (
+        <Banner message={DEMO_DATA_WARNING} tone="orange" icon={(c) => <Icon name="alert" size={18} color={c} testID="demo-warning-icon" />} />
+      ) : null}
       <Card>
         <KeyValue label={`Dossier : ${LABELS.driverStatus[profile.status]}`} value={`${done} / ${total}`} strong />
         <ProgressBar value={total ? done / total : 0} color={colors.green} />
@@ -131,7 +135,8 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
       {error ? <Banner message={error} /> : null}
       <Row>
         <Button
-          title={item.type === 'SELFIE' ? '🤳 Prendre le selfie' : '📷 Photographier'}
+          title={item.type === 'SELFIE' ? 'Prendre le selfie' : 'Photographier'}
+          icon={(c) => <Icon name="camera" size={18} color={c} />}
           color={colors.green}
           small
           style={{ flex: 1 }}
@@ -140,7 +145,14 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
           disabled={disabled}
         />
         {item.type !== 'SELFIE' ? (
-          <Button title="🖼️ Galerie" variant="outline" small onPress={() => void upload('library')} disabled={disabled || busy} />
+          <Button
+            title="Galerie"
+            icon={(c) => <GalleryIcon size={18} color={c} />}
+            variant="outline"
+            small
+            onPress={() => void upload('library')}
+            disabled={disabled || busy}
+          />
         ) : null}
       </Row>
     </Card>

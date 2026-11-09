@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { LABELS } from '@yaar/shared';
+import { Icon } from '../../../components/design/Icon';
 import { ProfileScreen } from '../../../components/ProfileScreen';
 import { Banner, Button, Card, KeyValue, Muted, Subtitle } from '../../../components/ui';
 import { hasTrackingConsent, trackingConsentStatus } from '../../../lib/consent';
 import { useDriver } from '../../../state/driver';
-import { colors } from '../../../theme';
+import { colors, spacing } from '../../../theme';
 import { confirmAsync } from '../../../lib/dialog';
 
 /** Suivi GPS : état du consentement, lecture / acceptation, retrait (hors ligne forcé). */
@@ -32,7 +34,10 @@ function TrackingConsentCard() {
 
   return (
     <Card>
-      <Subtitle style={{ fontWeight: '900' }}>📍 Suivi GPS</Subtitle>
+      <View style={styles.heading}>
+        <Icon name="pin" size={20} color={colors.green} />
+        <Subtitle style={styles.headingText}>Suivi GPS</Subtitle>
+      </View>
       <KeyValue label="Consentement" value={trackingConsentStatus(profile)} />
       <Muted>
         Position collectée uniquement en ligne ou pendant une course, partagée avec le client pendant sa livraison et avec
@@ -84,12 +89,26 @@ export default function DriverProfile() {
           <KeyValue label="Véhicule" value={`${LABELS.vehicleType[profile.vehicleType]}${profile.plate ? ` · ${profile.plate}` : ''}`} />
           <KeyValue
             label="Note moyenne"
-            value={profile.ratingAvg !== null ? `⭐ ${profile.ratingAvg.toFixed(1).replace('.', ',')} (${profile.ratingCount})` : '—'}
+            value={
+              profile.ratingAvg !== null
+                ? `${profile.ratingAvg.toFixed(1).replace('.', ',')} / 5 (${profile.ratingCount} note${profile.ratingCount > 1 ? 's' : ''})`
+                : '—'
+            }
           />
         </Card>
       ) : null}
       <TrackingConsentCard />
-      <Button title="🧾 Historique de mes courses" variant="outline" onPress={() => router.push('/driver/history')} />
+      <Button
+        title="Historique de mes courses"
+        icon={(c) => <Icon name="clock" size={20} color={c} />}
+        variant="outline"
+        onPress={() => router.push('/driver/history')}
+      />
     </ProfileScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  heading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headingText: { fontWeight: '900' },
+});

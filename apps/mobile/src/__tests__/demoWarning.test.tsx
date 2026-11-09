@@ -24,12 +24,14 @@ describe('avertissement « démonstration publique »', () => {
   it('dépôt des pièces KYC : affiché en mode démo seulement', async () => {
     mockConfig.config = demo;
     const withDemo = await render(<DriverDocuments />);
-    expect(withDemo.getByText(`⚠️ ${DEMO_DATA_WARNING}`)).toBeTruthy();
+    // Pictogramme « alerte » du système de design, pas d'émoji.
+    expect(withDemo.getByText(DEMO_DATA_WARNING)).toBeTruthy();
+    expect(withDemo.getByTestId('demo-warning-icon')).toBeTruthy();
     withDemo.unmount();
 
     mockConfig.config = { ...demo, demoMode: false };
     const real = await render(<DriverDocuments />);
-    expect(real.queryByText(`⚠️ ${DEMO_DATA_WARNING}`)).toBeNull();
+    expect(real.queryByText(DEMO_DATA_WARNING)).toBeNull();
     expect(real.getByText('Mes documents')).toBeTruthy();
   });
 });

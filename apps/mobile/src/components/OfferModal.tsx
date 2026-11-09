@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, Vibration, View } from 'react-native';
 import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LABELS, type OfferDto } from '@yaar/shared';
 import { useExpired } from '../hooks/useCountdown';
@@ -24,6 +25,18 @@ import type { MapPadding } from './map/types';
 /** Vibration d'une nouvelle offre (Android : motif ; iOS : deux impulsions). Jamais sur le web. */
 const OFFER_VIBRATION = [0, 280, 160, 280];
 
+/** En dessous de cette hauteur de fenêtre (ex. 360 × 640) : mise en page resserrée. */
+const COMPACT_MAX_HEIGHT = 720;
+
+/**
+ * Hauteur maximale du détail (part de la fenêtre). Petit écran : jusqu'à la moitié, la carte cède la place pour que
+ * gain, espèces, retrait et zone de livraison tiennent sans défiler ; le détail ne prend que la hauteur de son contenu.
+ */
+const DETAILS_MAX_HEIGHT = { regular: 0.42, compact: 0.5 } as const;
+
+/** Rappel de confidentialité sous la zone de livraison (« Zone approximative » seulement sur un petit écran). */
+const DROPOFF_PRIVACY_NOTE = 'Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.';
+
 /**
  * Nouvelle course, en plein écran (comme les applications de coursiers) : carte sombre avec le livreur, le retrait
  * et la zone de livraison (cercle doux : jamais l'adresse du destinataire avant acceptation), pastilles « Nouvelle
@@ -35,11 +48,15 @@ export function OfferModal() {
   const { offers, profile, currentOrder } = useDriver();
   const offer = visibleOffer(profile, currentOrder, offers);
   return (
-    <Modal visible={!!offer} transparent animationType="fade" statusBarTranslucent onRequestClose={() => undefined}>
-      <View style={styles.backdrop}>
-        <View style={styles.frame}>{offer ? <OfferTakeover key={offer.id} offer={offer} /> : null}</View>
-      </View>
-    </Modal>
+    <>
+      {/* Plein écran sombre : icônes claires dans la barre d'état tant que l'offre est affichée (puis le style d'avant). */}
+      {offer ? <StatusBar style="light" /> : null}
+      <Modal visible={!!offer} transparent animationType="fade" statusBarTranslucent onRequestClose={() => undefined}>
+        <View style={styles.backdrop}>
+          <View style={styles.frame}>{offer ? <OfferTakeover key={offer.id} offer={offer} /> : null}</View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -76,8 +93,9 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
   const places = offerPlaces(offer);
   const cash = offerCash(offer);
   const eta = formatOfferEta(offer);
-  // Petit téléphone (≤ 720 px de haut, ex. 360 × 640) : « Refuser » à côté de l'anneau, pour garder de la carte.
-  const compact = height < 720;
+  // Petit téléphone (moins de 720 px de haut, ex. 360 × 640) : « Refuser » à côté de l'anneau, détail resserré (voir
+  // DETAILS_MAX_HEIGHT) pour que le gain, les espèces et la zone de livraison se lisent sans défiler.
+  const compact = height < COMPACT_MAX_HEIGHT;
   const ring = compact ? 108 : 136;
 
   // Nouvelle offre : vibration (téléphone uniquement).
@@ -233,13 +251,24 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           {compact ? null : refuse}
         </View>
 
-        <SheetSurface style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]} testID="offer-details">
-          <ScrollView style={{ maxHeight: Math.round(height * (compact ? 0.4 : 0.42)) }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.details}>
-            <View style={styles.detailsHeader}>
+        <SheetSurface
+          style={[styles.sheet, compact && styles.sheetCompact, { paddingBottom: Math.max(insets.bottom, compact ? spacing.sm : spacing.md) }]}
+          testID="offer-details"
+        >
+          {/* Rien n'est coupé (pas d'ellipse) : un contenu exceptionnellement long défile, barre de défilement visible. */}
+          <ScrollView
+            style={{ maxHeight: Math.round(height * (compact ? DETAILS_MAX_HEIGHT.compact : DETAILS_MAX_HEIGHT.regular)) }}
+            showsVerticalScrollIndicator
+            persistentScrollbar
+            contentContainerStyle={[styles.details, compact && styles.detailsCompact]}
+            testID="offer-details-scroll"
+          >
+            {/* Le véhicule passe sous le titre plutôt que d'être coupé quand la ligne est trop courte. */}
+            <View style={[styles.detailsHeader, compact && styles.detailsHeaderCompact]}>
               <Text style={[typeScale.kicker, styles.kicker]} accessibilityRole="header">
                 Détails de la course
               </Text>
-              <Text style={styles.facts} testID="offer-vehicle" numberOfLines={1}>
+              <Text style={styles.facts} testID="offer-vehicle">
                 {LABELS.vehicleType[offer.vehicleType]} · {formatKm(offer.distanceKm)} de course
               </Text>
             </View>
@@ -250,38 +279,41 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
             ) : null}
 
             <View style={styles.money}>
-              <View style={[styles.moneyBox, styles.earning]} testID="offer-earning">
+              <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.earning]} testID="offer-earning">
                 <Text style={styles.moneyLabel}>Votre gain</Text>
                 <Text style={[styles.earningValue, compact && { fontSize: 22 }]} numberOfLines={1} adjustsFontSizeToFit>
                   {formatFcfa(offer.driverEarning)}
                 </Text>
               </View>
-              <View style={[styles.moneyBox, styles.cash]} testID="offer-cash">
+              <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.cash]} testID="offer-cash">
                 <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
                 <Text style={styles.cashValue} numberOfLines={1} adjustsFontSizeToFit testID="offer-cash-total">
                   {formatFcfa(cash.total)}
                 </Text>
-                {split ? (
+                {split && !compact ? (
                   <Text style={styles.cashSplit} testID="offer-cash-split">
                     {split}
                   </Text>
                 ) : null}
               </View>
             </View>
+            {/* Petit écran : le détail retrait / livraison sur toute la largeur (une ligne) plutôt que sur trois lignes
+                dans la case des espèces. */}
+            {split && compact ? (
+              <Text style={[styles.cashSplit, styles.cashSplitWide]} testID="offer-cash-split">
+                {split}
+              </Text>
+            ) : null}
 
             <View style={styles.stop} testID="offer-pickup">
               <View style={[styles.stopIcon, { backgroundColor: 'rgba(242,140,27,0.18)' }]}>
                 {pickupInitials ? <Text style={styles.stopInitials}>{pickupInitials}</Text> : <Icon name="store" size={18} color="#FFAA48" />}
               </View>
               <View style={styles.flex}>
-                <Text style={styles.stopTitle} numberOfLines={2}>
+                <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>
                   {offer.pickup.name ? `Récupérer chez ${places.pickupTitle}` : `Récupérer : ${places.pickupTitle}`}
                 </Text>
-                {pickupLine ? (
-                  <Text style={styles.stopLine} numberOfLines={2}>
-                    {pickupLine}
-                  </Text>
-                ) : null}
+                {pickupLine ? <Text style={styles.stopLine}>{pickupLine}</Text> : null}
               </View>
             </View>
             <View style={styles.connector} />
@@ -290,12 +322,8 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
                 <Icon name="pin" size={18} color={dark.green} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.stopTitle} numberOfLines={2}>
-                  Livrer : {places.dropoffZone}
-                </Text>
-                <Text style={styles.stopLine} numberOfLines={compact ? 2 : 3}>
-                  Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.
-                </Text>
+                <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>Livrer : {places.dropoffZone}</Text>
+                <Text style={styles.stopLine}>{compact ? 'Zone approximative' : DROPOFF_PRIVACY_NOTE}</Text>
               </View>
             </View>
           </ScrollView>
@@ -327,10 +355,14 @@ const styles = StyleSheet.create({
   actions: { alignItems: 'center', gap: 12 },
   actionsRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xl },
   sheet: { paddingTop: spacing.lg },
+  sheetCompact: { paddingTop: spacing.md },
   details: { gap: spacing.md },
-  detailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  detailsCompact: { gap: 10 },
+  // Titre et véhicule sur une ligne ; s'ils n'y tiennent pas, le véhicule passe dessous (jamais coupé).
+  detailsHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: spacing.sm, rowGap: 2 },
+  detailsHeaderCompact: { flexDirection: 'column', alignItems: 'flex-start', gap: 2 },
   kicker: { color: dark.textMuted },
-  facts: { flexShrink: 1, color: dark.textMuted, fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  facts: { color: dark.textMuted, fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
   error: {
     color: dark.red,
     backgroundColor: dark.redSoft,
@@ -341,17 +373,20 @@ const styles = StyleSheet.create({
   },
   money: { flexDirection: 'row', gap: spacing.sm },
   moneyBox: { flex: 1, borderRadius: 16, padding: spacing.md, gap: 2 },
+  moneyBoxCompact: { paddingVertical: 10 },
   earning: { backgroundColor: dark.greenSoft },
   cash: { backgroundColor: dark.amberSoft },
   moneyLabel: { color: dark.textMuted, fontSize: 12.5, fontWeight: '800' },
   earningValue: { color: dark.green, fontSize: 26, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
   cashValue: { color: dark.amber, fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 3 },
   cashSplit: { color: dark.amber, fontSize: 11.5, fontWeight: '700', fontVariant: ['tabular-nums'], opacity: 0.9 },
+  cashSplitWide: { fontSize: 12, marginTop: -4, paddingHorizontal: 2 },
   stop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   stopIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   zoneIcon: { backgroundColor: dark.greenSoft, borderWidth: 1.5, borderColor: 'rgba(47,211,138,0.6)', borderStyle: 'dashed' },
   stopInitials: { color: '#FFAA48', fontWeight: '900', fontSize: 13 },
   stopTitle: { color: dark.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
+  stopTitleCompact: { fontSize: 15 },
   stopLine: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },
   connector: { width: 2, height: 10, marginLeft: 17, marginVertical: -6, borderRadius: 1, backgroundColor: dark.border },
 });

@@ -12,6 +12,7 @@ import {
   pickVehicle,
   recipientPays,
   sortActiveDeliveries,
+  stageCollect,
   validateDestination,
   validatePackage,
   type DeliveryForm,
@@ -76,6 +77,25 @@ describe('montants à encaisser par le livreur', () => {
     });
     expect(pickupFromStore(null)).toBeNull();
     expect(pickupFromStore({ lat: Number.NaN, lng: 1, address: 'x', landmark: '' })).toBeNull();
+  });
+
+  it('espèces de l’étape en cours (montant fixé au-dessus des boutons de la course) : retrait, puis livraison', () => {
+    // Frais payés par l'entreprise : au retrait, les frais ; ensuite, la marchandise seule.
+    const sender = amountsToCollect(delivery({ feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }));
+    expect(stageCollect('ASSIGNED', sender)).toEqual({
+      at: 'pickup',
+      label: 'À encaisser au retrait',
+      amount: 1700,
+      detail: 'Frais de livraison payés au retrait, en espèces.',
+    });
+    expect(stageCollect('PICKED_UP', sender)).toEqual({ at: 'dropoff', label: 'À encaisser', amount: 8000, detail: 'Marchandise 8\u202f000\u202fFCFA, en espèces.' });
+    // Frais payés par le destinataire : rien au retrait, marchandise + frais à la livraison.
+    const recipient = amountsToCollect(delivery({ feePaidBy: 'RECIPIENT', cashToCollect: 15000, deliveryFee: 1500 }));
+    expect(stageCollect('ASSIGNED', recipient)).toBeNull();
+    expect(stageCollect('PICKED_UP', recipient)).toMatchObject({ at: 'dropoff', amount: 16500 });
+    // Livraison déjà payée, ou course terminée : rien à afficher.
+    expect(stageCollect('PICKED_UP', amountsToCollect(delivery({ feePaidBy: 'SENDER', cashToCollect: 0 })))).toBeNull();
+    expect(stageCollect('DELIVERED', recipient)).toBeNull();
   });
 
   it('ancienne commande client : le total en espèces', () => {

@@ -88,7 +88,7 @@ describe('écran « Vous êtes prêt ! »', () => {
   it('texte, illustration et deux choix', async () => {
     const r = await render(<DriverReadyScreen />);
     expect(r.getByText('Vous êtes prêt !')).toBeTruthy();
-    expect(r.getByText('Votre dossier est validé. Passez en ligne pour recevoir vos premières courses.')).toBeTruthy();
+    expect(r.getByText('Votre dossier est validé. Passez en ligne pour recevoir des courses.')).toBeTruthy();
     expect(r.getByTestId('ready-go-online')).toBeTruthy();
     expect(r.getByTestId('ready-later')).toBeTruthy();
   });

@@ -2,8 +2,9 @@ import type { DriverProfileDto } from '@yaar/shared';
 
 /**
  * Écran « Vous êtes prêt ! » : montré au livreur dont le dossier vient d'être validé et qui n'est encore jamais
- * passé en ligne (aucun consentement au suivi GPS), tant qu'il ne l'a pas écarté (« Plus tard », mémorisé par
- * utilisateur sur l'appareil). Une fois en ligne, le consentement est enregistré et l'écran ne revient plus.
+ * passé en ligne (aucun consentement au suivi GPS). `dismissed` (mémorisé par utilisateur sur l'appareil) : écran
+ * écarté avec « Plus tard », ou livreur déjà vu avec son consentement (state/driver) ; un livreur expérimenté qui
+ * retire son consentement ne le revoit donc pas.
  */
 export function shouldShowReadyScreen(
   profile: Pick<DriverProfileDto, 'status' | 'trackingConsentAt'> | null | undefined,

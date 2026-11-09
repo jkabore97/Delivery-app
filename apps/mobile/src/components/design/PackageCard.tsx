@@ -37,6 +37,8 @@ export interface PackageCardProps {
   whatsappText?: string | null;
   /** Initiales de la pastille (par défaut celles de `name`). */
   initials?: string | null;
+  /** Pictogramme de la pastille à la place des initiales (ex. « package » : colis sans entreprise ni nom). */
+  avatarIcon?: IconName;
   theme?: Surface;
   /** Toute la carte devient un bouton. */
   onPress?: () => void;
@@ -64,6 +66,7 @@ export function PackageCard({
   phone,
   whatsappText,
   initials,
+  avatarIcon,
   theme = 'dark',
   onPress,
   footer,
@@ -80,7 +83,11 @@ export function PackageCard({
     <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
       <View style={styles.header}>
         <View style={[styles.avatar, { backgroundColor: c.avatarBg }]}>
-          <Text style={[styles.avatarText, { color: c.avatarFg }]}>{letters}</Text>
+          {avatarIcon ? (
+            <Icon name={avatarIcon} size={22} color={c.avatarFg} testID={testID ? `${testID}-avatar-icon` : undefined} />
+          ) : (
+            <Text style={[styles.avatarText, { color: c.avatarFg }]}>{letters}</Text>
+          )}
         </View>
         <View style={styles.flex}>
           {kicker || status ? (

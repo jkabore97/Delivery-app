@@ -5,7 +5,7 @@ import { errorMessage } from '../lib/api';
 import { onlineStatus } from '../lib/driverStatus';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { colors, dark, spacing } from '../theme';
+import { colors, dark, MIN_TOUCH, spacing } from '../theme';
 import { confirmAsync, notify } from '../lib/dialog';
 import { Pill } from './design/Pill';
 import { RoundButton } from './design/RoundButton';
@@ -43,9 +43,10 @@ export function OnlineStatusPill() {
 
 /**
  * Grand bouton rond « Passer en ligne » (accueil hors ligne). Passe par le consentement au suivi GPS la première
- * fois (setOnline l'ouvre et reprend le passage en ligne après acceptation).
+ * fois (setOnline l'ouvre et reprend le passage en ligne après acceptation). `blocked` (plafond d'espèces atteint) :
+ * le serveur refuserait le passage en ligne, le bouton est inactif et l'accueil explique le dépôt à faire.
  */
-export function GoOnlineButton({ onError }: { onError: (msg: string | null) => void }) {
+export function GoOnlineButton({ onError, blocked = false }: { onError: (msg: string | null) => void; blocked?: boolean }) {
   const { togglingOnline, setOnline } = useDriver();
   return (
     <RoundButton
@@ -57,13 +58,18 @@ export function GoOnlineButton({ onError }: { onError: (msg: string | null) => v
       labelInside
       elevated
       loading={togglingOnline}
+      disabled={blocked}
       onPress={async () => {
         onError(null);
         const err = await setOnline(true);
         if (err) onError(err);
       }}
       accessibilityLabel="Passer en ligne"
-      accessibilityHint="Votre position sera suivie tant que vous êtes en ligne."
+      accessibilityHint={
+        blocked
+          ? 'Indisponible : plafond d’espèces atteint, déposez l’argent auprès de Yaar.'
+          : 'Votre position sera suivie tant que vous êtes en ligne.'
+      }
       testID="online-switch"
     />
   );
@@ -118,10 +124,13 @@ export function SosButton({ size = 64 }: { size?: number }) {
     }
   };
 
+  // Disque plus petit que la cible tactile minimale (48 px sur la carte) : zone tactile portée à MIN_TOUCH.
+  const touchPad = Math.max(0, Math.ceil((MIN_TOUCH - size) / 2));
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="SOS, alerter les contrôleurs"
+      hitSlop={touchPad || undefined}
       style={[styles.sos, { width: size, height: size, borderRadius: size / 2 }, busy && { opacity: 0.6 }]}
       onPress={() =>
         void confirmAsync({
@@ -148,7 +157,8 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   gpsError: {
     color: '#FFFFFF',
-    backgroundColor: 'rgba(217,54,54,0.92)',
+    // Opaque : blanc sur #C62F2F = 5,5:1 quel que soit le fond de carte dessous (rouge translucide : 4,2:1).
+    backgroundColor: '#C62F2F',
     fontSize: 12,
     fontWeight: '700',
     borderRadius: 8,

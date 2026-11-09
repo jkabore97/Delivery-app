@@ -6,8 +6,9 @@ import { loadDriverReadyDismissed } from '../lib/storage';
 
 /**
  * Ouvre une fois l'écran « Vous êtes prêt ! » (/driver/ready) depuis l'accueil du livreur quand son dossier est
- * validé, qu'il n'est jamais passé en ligne et qu'il ne l'a pas écarté sur cet appareil. `active` : l'accueil est à
- * l'écran (onglet affiché, aucun écran par-dessus).
+ * validé, qu'il n'est jamais passé en ligne (aucun consentement, et jamais vu avec un consentement sur cet appareil)
+ * et qu'il ne l'a pas écarté sur cet appareil. `active` : l'accueil est à l'écran (onglet affiché, aucun écran
+ * par-dessus).
  */
 export function useReadyScreenGate(profile: DriverProfileDto | null | undefined, active: boolean): void {
   const userId = profile?.userId ?? null;

@@ -7,6 +7,9 @@
 //   CONSOLE_URL  console de contrôle                                      défaut https://yaar-console.vercel.app
 //   API_URL      API                                                      défaut https://yaar-api.vercel.app
 //   E2E_OUT      dossier des captures d'écran                             défaut ./e2e-out
+//   E2E_DRIVER_CONSENT  « withdraw » (défaut) : Karim D. démarre sans consentement GPS ; « keep » : consentement
+//                donné à la préparation (accueil « Passer en ligne » sans écran « Vous êtes prêt ! » ni fenêtre de
+//                consentement : vérifie le parcours d'un livreur déjà passé en ligne).
 //
 // Ce que le script vérifie, dans l'ordre (modèle B2B : une entreprise fait livrer un destinataire sans compte) :
 //   1. API : /health et /config (mode poll, démo active, canal OTP « console »).
@@ -15,11 +18,13 @@
 //   3. Entreprise (Le Verdoyant) : nouvelle livraison en 3 étapes (destination sur la carte, colis et prix, demande)
 //      → écran de suivi avec le lien à envoyer au destinataire.
 //   4. Destinataire : ouvre le lien de suivi SANS compte (titre de la page, « Recherche d'un livreur », code).
-//   5. Livreur (Karim D.) : écran « Vous êtes prêt ! » (jamais passé en ligne), « Passer en ligne » → consentement GPS,
+//   5. Livreur (Karim D.) : écran « Vous êtes prêt ! » s'il s'affiche (versions qui le proposent, livreur sans
+//      consentement), sinon le bouton « Passer en ligne » de l'accueil → consentement GPS si la fenêtre s'ouvre,
 //      en ligne, reçoit l'offre plein écran par polling (entreprise + zone ; carte sombre sans aucun marqueur du
 //      destinataire), l'accepte, récupère le colis, voit le montant à encaisser et saisit le code lu sur la page de
 //      suivi → livré ; la page de suivi affiche « Colis livré », l'entreprise « Livrée », la console la course
-//      « Livrée » et la caisse du livreur. Aucune requête Socket.IO (mode poll).
+//      « Livrée » et la caisse du livreur. Aucune requête Socket.IO (mode poll). `checks.readyScreen` et
+//      `checks.consentModal` disent par où le livreur est passé.
 //   6. Avertissement « démonstration publique » sur l'écran des pièces KYC d'un livreur.
 //
 // Montants comparés EXACTEMENT (pas de « se termine par ») : ce que le destinataire paiera (récapitulatif de la
@@ -29,7 +34,8 @@
 // relancé plusieurs fois par heure sans buter sur la limite de 5 codes par numéro.
 //
 // Effets sur la base de démonstration : une livraison de test est créée et livrée ; Karim D. (livreur moto de démo)
-// est remis hors ligne et sans consentement GPS au début, puis hors ligne à la fin.
+// est remis hors ligne et sans consentement GPS au début (avec consentement si E2E_DRIVER_CONSENT=keep), puis hors
+// ligne à la fin.
 // Les appels directs à l'API passent par le navigateur (proxy et certificats du navigateur, CORS réel).
 const { chromium } = require('playwright');
 const fs = require('node:fs');
@@ -42,9 +48,14 @@ const STAFF = process.env.E2E_STAFF_CODE;
 const OUT = path.resolve(process.env.E2E_OUT || 'e2e-out');
 const WARNING = 'Démonstration publique : n’utilisez pas de vraies pièces d’identité ni de vraies données personnelles.';
 const KARIM = '+22673000002';
+const DRIVER_CONSENT = process.env.E2E_DRIVER_CONSENT || 'withdraw';
 
 if (!STAFF || !/^\d{6}$/.test(STAFF)) {
   console.error('E2E_STAFF_CODE (6 chiffres) est obligatoire : code d’accès démo des comptes de console.');
+  process.exit(2);
+}
+if (DRIVER_CONSENT !== 'withdraw' && DRIVER_CONSENT !== 'keep') {
+  console.error('E2E_DRIVER_CONSENT : « withdraw » (défaut) ou « keep ».');
   process.exit(2);
 }
 fs.mkdirSync(OUT, { recursive: true });
@@ -168,12 +179,16 @@ async function karimToken(page) {
       throw new Error(`/config inattendu : ${JSON.stringify(config)}`);
     step(`API : /health ${health.status}, /config ${JSON.stringify(config.json)}`);
 
-    // Karim (livreur démo) : hors ligne et sans consentement, comme un livreur « neuf ».
+    // Karim (livreur démo) : hors ligne et sans consentement, comme un livreur « neuf » (ou avec, E2E_DRIVER_CONSENT=keep).
     const kt = await karimToken(helper.page);
     const off = await api(helper.page, 'PATCH', '/driver/availability', { online: false }, kt);
     if (off.status >= 400) throw new Error(`Karim ne peut pas passer hors ligne (${off.status} ${JSON.stringify(off.json)})`);
-    await api(helper.page, 'DELETE', '/driver/consent', undefined, kt);
-    step('préparation : Karim D. hors ligne, consentement GPS retiré');
+    const consent = await api(helper.page, DRIVER_CONSENT === 'keep' ? 'POST' : 'DELETE', '/driver/consent', undefined, kt);
+    results.checks.prepareConsent = { mode: DRIVER_CONSENT, status: consent.status };
+    // Ex. 409 DRIVER_BUSY : Karim est resté sur une course d'un essai précédent (rien ne servirait de continuer).
+    if (consent.status !== 200 || !consent.json || !!consent.json.trackingConsentAt !== (DRIVER_CONSENT === 'keep'))
+      throw new Error(`préparation du consentement GPS de Karim impossible (${consent.status} ${JSON.stringify(consent.json)})`);
+    step(`préparation : Karim D. hors ligne, consentement GPS ${DRIVER_CONSENT === 'keep' ? 'donné' : 'retiré'}`);
 
     // ---------- 2. Console ----------
     const c = await newPage(browser, 'console', { viewport: { width: 1366, height: 820 } });
@@ -268,22 +283,44 @@ async function karimToken(page) {
     });
     const dp = driver.page;
     await demoLogin(dp, 'Livreur · Karim D.');
-    // Dossier validé, jamais passé en ligne (consentement retiré à la préparation) : écran « Vous êtes prêt ! ».
-    await dp.getByTestId('ready-screen').waitFor({ timeout: 45000 });
-    await V(dp.getByText('Vous êtes prêt !', { exact: true })).waitFor({ timeout: 10000 });
-    results.checks.readyScreen = true;
-    await shot(dp, 'd29-driver-ready');
-    step('livreur : écran « Vous êtes prêt ! » (dossier validé, jamais passé en ligne)');
-    await dp.getByTestId('ready-go-online').click();
-    await dp.getByTestId('tracking-consent').waitFor({ timeout: 30000 });
-    await shot(dp, 'd30-driver-consent');
-    await dp.getByTestId('accept-tracking-consent').click();
+    // Accueil hors ligne (« Passer en ligne »), ou, pour un livreur sans consentement dans une version qui le propose,
+    // l'écran « Vous êtes prêt ! » par-dessus : on passe par celui qui s'affiche.
+    const readyScreen = dp.getByTestId('ready-screen');
+    const goOnline = dp.getByTestId('online-switch');
+    await V(readyScreen.or(goOnline)).waitFor({ timeout: 45000 });
+    // L'écran « Vous êtes prêt ! » s'ouvre juste après l'accueil (préférence lue sur l'appareil) : court délai de grâce.
+    await V(readyScreen)
+      .waitFor({ timeout: 3000 })
+      .catch(() => undefined);
+    results.checks.readyScreen = await V(readyScreen)
+      .isVisible()
+      .catch(() => false);
+    if (results.checks.readyScreen) {
+      await V(dp.getByText('Vous êtes prêt !', { exact: true })).waitFor({ timeout: 10000 });
+      await shot(dp, 'd29-driver-ready');
+      step('livreur : écran « Vous êtes prêt ! » (dossier validé, jamais passé en ligne)');
+      await V(dp.getByTestId('ready-go-online')).click();
+    } else {
+      await shot(dp, 'd29-driver-offline');
+      step('livreur : accueil hors ligne (pas d’écran « Vous êtes prêt ! »), « Passer en ligne »');
+      await V(goOnline).click();
+    }
     // Indicateur légal de l'accueil (« En ligne : suivi GPS actif ») ; le texte du consentement contient aussi
-    // « En ligne » : on attend la pastille d'état elle-même.
-    await V(dp.getByTestId('online-status').filter({ hasText: /^En ligne/ })).waitFor({ timeout: 45000 });
-    results.checks.readyScreenClosedAfterOnline = !(await dp.getByTestId('ready-screen').isVisible().catch(() => false));
+    // « En ligne » : on attend la pastille d'état elle-même. La fenêtre de consentement ne s'ouvre que sans consentement.
+    const onlinePill = dp.getByTestId('online-status').filter({ hasText: /^En ligne/ });
+    const consentModal = dp.getByTestId('tracking-consent');
+    await V(consentModal.or(onlinePill)).waitFor({ timeout: 45000 });
+    results.checks.consentModal = await V(consentModal)
+      .isVisible()
+      .catch(() => false);
+    if (results.checks.consentModal) {
+      await shot(dp, 'd30-driver-consent');
+      await V(dp.getByTestId('accept-tracking-consent')).click();
+    }
+    await V(onlinePill).waitFor({ timeout: 45000 });
+    results.checks.readyScreenClosedAfterOnline = !(await readyScreen.isVisible().catch(() => false));
     if (!results.checks.readyScreenClosedAfterOnline) throw new Error('l’écran « Vous êtes prêt ! » reste affiché après le passage en ligne');
-    step('livreur : consentement GPS donné, en ligne');
+    step(`livreur : ${results.checks.consentModal ? 'consentement GPS donné, ' : 'consentement déjà donné, '}en ligne`);
     for (let i = 0; ; i++) {
       await dp.getByTestId('accept-offer').waitFor({ timeout: 120000 });
       await dp.waitForTimeout(500);
@@ -299,7 +336,13 @@ async function karimToken(page) {
     // Espèces de la course : frais au retrait (payés ici par le destinataire, donc 0) + montant à la livraison.
     sameAmount('espèces de l’offre / page de suivi', results.checks.offerCash, pageAmount);
     // Avant acceptation : carte sombre, entreprise et livreur, zone de livraison en cercle, jamais le destinataire.
+    // Marqueurs lus une fois ceux du livreur ou de l'entreprise posés (sinon « aucun marqueur du destinataire »
+    // serait vrai sur une carte encore vide).
     await dp.waitForSelector('[data-testid="offer-screen"] canvas.maplibregl-canvas', { timeout: 30000 });
+    await dp.waitForSelector(
+      '[data-testid="offer-screen"] .maplibregl-marker[data-kind="driver"], [data-testid="offer-screen"] .maplibregl-marker[data-kind="pickup"]',
+      { timeout: 30000 },
+    );
     results.checks.offerMap = await dp.evaluate(() => {
       const root = document.querySelector('[data-testid="offer-screen"]');
       return {

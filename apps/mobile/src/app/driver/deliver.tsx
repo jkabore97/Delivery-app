@@ -242,7 +242,7 @@ export default function DeliverScreen() {
         {profile ? (
           <>
             <View style={styles.todayRow}>
-              <Text style={styles.todayLabel}>Cash détenu après cette course</Text>
+              <Text style={styles.todayLabel}>Espèces détenues après cette course</Text>
               <Text style={[styles.todayValue, { color: limit && cashAfter >= limit ? dark.red : dark.text }]}>{formatFcfa(cashAfter)}</Text>
             </View>
             <DarkProgress value={ratio} color={limit && cashAfter >= limit ? dark.red : dark.amber} />

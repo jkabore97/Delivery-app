@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { DriverProfileDto, OfferDto, OrderDto } from '@yaar/shared';
 import DriverHome from '../app/driver/(tabs)/index';
@@ -77,6 +78,7 @@ describe('Accueil du livreur', () => {
       position: null,
       gpsActive: false,
       gpsPaused: false,
+      gpsError: null,
       availabilityError: null,
       orderNotice: null,
     });
@@ -121,8 +123,39 @@ describe('Accueil du livreur', () => {
     expect(r.getByTestId('current-order')).toHaveTextContent(/2 · Livrer · Course #1052.*Colis pour Awa Kaboré.*Patte d’Oie, rue 15\.23/);
     expect(r.getByTestId('current-order')).toHaveTextContent(/À encaisser à la livraison.*16 500 FCFA/);
     expect(r.queryByTestId('online-switch')).toBeNull();
+    // Un seul bouton : la carte elle-même n'en est pas un (pas de bouton imbriqué, libellé réduit au nom).
+    expect(r.getByTestId('current-order').props.accessibilityRole).toBeUndefined();
+    expect(within(r.getByTestId('current-order')).getAllByRole('button').map((b) => b.props.testID)).toEqual(['open-order']);
     await act(async () => fireEvent.press(r.getByTestId('open-order')));
     expect(mockRouter.push).toHaveBeenCalledWith('/driver/order');
+  });
+
+  it('plafond d’espèces atteint, hors ligne : « Passer en ligne » inactif (le serveur refuserait) et dépôt expliqué', async () => {
+    mockDriver.profile = driverProfile({ isOnline: false, cashBlocked: true, cashHeld: 52000, cashLimit: 50000 });
+    const r = await render(wrap(<DriverHome />));
+    const sw = r.getByTestId('online-switch');
+    expect(sw.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(sw.props.accessibilityHint).toMatch(/plafond d’espèces atteint/);
+    await act(async () => fireEvent.press(sw));
+    expect(mockDriver.setOnline).not.toHaveBeenCalled();
+    expect(r.getByTestId('cash-blocked')).toHaveTextContent(
+      /Plafond d’espèces atteint \(52 000 FCFA\)\. Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré\./,
+    );
+    expect(r.queryByText(/Passez en ligne pour recevoir des courses/)).toBeNull();
+    // Montant et plafond : sur la même ligne que le libellé, ou entiers sur la ligne suivante (jamais coupés).
+    expect(r.getByTestId('cash-held')).toHaveTextContent(/52 000 FCFA \/ 50 000 FCFA/);
+    expect(StyleSheet.flatten(r.getByTestId('cash-held').parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
+  });
+
+  it('cibles tactiles et contrastes : SOS de 48 px étendu à 56, erreur GPS sur fond rouge opaque', async () => {
+    mockDriver.profile = driverProfile({ isOnline: true });
+    mockDriver.gpsError = 'GPS indisponible : vérifiez la localisation.';
+    const r = await render(wrap(<DriverHome />));
+    const sos = r.getByTestId('sos-button');
+    expect(StyleSheet.flatten(sos.props.style)).toMatchObject({ width: 48, height: 48 });
+    expect(sos.props.hitSlop).toBe(4);
+    const gps = r.getByText('GPS indisponible : vérifiez la localisation.');
+    expect(StyleSheet.flatten(gps.props.style)).toMatchObject({ color: '#FFFFFF', backgroundColor: '#C62F2F' });
   });
 
   it('offre affichée en plein écran, ou accueil masqué : carte de l’accueil démontée (une carte à la fois)', async () => {

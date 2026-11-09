@@ -21,8 +21,9 @@ export const colors = {
 /**
  * Surfaces sombres (écrans et feuilles du livreur, façon application de coursier) : fond presque noir teinté de
  * vert, textes clairs, et un vert VIF à la place du vert de marque (#0B7A4B, trop peu contrasté sur fond sombre).
- * Contrastes mesurés sur `surface` : text 16,4:1 ; textMuted 7,9:1 ; textFaint 4,9:1 ; green 9,2:1 ; red 6,4:1 ;
- * amber 11,2:1 ; greenInk sur green 9,8:1 ; blanc sur redFill 4,6:1.
+ * Contrastes mesurés sur `surface` : text 16,4:1 ; textMuted 7,9:1 ; textFaint 5,2:1 ; green 9,2:1 ; red 6,4:1 ;
+ * amber 11,2:1 ; greenInk sur green 9,8:1 ; blanc sur redFill 4,6:1. Sur `raised` (cartes d'une feuille, le fond le
+ * plus clair) : textMuted 7,1:1 ; textFaint 4,6:1 (petits textes : 4,5:1 au moins).
  */
 export const dark = {
   /** Fond d'écran plein (écran de livraison, « Vous êtes prêt ! »). */
@@ -36,7 +37,7 @@ export const dark = {
   border: '#2B3531',
   text: '#F3F6F4',
   textMuted: '#A3B0A9',
-  textFaint: '#7C8A83',
+  textFaint: '#808E87',
   /** Vert vif (actions principales, montants gagnés) sur fond sombre. */
   green: '#2FD38A',
   /** Texte posé sur le vert vif. */

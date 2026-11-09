@@ -1,10 +1,32 @@
-import { Linking, Text } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { Linking, StyleSheet, Text } from 'react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { CountdownRing } from '../components/design/CountdownRing';
 import { PackageCard } from '../components/design/PackageCard';
 import { Pill } from '../components/design/Pill';
 import { RoundButton } from '../components/design/RoundButton';
 import { AmountRow } from '../components/design/Surfaces';
+import { dark, MIN_TOUCH } from '../theme';
+
+/** Contraste WCAG entre deux couleurs #RRGGBB. */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe('couleurs des surfaces sombres', () => {
+  it('textes lisibles (4,5:1 au moins) sur le fond, les feuilles et les cartes relevées', () => {
+    for (const bg of [dark.background, dark.surface, dark.raised]) {
+      for (const fg of [dark.text, dark.textMuted, dark.textFaint, dark.green, dark.amber, dark.red]) {
+        expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    expect(contrast(dark.textFaint, dark.raised)).toBeCloseTo(4.64, 1);
+  });
+});
 
 describe('RoundButton', () => {
   it('libellé sous le disque, accessibilité, action', async () => {
@@ -60,6 +82,26 @@ describe('Pill', () => {
     await act(async () => fireEvent.press(r.getByTestId('off')));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it('grande pastille d’action : 56 px de haut au moins (cible tactile minimale, ex. « Refuser »)', async () => {
+    const r = await render(<Pill label="Refuser" icon="close" tone="red" size="lg" onPress={jest.fn()} testID="lg" />);
+    const body = r.getByTestId('lg').children[0] as unknown as { props: { style: unknown } };
+    expect(StyleSheet.flatten(body.props.style as never)).toMatchObject({ minHeight: MIN_TOUCH });
+    expect(MIN_TOUCH).toBe(56);
+  });
+
+  it('étiquette avec libellé d’accessibilité : un seul élément annoncé, avec ce libellé', async () => {
+    const r = await render(
+      <>
+        <Pill label="Nouvelle course" accessibilityLabel="Nouvelle course, Moto" testID="labelled" />
+        <Pill label="En ligne : suivi GPS actif" live testID="plain" />
+      </>,
+    );
+    expect(r.getByTestId('labelled').props).toMatchObject({ accessible: true, accessibilityRole: 'text', accessibilityLabel: 'Nouvelle course, Moto' });
+    expect(r.getByLabelText('Nouvelle course, Moto')).toBe(r.getByTestId('labelled'));
+    // Sans libellé : le texte visible est lu tel quel (pas de regroupement).
+    expect(r.getByTestId('plain').props.accessible).toBe(false);
+  });
 });
 
 describe('PackageCard', () => {
@@ -97,6 +139,15 @@ describe('PackageCard', () => {
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
   });
+
+  it('pastille : pictogramme à la place des initiales (colis sans entreprise ni nom)', async () => {
+    const r = await render(<PackageCard name="Colis" avatarIcon="package" testID="card" />);
+    expect(r.getByTestId('card-avatar-icon')).toBeTruthy();
+    expect(r.queryByText('C')).toBeNull();
+    const named = await render(<PackageCard name="Pharmacie du Centre" testID="named" />);
+    expect(named.getByText('PC')).toBeTruthy();
+    expect(named.queryByTestId('named-avatar-icon')).toBeNull();
+  });
 });
 
 describe('AmountRow', () => {
@@ -133,5 +184,31 @@ describe('CountdownRing', () => {
     // Anneau vide : plus d'arc dessiné.
     expect(r.queryByTestId('ring-arc')).toBeNull();
     expect(Math.min(...seen)).toBe(0);
+  });
+
+  it('contenu recalculé à chaque seconde seulement, pas à chaque image de l’anneau ; anneau à côté du contenu', async () => {
+    let calls = 0;
+    const r = await render(
+      <CountdownRing startAt="2026-11-06T09:43:00.000Z" endAt="2026-11-06T09:43:30.000Z" size={150} fps={15} testID="ring">
+        {({ secondsLeft }) => {
+          calls++;
+          return <Text testID="inside">{secondsLeft}</Text>;
+        }}
+      </CountdownRing>,
+    );
+    const arcBefore = r.getByTestId('ring-arc').props.d as string;
+    const before = calls;
+    // 2,1 s par pas de 50 ms : une trentaine d'images de l'anneau, deux changements de seconde (30 → 29 → 28).
+    for (let i = 0; i < 42; i++) {
+      await act(async () => {
+        jest.advanceTimersByTime(50);
+      });
+    }
+    expect(r.getByTestId('inside')).toHaveTextContent('28');
+    expect(r.getByTestId('ring-arc').props.d).not.toBe(arcBefore);
+    expect(calls - before).toBe(2);
+    // Barre de progression (l'anneau) posée derrière le contenu, pas autour : ses enfants ne seraient pas lus.
+    expect(r.getByTestId('ring').props.accessibilityRole).toBe('progressbar');
+    expect(within(r.getByTestId('ring')).queryByTestId('inside')).toBeNull();
   });
 });

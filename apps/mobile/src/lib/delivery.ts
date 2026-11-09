@@ -173,6 +173,34 @@ export function collectDetail(a: CollectAmounts): string | null {
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}, en espèces.`;
 }
 
+/** Espèces de l'étape en cours d'une course du livreur. */
+export interface StageCollect {
+  /** Étape : retrait (auprès de l'entreprise) ou livraison (auprès du destinataire). */
+  at: 'pickup' | 'dropoff';
+  /** Libellé court (une ligne, à côté du montant). */
+  label: string;
+  amount: number;
+  /** Détail du montant (« Marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces. »). */
+  detail: string | null;
+}
+
+/**
+ * Espèces à encaisser à l'étape EN COURS (règle d'affichage de l'écran de course : ce montant est fixé au-dessus des
+ * boutons d'action, jamais dans la partie qui défile) : au retrait, les frais payés par l'entreprise ; une fois le
+ * colis récupéré, ce que paie le destinataire. null : rien à encaisser à cette étape.
+ */
+export function stageCollect(status: OrderStatus, a: CollectAmounts): StageCollect | null {
+  if (status === OrderStatus.ASSIGNED) {
+    return a.atPickup > 0
+      ? { at: 'pickup', label: 'À encaisser au retrait', amount: a.atPickup, detail: 'Frais de livraison payés au retrait, en espèces.' }
+      : null;
+  }
+  if (status === OrderStatus.PICKED_UP) {
+    return a.atDropoff > 0 ? { at: 'dropoff', label: 'À encaisser', amount: a.atDropoff, detail: collectDetail(a) } : null;
+  }
+  return null;
+}
+
 /** Montant que paiera le destinataire pour une demande en préparation. */
 export function recipientPays(fee: number | null, feePaidBy: FeePayer, cashToCollect: number): number {
   return cashToCollect + (feePaidBy === 'RECIPIENT' ? (fee ?? 0) : 0);

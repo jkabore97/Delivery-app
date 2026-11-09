@@ -1,10 +1,14 @@
 import type { ReactElement } from 'react';
-import { Platform, Vibration } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Platform, StyleSheet, Vibration } from 'react-native';
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ApiError } from '../lib/api';
 import { OfferModal } from '../components/OfferModal';
+import type { RoundButtonProps } from '../components/design/RoundButton';
 import { driverProfile, offer, order } from './fixtures';
+
+/** Comparaison exacte du texte (sans normaliser les espaces : les espaces fines insécables comptent). */
+const exactly = { normalizer: (t: string) => t };
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
@@ -23,14 +27,28 @@ const mockDriver = {
 };
 jest.mock('../state/driver', () => ({ useDriver: () => mockDriver }));
 
-/** Carte simulée : on lit ce qu'elle reçoit (fond, marqueurs, zones, tracés). */
-const mockMapProps: { current: Record<string, unknown> | null } = { current: null };
+/** Carte simulée : on lit ce qu'elle reçoit (fond, marqueurs, zones, tracés) et on compte ses rendus. */
+const mockMapProps: { current: Record<string, unknown> | null; renders: number } = { current: null, renders: 0 };
 jest.mock('../components/map/LiveMap', () => {
   const { Text: RNText } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
     LiveMap: (p: Record<string, unknown>) => {
       mockMapProps.current = p;
+      mockMapProps.renders++;
       return <RNText testID="live-map">map</RNText>;
+    },
+  };
+});
+
+/** Boutons ronds réels, rendus comptés par testID (le bouton « Accepter » ne doit pas suivre l'anneau image par image). */
+const mockButtonRenders: Record<string, number> = {};
+jest.mock('../components/design/RoundButton', () => {
+  const actual = jest.requireActual<typeof import('../components/design/RoundButton')>('../components/design/RoundButton');
+  return {
+    ...actual,
+    RoundButton: (p: RoundButtonProps) => {
+      if (p.testID) mockButtonRenders[p.testID] = (mockButtonRenders[p.testID] ?? 0) + 1;
+      return <actual.RoundButton {...p} />;
     },
   };
 });
@@ -49,14 +67,23 @@ describe('OfferModal (plein écran)', () => {
     mockDriver.currentOrder = null;
     mockDriver.position = null;
     mockMapProps.current = null;
+    mockMapProps.renders = 0;
+    for (const k of Object.keys(mockButtonRenders)) delete mockButtonRenders[k];
   });
-  afterEach(() => jest.useRealTimers());
+  afterEach(async () => {
+    // Démontage avec l'horloge simulée encore active : le StatusBar de React Native (barre d'état claire de l'offre)
+    // programme sa mise à jour avec setImmediate ; démonté sous l'horloge réelle, il bloquerait le test suivant.
+    await cleanup();
+    jest.useRealTimers();
+  });
 
   it('affiche l’offre avec le compte à rebours, le véhicule et le gain', async () => {
     const r = await show();
     expect(r.getByTestId('offer-screen')).toBeTruthy();
     expect(r.getByTestId('offer-title')).toHaveTextContent('Nouvelle course');
-    expect(r.getByLabelText('Nouvelle course, Moto')).toBeTruthy();
+    // Étiquette avec libellé : un seul élément accessible, qui annonce aussi le véhicule (pictogramme seul à l'écran).
+    expect(r.getByLabelText('Nouvelle course, Moto').props).toMatchObject({ accessible: true, accessibilityRole: 'text' });
+    expect(r.getByLabelText('Retrait à environ 4 min · 1,2 km').props.accessible).toBe(true);
     expect(r.getByTestId('offer-vehicle')).toHaveTextContent('Moto · 4,1 km de course');
     expect(r.getByText('30 s')).toBeTruthy();
     expect(r.getByText(/Maquis Le Verdoyant/)).toBeTruthy();
@@ -136,9 +163,62 @@ describe('OfferModal (plein écran)', () => {
     mockDriver.offers = [offer({ cashToCollect: 9700, cashAtPickup: 1700, cashAtDelivery: 8000, driverEarning: 1280 })];
     const r = await show();
     expect(r.getByTestId('offer-cash')).toHaveTextContent(/9 700 FCFA/);
-    expect(r.getByTestId('offer-cash-total')).toHaveTextContent('9 700 FCFA');
-    expect(r.getByTestId('offer-cash-split')).toHaveTextContent('1 700 FCFA au retrait · 8 000 FCFA à la livraison');
+    // Texte exact : espaces fines insécables (U+202F) entre les milliers et avant « FCFA », jamais d'espace ordinaire.
+    expect(r.getByTestId('offer-cash-total')).toHaveTextContent('9 700 FCFA', exactly);
+    expect(r.getByTestId('offer-cash-split')).toHaveTextContent('1 700 FCFA au retrait · 8 000 FCFA à la livraison', exactly);
+    expect(within(r.getByTestId('offer-cash')).getByTestId('offer-cash-split')).toBeTruthy(); // grand écran : dans la case
     expect(r.getByTestId('offer-earning')).toHaveTextContent(/1 280 FCFA/);
+  });
+
+  it('petit téléphone (360 × 640) : rien de coupé, détail resserré, barre de défilement visible', async () => {
+    const dims = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1 });
+    mockDriver.offers = [
+      offer({
+        orderType: 'PARCEL',
+        vehicleType: 'CAR',
+        distanceKm: 12.6,
+        pickup: {
+          address: 'Secteur Zogona',
+          name: 'Établissements Commerciaux Ouédraogo & Frères Import-Export',
+          distanceFromDriverKm: null,
+          zone: 'Secteur Zogona',
+          approxLocation: { lat: 12.38, lng: -1.4986 },
+        },
+        dropoff: { address: 'Secteur Ouaga 2000', zone: 'Secteur Ouaga 2000', approxLocation: { lat: 12.3226, lng: -1.4977 } },
+        cashToCollect: 125000,
+        cashAtPickup: 2500,
+        cashAtDelivery: 122500,
+        driverEarning: 2750,
+      }),
+    ];
+    const small = { frame: { x: 0, y: 0, width: 360, height: 640 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
+    const r = await render(
+      <SafeAreaProvider initialMetrics={small}>
+        <OfferModal />
+      </SafeAreaProvider>,
+    );
+    try {
+      // Véhicule sous le titre (colonne), jamais tronqué.
+      const vehicle = r.getByTestId('offer-vehicle');
+      expect(vehicle).toHaveTextContent('Voiture · 12,6 km de course');
+      expect(vehicle.props.numberOfLines).toBeUndefined();
+      expect(StyleSheet.flatten(vehicle.parent?.props.style)).toMatchObject({ flexDirection: 'column' });
+      // Nom d'entreprise entier (pas de limite de lignes).
+      const pickupTitle = r.getByText('Récupérer chez Établissements Commerciaux Ouédraogo & Frères Import-Export');
+      expect(pickupTitle.props.numberOfLines).toBeUndefined();
+      // Détail des espèces sur toute la largeur (hors de la case), au texte exact.
+      expect(within(r.getByTestId('offer-cash')).queryByTestId('offer-cash-split')).toBeNull();
+      expect(r.getByTestId('offer-cash-split')).toHaveTextContent('2 500 FCFA au retrait · 122 500 FCFA à la livraison', exactly);
+      expect(r.getByTestId('offer-cash-total')).toHaveTextContent('125 000 FCFA', exactly);
+      // Zone de livraison : rappel court.
+      expect(r.getByTestId('offer-dropoff')).toHaveTextContent('Livrer : Secteur Ouaga 2000Zone approximative');
+      // Détail : jusqu'à la moitié de l'écran, barre de défilement affichée.
+      const scroll = r.getByTestId('offer-details-scroll');
+      expect(scroll.props.showsVerticalScrollIndicator).toBe(true);
+      expect(StyleSheet.flatten(scroll.props.style)).toMatchObject({ maxHeight: 320 });
+    } finally {
+      dims.mockRestore();
+    }
   });
 
   it('colis : zones approximatives au retrait et à la livraison', async () => {
@@ -220,6 +300,37 @@ describe('OfferModal (plein écran)', () => {
     expect(r.getByText('9 s')).toBeTruthy();
     expect([ring()['aria-valuenow'], ring()['aria-valuetext']]).toEqual([9, '9 s, dernières secondes']);
     expect(r.getByTestId('offer-countdown-arc')).toBeTruthy();
+  });
+
+  it('accessibilité : l’anneau (barre de progression) est posé à côté du bouton « Accepter », pas autour', async () => {
+    const r = await show();
+    const ring = r.getByTestId('offer-countdown');
+    expect(ring.props.accessibilityRole).toBe('progressbar');
+    // Les enfants d'une barre de progression ne sont pas lus : le bouton n'en fait pas partie.
+    expect(within(ring).queryByTestId('accept-offer')).toBeNull();
+    // Le temps restant reste annoncé par le bouton lui-même.
+    expect(r.getByTestId('accept-offer').props.accessibilityHint).toBe('Il reste 30 secondes pour accepter');
+  });
+
+  it('compte à rebours : l’anneau suit son horloge, « Accepter » n’est redessiné qu’à chaque seconde, la carte jamais', async () => {
+    const r = await show();
+    const mapBefore = mockMapProps.renders;
+    const buttonBefore = mockButtonRenders['accept-offer'] ?? 0;
+    const arc = () => r.getByTestId('offer-countdown-arc').props.d as string;
+    const arcBefore = arc();
+    // 3,1 s par pas de 50 ms : l'anneau (15 images par seconde, une toutes les 67 ms) est redessiné 46 fois.
+    for (let i = 0; i < 62; i++) {
+      await act(async () => {
+        jest.advanceTimersByTime(50);
+      });
+    }
+    expect(arc()).not.toBe(arcBefore);
+    expect(r.getByText('27 s')).toBeTruthy();
+    expect(mockMapProps.renders).toBe(mapBefore);
+    // 30 → 29 → 28 → 27 : trois changements de seconde, pas 45 rendus.
+    const buttonRenders = (mockButtonRenders['accept-offer'] ?? 0) - buttonBefore;
+    expect(buttonRenders).toBeGreaterThanOrEqual(3);
+    expect(buttonRenders).toBeLessThanOrEqual(4);
   });
 
   it('après 30 s : l’offre expire, « Accepter » est désactivé, puis l’offre disparaît', async () => {

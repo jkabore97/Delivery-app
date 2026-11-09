@@ -1,6 +1,6 @@
 import { isValidElement, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
-import { colors, dark } from '../../theme';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { colors, dark, MIN_TOUCH } from '../../theme';
 import { Icon, type IconName } from './Icon';
 import type { Surface } from './RoundButton';
 
@@ -23,7 +23,10 @@ export interface PillProps {
   label: string;
   icon?: IconName | ReactNode;
   tone?: PillTone;
-  /** md : 40 px de haut (44 avec une action) ; lg : 52 px (action principale secondaire, ex. « Refuser »). */
+  /**
+   * md : 40 px de haut (44 avec une action, zone tactile portée à 56 par `hitSlop`) ; lg : 56 px, la cible tactile
+   * minimale (action principale secondaire, ex. « Refuser »).
+   */
   size?: 'md' | 'lg';
   /** Avec une action, la pastille devient un bouton. */
   onPress?: () => void;
@@ -89,8 +92,18 @@ export function Pill({
     </View>
   );
   if (!onPress) {
+    // Étiquette avec un libellé d'accessibilité (ex. « Nouvelle course, Moto » : le véhicule n'y est qu'un
+    // pictogramme) : un seul élément annoncé, avec ce libellé à la place du texte visible. Web : rôle « img », le seul
+    // qui donne son libellé à un bloc non interactif (son contenu n'est alors pas relu en double).
+    const labelled = !!accessibilityLabel;
     return (
-      <View accessibilityLiveRegion={live ? 'polite' : undefined} accessibilityLabel={accessibilityLabel} testID={testID}>
+      <View
+        accessible={labelled}
+        accessibilityRole={labelled ? (Platform.OS === 'web' ? 'image' : 'text') : undefined}
+        accessibilityLiveRegion={live ? 'polite' : undefined}
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+      >
         {body(false)}
       </View>
     );
@@ -175,7 +188,7 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1, gap: 8 },
   md: { minHeight: 40, paddingHorizontal: 14 },
   mdAction: { minHeight: 44 },
-  lg: { minHeight: 52, paddingHorizontal: 24, justifyContent: 'center' },
+  lg: { minHeight: MIN_TOUCH, paddingHorizontal: 24, justifyContent: 'center' },
   text: { fontSize: 14, fontWeight: '800', letterSpacing: 0.1, fontVariant: ['tabular-nums'] },
   textLg: { fontSize: 16, fontWeight: '900' },
   textWrap: { flexShrink: 1, paddingVertical: 8, lineHeight: 18 },
