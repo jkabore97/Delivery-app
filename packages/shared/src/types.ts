@@ -348,7 +348,12 @@ export interface OfferDto {
   pickup: { address: string; name: string | null; distanceFromDriverKm: number | null; zone?: string };
   dropoff: { address: string; zone?: string };
   distanceKm: number;
+  /** Total des espèces que le livreur encaissera sur cette course (retrait + livraison). */
   cashToCollect: number;
+  /** Espèces à encaisser auprès de l'entreprise au retrait (frais payés par l'expéditeur), 0 sinon. */
+  cashAtPickup?: number;
+  /** Espèces à encaisser auprès du destinataire à la livraison (marchandise + frais s'il les paie), 0 sinon. */
+  cashAtDelivery?: number;
   driverEarning: number;
 }
 
@@ -617,6 +622,11 @@ export interface PublicConfigDto {
    */
   demoMode: boolean;
   otpChannel: OtpChannel;
+  /**
+   * Rafraîchissement conseillé de la page publique de suivi (ms) pendant une course ; absent = `pollIntervalMs`.
+   * La recherche d'un livreur peut être rafraîchie moins souvent (≈ 2 ×).
+   */
+  trackingPollIntervalMs?: number;
 }
 
 /** GET /cron/daily (Vercel Cron, `Authorization: Bearer <CRON_SECRET>`). */
