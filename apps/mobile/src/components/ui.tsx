@@ -155,6 +155,7 @@ export function Button({
   style,
   small,
   icon,
+  textColor: textColorProp,
   testID,
 }: {
   title: string;
@@ -167,6 +168,11 @@ export function Button({
   small?: boolean;
   /** Pictogramme avant le titre, dessiné de la couleur du texte (ex. `(c) => <Icon name="camera" color={c} />`). */
   icon?: (color: string) => ReactNode;
+  /**
+   * Couleur du texte (et du pictogramme) à la place de celle par défaut (blanc sur un bouton plein) : ex. encre
+   * foncée sur l'orange de l'entreprise, où le blanc n'est pas assez contrasté.
+   */
+  textColor?: string;
   testID?: string;
 }) {
   const inactive = disabled || loading;
@@ -176,7 +182,7 @@ export function Button({
       : variant === 'outline'
         ? { backgroundColor: colors.white, borderColor: colors.border }
         : { backgroundColor: 'transparent', borderColor: 'transparent' };
-  const textColor = variant === 'solid' ? colors.white : variant === 'outline' ? colors.text : color;
+  const textColor = textColorProp ?? (variant === 'solid' ? colors.white : variant === 'outline' ? colors.text : color);
   return (
     <Pressable
       testID={testID}
@@ -212,11 +218,14 @@ export function Chip({
   selected,
   onPress,
   color = colors.green,
+  selectedTextColor = colors.white,
 }: {
   label: string;
   selected?: boolean;
   onPress?: () => void;
   color?: string;
+  /** Texte de la pastille choisie (blanc par défaut ; encre foncée sur l'orange de l'entreprise). */
+  selectedTextColor?: string;
 }) {
   return (
     <Pressable
@@ -225,7 +234,7 @@ export function Chip({
       onPress={onPress}
       style={[styles.chip, selected && { backgroundColor: color, borderColor: color }]}
     >
-      <Text style={[styles.chipText, selected && { color: colors.white }]}>{label}</Text>
+      <Text style={[styles.chipText, selected && { color: selectedTextColor }]}>{label}</Text>
     </Pressable>
   );
 }

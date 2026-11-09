@@ -1,11 +1,13 @@
 import { Linking, StyleSheet, Text } from 'react-native';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { BUSINESS_ACCENT, ORANGE_INK, ORANGE_TEXT } from '../components/business/accent';
 import { CountdownRing } from '../components/design/CountdownRing';
 import { PackageCard } from '../components/design/PackageCard';
 import { Pill } from '../components/design/Pill';
 import { RoundButton } from '../components/design/RoundButton';
 import { AmountRow } from '../components/design/Surfaces';
-import { dark, MIN_TOUCH } from '../theme';
+import { touchTarget } from '../lib/touchTarget';
+import { colors, dark, MIN_TOUCH } from '../theme';
 
 /** Contraste WCAG entre deux couleurs #RRGGBB. */
 function contrast(a: string, b: string): number {
@@ -25,6 +27,34 @@ describe('couleurs des surfaces sombres', () => {
       }
     }
     expect(contrast(dark.textFaint, dark.raised)).toBeCloseTo(4.64, 1);
+  });
+
+  it('petits textes des écrans de l’entreprise et du destinataire : 4,5:1 au moins là où ils sont posés', () => {
+    // Fond de la carte « Prévenez le destinataire » (ShareTrackingCard mise en avant).
+    const PROMINENT = '#13261E';
+    const pairs: [string, string, string][] = [
+      ['sur-titre et ligne du livreur des cartes (textFaint / raised)', dark.textFaint, dark.raised],
+      ['date et frais de l’historique (textFaint / raised)', dark.textFaint, dark.raised],
+      ['note de l’historique (textFaint / background)', dark.textFaint, dark.background],
+      ['texte indicatif des champs sombres (textFaint / raised)', dark.textFaint, dark.raised],
+      ['aide sous un champ, titres de section (textFaint / surface)', dark.textFaint, dark.surface],
+      ['lien de suivi sur la carte mise en avant (textMuted / #13261E)', dark.textMuted, PROMINENT],
+      ['textFaint sur la carte mise en avant, s’il y servait', dark.textFaint, PROMINENT],
+      ['« + Nouvelle », disque et boutons orange (ORANGE_INK / orange)', ORANGE_INK, BUSINESS_ACCENT],
+      ['texte orange sur blanc (ORANGE_TEXT)', ORANGE_TEXT, colors.white],
+    ];
+    for (const [what, fg, bg] of pairs) expect([what, contrast(fg, bg) >= 4.5]).toEqual([what, true]);
+    // Pourquoi ORANGE_INK / ORANGE_TEXT : le blanc sur l'orange et l'orange sur le blanc n'atteignent pas 3:1.
+    expect(contrast(colors.white, BUSINESS_ACCENT)).toBeLessThan(3);
+  });
+});
+
+describe('zones tactiles de 56 px (lib/touchTarget)', () => {
+  it('natif : hitSlop ; web (qui ignore hitSlop) : marge intérieure compensée par une marge négative', () => {
+    expect(touchTarget(48, MIN_TOUCH, 'android')).toEqual({ hitSlop: 4 });
+    expect(touchTarget(48, MIN_TOUCH, 'web')).toEqual({ style: { padding: 4, margin: -4 } });
+    expect(touchTarget(44, MIN_TOUCH, 'web')).toEqual({ style: { padding: 6, margin: -6 } });
+    expect(touchTarget(64, MIN_TOUCH, 'web')).toEqual({});
   });
 });
 
@@ -138,6 +168,50 @@ describe('PackageCard', () => {
     await act(async () => fireEvent.press(none.getByLabelText('Appeler : numéro indisponible')));
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+
+  it('carte qui ouvre un détail ET boutons de contact : deux voisins, jamais un bouton dans un bouton', async () => {
+    const onPress = jest.fn();
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    const r = await render(
+      <PackageCard
+        compact
+        kicker="#1052"
+        status={{ label: 'EN LIVRAISON', tone: 'green' }}
+        name="Awa Kaboré"
+        description="Arrivée vers 14:29 · dans 9 min"
+        address="Patte d’Oie, rue 15.23"
+        landmark="Station Total"
+        meta="Livreur : Issouf · Moto"
+        phone="+22670112233"
+        contactName="Awa Kaboré"
+        onPress={onPress}
+        accessibilityLabel="Awa Kaboré, en livraison, arrivée vers 14:29, dans 9 min"
+        testID="card"
+      />,
+    );
+    const main = r.getByTestId('card');
+    expect(main.props.accessibilityRole).toBe('button');
+    expect(main.props.accessibilityLabel).toBe('Awa Kaboré, en livraison, arrivée vers 14:29, dans 9 min');
+    // Liste dense : numéro et état, nom, heure d'arrivée juste dessous, adresse, repère, livreur.
+    expect(main).toHaveTextContent(/^#1052EN LIVRAISONAKAwa KaboréArrivée vers 14:29 · dans 9 minPatte d’Oie, rue 15\.23Repère : Station TotalLivreur : Issouf · Moto$/);
+    expect(within(main).queryByLabelText(/WhatsApp|Appeler/)).toBeNull();
+    const card = r.getByTestId('card-card');
+    await act(async () => fireEvent.press(within(card).getByLabelText('Appeler Awa Kaboré (+22670112233)')));
+    expect(open).toHaveBeenLastCalledWith('tel:+22670112233');
+    expect(onPress).not.toHaveBeenCalled();
+    await act(async () => fireEvent.press(main));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    open.mockRestore();
+  });
+
+  it('sans boutons de contact (livreur, historique) : la carte entière reste le bouton, libellé = nom par défaut', async () => {
+    const onPress = jest.fn();
+    const r = await render(<PackageCard name="Pharmacie du Centre" kicker="Course #1052" onPress={onPress} testID="card" />);
+    expect(r.getByTestId('card').props.accessibilityLabel).toBe('Pharmacie du Centre');
+    expect(r.queryByTestId('card-card')).toBeNull();
+    await act(async () => fireEvent.press(r.getByTestId('card')));
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it('pastille : pictogramme à la place des initiales (colis sans entreprise ni nom)', async () => {

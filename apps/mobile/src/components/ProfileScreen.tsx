@@ -9,6 +9,8 @@ import { confirmAsync, notify } from '../lib/dialog';
 
 export interface ProfileScreenProps {
   color: string;
+  /** Texte des boutons pleins de couleur `color` (blanc par défaut ; encre foncée sur l'orange de l'entreprise). */
+  buttonTextColor?: string;
   /** Contenu affiché avant la carte du compte (profil de l'entreprise). */
   top?: ReactNode;
   children?: ReactNode;
@@ -20,7 +22,7 @@ export interface ProfileScreenProps {
 }
 
 /** Profil commun aux espaces Entreprise et Livreur : nom, téléphone, déconnexion. */
-export function ProfileScreen({ color, top, children, beforeSignOut }: ProfileScreenProps) {
+export function ProfileScreen({ color, buttonTextColor, top, children, beforeSignOut }: ProfileScreenProps) {
   const { user, api, setUser, signOut } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
   const [busy, setBusy] = useState(false);
@@ -66,7 +68,7 @@ export function ProfileScreen({ color, top, children, beforeSignOut }: ProfileSc
         </Muted>
         <Field label="Nom affiché" value={name} onChangeText={setName} maxLength={80} />
         {message ? <Banner message={message.text} tone={message.ok ? 'green' : 'red'} /> : null}
-        <Button title="Enregistrer" color={color} onPress={save} loading={busy} disabled={!name.trim()} />
+        <Button title="Enregistrer" color={color} textColor={buttonTextColor} onPress={save} loading={busy} disabled={!name.trim()} />
       </Card>
       {children}
       <Button

@@ -15,6 +15,11 @@ export interface ConfirmOptions {
   cancelText?: string;
   /** Bouton de confirmation en rouge (iOS). */
   destructive?: boolean;
+  /**
+   * Web seulement : phrase ajoutée sous le message, quand les boutons imposés par le navigateur (« OK » / « Annuler »)
+   * seraient ambigus (ex. « Annuler » qui GARDE une livraison : « « OK » annule la livraison ; « Annuler » la garde. »).
+   */
+  webHint?: string;
 }
 
 interface WebDialogs {
@@ -34,7 +39,8 @@ function webText(title: string, message?: string): string {
 export function confirmAsync(opts: ConfirmOptions, platformOs: string = Platform.OS): Promise<boolean> {
   if (platformOs === 'web') {
     const w = webDialogs();
-    return Promise.resolve(typeof w.confirm === 'function' ? w.confirm(webText(opts.title, opts.message)) : true);
+    const message = [opts.message, opts.webHint].filter(Boolean).join('\n\n') || undefined;
+    return Promise.resolve(typeof w.confirm === 'function' ? w.confirm(webText(opts.title, message)) : true);
   }
   return new Promise((resolve) => {
     Alert.alert(

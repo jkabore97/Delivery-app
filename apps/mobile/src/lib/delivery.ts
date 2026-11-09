@@ -20,6 +20,8 @@ import {
 import { createDeliverySchema, normalizePhone } from '@yaar/shared/schemas';
 import { isPinAtDefault, toAddressInput } from './address';
 import { formatFcfa } from './format';
+import { arrivalMinutesOf } from './liveScene';
+import { SEARCHING_LABEL } from './trackingSteps';
 
 /* ------------------------------------------------------------------ */
 /* Statuts                                                             */
@@ -47,16 +49,31 @@ export function canBusinessCancel(status: OrderStatus): boolean {
   return BUSINESS_CANCELLABLE_STATUSES.includes(status);
 }
 
-const ACTIVE_RANK: Partial<Record<OrderStatus, number>> = { PENDING: 0, SEARCHING_DRIVER: 0, ASSIGNED: 1, PICKED_UP: 2 };
+const ACTIVE_RANK: Partial<Record<OrderStatus, number>> = { PICKED_UP: 0, ASSIGNED: 1, PENDING: 2, SEARCHING_DRIVER: 2 };
 
-/** Livraisons en cours : celles qui attendent un livreur d'abord, puis par étape ; les plus récentes en premier. */
+/**
+ * Livraisons en cours (accueil de l'entreprise) : d'abord celles dont le colis est en route, par heure d'arrivée
+ * chez le destinataire (la plus proche en haut), puis celles dont le livreur va au retrait (même ordre), puis celles
+ * qui attendent un livreur, regroupées à la fin (la plus récente en premier). Heure d'arrivée : la même estimation
+ * que la ligne de la carte (`arrivalMinutesOf`) ; inconnue : après les autres de son groupe.
+ */
 export function sortActiveDeliveries(list: OrderDto[]): OrderDto[] {
+  const eta = new Map(list.map((o) => [o.id, (ACTIVE_RANK[o.status] ?? 9) < 2 ? arrivalMinutesOf(o) : null]));
   return [...list].sort((a, b) => {
     const ra = ACTIVE_RANK[a.status] ?? 9;
     const rb = ACTIVE_RANK[b.status] ?? 9;
     if (ra !== rb) return ra - rb;
+    const ea = eta.get(a.id) ?? Infinity;
+    const eb = eta.get(b.id) ?? Infinity;
+    if (ea !== eb) return ea - eb;
     return Date.parse(b.createdAt) - Date.parse(a.createdAt);
   });
+}
+
+/** Pastille de la carte d'ensemble : « 1 recherche d’un livreur », « 3 recherches d’un livreur » (même nom que la puce). */
+export function searchingCountText(n: number): string {
+  const label = `${SEARCHING_LABEL.charAt(0).toLowerCase()}${SEARCHING_LABEL.slice(1)}`;
+  return `${n} ${n > 1 ? label.replace(/^recherche/, 'recherches') : label}`;
 }
 
 /** Libellés de statut côté entreprise. */
@@ -66,7 +83,7 @@ export function businessStatusLabel(status: OrderStatus): { label: string; tone:
     case 'ACCEPTED':
     case 'READY':
     case 'SEARCHING_DRIVER':
-      return { label: 'RECHERCHE LIVREUR', tone: 'orange' };
+      return { label: SEARCHING_LABEL.toUpperCase(), tone: 'orange' };
     case 'ASSIGNED':
       return { label: 'LIVREUR EN ROUTE', tone: 'blue' };
     case 'PICKED_UP':
@@ -86,6 +103,45 @@ export const FEE_PAYER_LABELS: Record<FeePayer, { title: string; detail: string 
   SENDER: { title: 'L’entreprise', detail: 'au retrait du colis' },
   RECIPIENT: { title: 'Le destinataire', detail: 'à la livraison' },
 };
+
+/** Étapes avant le retrait du colis : les frais payés par l'entreprise ne le sont pas encore. */
+const BEFORE_PICKUP: readonly OrderStatus[] = ['PENDING', 'ACCEPTED', 'READY', 'SEARCHING_DRIVER', 'ASSIGNED'];
+
+/**
+ * Qui paie les frais de livraison, au bon temps selon l'étape (suivi d'une livraison par l'entreprise) : « À payer
+ * par l’entreprise au retrait du colis » avant le retrait, « Payés par l’entreprise au retrait du colis » ensuite ;
+ * « À payer par le destinataire à la livraison » jusqu'à la livraison, « Payés … » une fois livrée. Annulée :
+ * « Aucuns frais à payer » (rien n'est facturé ; des frais déjà payés au retrait sont rendus avec le colis ; le titre
+ * de l'écran dit déjà « Livraison annulée »). null : payeur inconnu (ancienne commande d'un client).
+ */
+export function feePaymentText(status: OrderStatus, feePaidBy: FeePayer | null | undefined): string | null {
+  if (status === 'CANCELLED') return 'Aucuns frais à payer';
+  if (feePaidBy !== 'SENDER' && feePaidBy !== 'RECIPIENT') return null;
+  const paid = feePaidBy === 'SENDER' ? !BEFORE_PICKUP.includes(status) : status === 'DELIVERED';
+  const who = FEE_PAYER_LABELS[feePaidBy];
+  return `${paid ? 'Payés' : 'À payer'} par ${who.title.toLowerCase()} ${who.detail}`;
+}
+
+/**
+ * Frais d'une livraison terminée (ligne discrète de l'historique, après la date) : « livraison 1 500 FCFA payée par le
+ * destinataire » ; annulée : « Annulée · aucuns frais » (aucun payeur : rien n'a été payé).
+ */
+export function historyFeeText(o: Pick<OrderDto, 'status' | 'deliveryFee' | 'feePaidBy'>): string {
+  if (o.status === 'CANCELLED') return 'Annulée · aucuns frais';
+  const payer = o.feePaidBy ? FEE_PAYER_LABELS[o.feePaidBy].title.toLowerCase() : null;
+  return `livraison ${formatFcfa(o.deliveryFee)}${payer ? ` payée par ${payer}` : ''}`;
+}
+
+/**
+ * Valeur de la marchandise vue par l'entreprise : « Pour votre entreprise » tant que le livreur ne l'a pas encaissée,
+ * « À reverser à votre entreprise » une fois livrée (le reversement par Yaar n'est pas suivi dans l'application :
+ * jamais « reversé »).
+ */
+export function goodsAmountText(status: OrderStatus): { label: string; detail: string } {
+  return status === 'DELIVERED'
+    ? { label: 'À reverser à votre entreprise', detail: 'Valeur de la marchandise, encaissée par le livreur à la livraison : Yaar vous la reverse.' }
+    : { label: 'Pour votre entreprise', detail: 'Valeur de la marchandise : le livreur l’encaisse à la livraison, puis Yaar vous la reverse.' };
+}
 
 export interface CollectAmounts {
   /** Espèces à encaisser auprès de l'entreprise au retrait (frais payés par l'expéditeur). */

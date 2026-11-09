@@ -4,6 +4,9 @@ import { Tabs } from 'expo-router/tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BUSINESS_ACCENT, ORANGE_INK } from '../../../components/business/accent';
 import { Icon, type IconName } from '../../../components/design/Icon';
+import { notify } from '../../../lib/dialog';
+import { newDeliveryAccess } from '../../../lib/storeApproval';
+import { useBusiness } from '../../../state/business';
 import { dark } from '../../../theme';
 
 function tabIcon(name: IconName) {
@@ -12,11 +15,14 @@ function tabIcon(name: IconName) {
   };
 }
 
-/** « Nouvelle » : disque orange plein (jamais grisé), le parcours s'ouvre en plein écran par-dessus les onglets. */
-function NewTabIcon() {
+/**
+ * « Nouvelle » : disque orange plein, le parcours s'ouvre en plein écran par-dessus les onglets. Grisé tant que
+ * l'entreprise ne peut pas demander de livraison (en attente de validation, suspendue, pas encore créée).
+ */
+function NewTabIcon({ enabled }: { enabled: boolean }) {
   return (
-    <View style={styles.newDisc}>
-      <Icon name="plus" size={22} color={ORANGE_INK} strokeWidth={2.8} />
+    <View style={[styles.newDisc, !enabled && styles.newDiscOff]} testID={enabled ? 'new-tab-disc' : 'new-tab-disc-off'}>
+      <Icon name="plus" size={22} color={enabled ? ORANGE_INK : dark.textMuted} strokeWidth={2.8} />
     </View>
   );
 }
@@ -24,10 +30,14 @@ function NewTabIcon() {
 /**
  * Onglets de l'entreprise : barre sombre (dans le prolongement des feuilles sombres de l'accueil et de l'historique,
  * comme celle du livreur), pictogrammes du système de design, onglet actif en orange (accent de l'entreprise),
- * « Nouvelle » en disque orange.
+ * « Nouvelle » en disque orange (grisé si l'entreprise ne peut pas encore demander de livraison : son appui montre
+ * alors pourquoi, ou ouvre le profil à créer).
  */
 export default function BusinessTabs() {
   const insets = useSafeAreaInsets();
+  const { stores, store } = useBusiness();
+  const access = newDeliveryAccess(stores, store);
+  const enabled = access.kind === 'open';
   return (
     <Tabs
       screenOptions={{
@@ -48,12 +58,20 @@ export default function BusinessTabs() {
       <Tabs.Screen name="index" options={{ title: 'Livraisons', tabBarIcon: tabIcon('package') }} />
       <Tabs.Screen
         name="new"
-        options={{ title: 'Nouvelle', tabBarIcon: NewTabIcon, tabBarAccessibilityLabel: 'Nouvelle livraison', tabBarButtonTestID: 'tab-new-delivery' }}
+        options={{
+          title: 'Nouvelle',
+          tabBarIcon: () => <NewTabIcon enabled={enabled} />,
+          tabBarAccessibilityLabel: enabled ? 'Nouvelle livraison' : 'Nouvelle livraison, indisponible pour le moment',
+          tabBarButtonTestID: 'tab-new-delivery',
+        }}
         listeners={{
-          // Le parcours « nouvelle livraison » s'ouvre en plein écran (carte), hors des onglets.
+          // Le parcours « nouvelle livraison » s'ouvre en plein écran (carte), hors des onglets ; entreprise pas
+          // encore validée ou suspendue : le bandeau de validation à la place.
           tabPress: (e) => {
             e.preventDefault();
-            router.push('/business/nouvelle');
+            if (access.kind === 'open') router.push('/business/nouvelle');
+            else if (access.kind === 'profile') router.navigate('/business/profile');
+            else notify(access.notice.title, access.notice.message);
           },
         }}
       />
@@ -73,4 +91,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  newDiscOff: { backgroundColor: dark.raisedHigh },
 });

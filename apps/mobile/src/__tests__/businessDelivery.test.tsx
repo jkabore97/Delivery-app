@@ -155,7 +155,74 @@ describe('Suivi d’une livraison par l’entreprise', () => {
     await waitFor(() => expect(done.getByText('Livrée à Awa Kaboré')).toBeTruthy());
     expect(done.queryByTestId('share-round-button')).toBeNull();
     expect(done.getByTestId('recipient-amount')).toHaveTextContent(/Encaissé auprès du destinataire/);
-    expect(done.getByTestId('business-amount')).toHaveTextContent(/Reversé à votre entreprise/);
+    // Le reversement par Yaar n'est pas suivi : « à reverser », jamais « reversé ».
+    expect(done.getByTestId('business-amount')).toHaveTextContent(/^À reverser à votre entreprise/);
+    expect(done.getByTestId('delivery-fee')).toHaveTextContent(/Payés par le destinataire à la livraison/);
+  });
+
+  it('phrases d’argent vraies à chaque étape : « à payer » avant le retrait, « payés » après ; annulée : aucuns frais', async () => {
+    mockApi.getOrder.mockResolvedValue(delivery({ status: 'ASSIGNED', feePaidBy: 'SENDER', cashToCollect: 0, deliveryFee: 2300 }));
+    const before = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(before.getByTestId('delivery-fee')).toBeTruthy());
+    expect(before.getByTestId('delivery-fee')).toHaveTextContent(/À payer par l’entreprise au retrait du colis/);
+    expect(before.getByTestId('pickup-amount')).toHaveTextContent(/À payer au livreur au retrait/);
+    await before.unmount();
+    mockApi.getOrder.mockResolvedValue(delivery({ feePaidBy: 'SENDER', cashToCollect: 0, deliveryFee: 2300 }));
+    const after = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(after.getByTestId('delivery-fee')).toBeTruthy());
+    expect(after.getByTestId('delivery-fee')).toHaveTextContent(/Payés par l’entreprise au retrait du colis/);
+    await after.unmount();
+    mockApi.getOrder.mockResolvedValue(
+      delivery({ status: 'CANCELLED', feePaidBy: 'SENDER', cashToCollect: 15000, deliveryFee: 2300, driver: null, route: null, cancelReason: 'Annulée par l’entreprise' }),
+    );
+    const cancelled = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(cancelled.getByText('Livraison annulée')).toBeTruthy());
+    expect(cancelled.getByTestId('delivery-fee')).toHaveTextContent(/Aucuns frais à payer/);
+    expect(cancelled.getByTestId('delivery-fee')).not.toHaveTextContent(/Payés|À payer/);
+    expect(cancelled.queryByTestId('business-amount')).toBeNull();
+    expect(cancelled.queryByTestId('recipient-amount')).toBeNull();
+  });
+
+  it('pied de page : « WhatsApp client » (le destinataire nommé pour les lecteurs d’écran) à côté de « Appeler le livreur »', async () => {
+    mockApi.getOrder.mockResolvedValue(delivery());
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(r.getByTestId('whatsapp-recipient')).toBeTruthy());
+    expect(r.getByTestId('whatsapp-recipient')).toHaveTextContent('WhatsApp client');
+    expect(r.getByTestId('whatsapp-recipient').props.accessibilityLabel).toBe('Écrire à Awa Kaboré sur WhatsApp (+22670112233)');
+    expect(r.getByTestId('call-driver')).toHaveTextContent('Appeler le livreur');
+  });
+
+  it('partage : « Lien envoyé. » s’efface après 4 s ; échec : le lien s’affiche, sélectionnable', async () => {
+    jest.useFakeTimers();
+    mockApi.getOrder.mockResolvedValue(delivery());
+    const share = jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: Share.sharedAction, activityType: undefined });
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    await fireEvent.press(r.getByTestId('share-round-button'));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByTestId('share-feedback')).toHaveTextContent('Lien envoyé.');
+    await act(async () => jest.advanceTimersByTimeAsync(4000));
+    expect(r.queryByTestId('share-feedback')).toBeNull();
+    share.mockRejectedValueOnce(new Error('indisponible'));
+    await fireEvent.press(r.getByTestId('share-round-button'));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByTestId('share-feedback')).toHaveTextContent('Partage impossible : copiez le lien ci-dessous.');
+    expect(r.getByTestId('tracking-link')).toHaveTextContent('https://yaar-livraison.vercel.app/suivi/tok-abc');
+    expect(r.getByTestId('tracking-link').props.selectable).toBe(true);
+    // L'échec reste affiché (le lien est à copier).
+    await act(async () => jest.advanceTimersByTimeAsync(10_000));
+    expect(r.getByTestId('tracking-link')).toBeTruthy();
+    jest.useRealTimers();
+  });
+
+  it('chargement en échec : « Réessayer » relance la lecture de la livraison', async () => {
+    mockApi.getOrder.mockRejectedValueOnce(new Error('Connexion impossible'));
+    mockApi.getOrder.mockResolvedValue(delivery());
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(r.getByText('Connexion impossible')).toBeTruthy());
+    await fireEvent.press(r.getByTestId('retry-order'));
+    await waitFor(() => expect(r.getByText('En route vers Awa Kaboré')).toBeTruthy());
+    expect(mockApi.getOrder).toHaveBeenCalledTimes(2);
   });
 
   it('colis récupéré : plus d’annulation', async () => {

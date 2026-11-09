@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { isTerminal, type TrackingDto } from '@yaar/shared';
-import { ApiError, errorMessage } from '../lib/api';
+import { ApiError, errorMessage, NETWORK_ERROR_CODE } from '../lib/api';
 import { appStateVisibility, PollScheduler, type VisibilitySource } from '../lib/pollScheduler';
 import { publicApi } from '../lib/publicApi';
 
@@ -8,7 +8,14 @@ export type PublicTrackingState =
   | { status: 'loading' }
   | { status: 'ok'; data: TrackingDto; /** Dernier rafraîchissement en échec (réseau) : données affichées anciennes. */ stale: boolean }
   | { status: 'notFound' }
-  | { status: 'error'; message: string; /** Trop de requêtes (429) depuis cette connexion. */ rateLimited?: boolean };
+  | {
+      status: 'error';
+      message: string;
+      /** Trop de requêtes (429) depuis cette connexion. */
+      rateLimited?: boolean;
+      /** Réseau injoignable (pas de réponse du serveur), à distinguer d'une erreur du serveur. */
+      network?: boolean;
+    };
 
 export interface PublicTrackingOptions {
   /**
@@ -68,10 +75,11 @@ export function usePublicTracking(token: string | undefined, opts: PublicTrackin
           return true;
         }
         const rateLimited = e instanceof ApiError && e.status === 429;
+        const network = e instanceof ApiError && e.code === NETWORK_ERROR_CODE;
         setState((prev) =>
           prev.status === 'ok'
             ? { ...prev, stale: true }
-            : { status: 'error', message: errorMessage(e), ...(rateLimited ? { rateLimited: true } : {}) },
+            : { status: 'error', message: errorMessage(e), ...(rateLimited ? { rateLimited: true } : {}), ...(network ? { network: true } : {}) },
         );
         return false; // intervalle doublé (30 s au plus)
       }

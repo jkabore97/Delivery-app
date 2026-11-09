@@ -77,6 +77,14 @@ export default function NewDeliveryScreen() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof DeliveryForm>(k: K, v: DeliveryForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // Un champ corrigé perd son message d'erreur tout de suite (la validation complète reste au « Continuer »).
+  const clearError = (k: keyof FormErrors) =>
+    setErrors((e) => {
+      if (!e[k]) return e;
+      const next = { ...e };
+      delete next[k];
+      return next;
+    });
 
   const pickup = store ? { lat: store.lat, lng: store.lng } : null;
   // Retrait = l'établissement choisi (profil) : envoyé à l'API pour que le prix et le livreur correspondent.
@@ -165,6 +173,7 @@ export default function NewDeliveryScreen() {
         form={form}
         setForm={setForm}
         errors={errors}
+        clearError={clearError}
         pickup={pickup}
         approved={isBusinessApproved(store)}
         storeBanner={<StoreApprovalBanner store={store} tone="dark" />}
@@ -183,7 +192,11 @@ export default function NewDeliveryScreen() {
           {step === 2 ? (
             <PackageStep
               form={form}
-              set={set}
+              set={(k, v) => {
+                set(k, v);
+                // Champs sans message d'erreur (qui paie, instructions) : sans effet.
+                clearError(k as keyof FormErrors);
+              }}
               errors={errors}
               quote={quote}
               quoteError={quoteError}
@@ -240,17 +253,28 @@ function StepBars({ step }: { step: Step }) {
   );
 }
 
-function WizardHeader({ step, title, onBack }: { step: Step; title: string; onBack: () => void }) {
+/** « ÉTAPE 2 SUR 3 » en sur-titre orange, titre de l'étape et barres : le même en-tête aux trois étapes. */
+function StepTitle({ step, title, grow }: { step: Step; title: string; grow?: boolean }) {
   return (
-    <View style={styles.header}>
-      <MapIconButton icon="back" theme="dark" onPress={onBack} accessibilityLabel="Retour" testID="wizard-back" />
+    <View style={[styles.stepTitle, grow && styles.flex]}>
       <View style={styles.flex}>
-        <Text style={[typeScale.kicker, styles.stepText]}>Étape {step} sur 3</Text>
+        <Text style={[typeScale.kicker, styles.stepText]} testID="wizard-step">
+          Étape {step} sur 3
+        </Text>
         <Text style={styles.headerTitle} accessibilityRole="header">
           {title}
         </Text>
       </View>
       <StepBars step={step} />
+    </View>
+  );
+}
+
+function WizardHeader({ step, title, onBack }: { step: Step; title: string; onBack: () => void }) {
+  return (
+    <View style={styles.header}>
+      <MapIconButton icon="back" theme="dark" onPress={onBack} accessibilityLabel="Retour" testID="wizard-back" />
+      <StepTitle step={step} title={title} grow />
     </View>
   );
 }
@@ -263,6 +287,7 @@ function DestinationStep({
   form,
   setForm,
   errors,
+  clearError,
   pickup,
   approved,
   storeBanner,
@@ -272,6 +297,7 @@ function DestinationStep({
   form: DeliveryForm;
   setForm: (fn: (f: DeliveryForm) => DeliveryForm) => void;
   errors: FormErrors;
+  clearError: (k: keyof FormErrors) => void;
   pickup: { lat: number; lng: number } | null;
   approved: boolean;
   storeBanner: ReactNode;
@@ -297,6 +323,7 @@ function DestinationStep({
 
   const onCenter = (lat: number, lng: number) => {
     setMoving(false);
+    clearError('dropoff');
     setForm((f) => {
       const cur = f.dropoff ?? dropoff;
       const zone = zoneName({ lat, lng });
@@ -330,18 +357,13 @@ function DestinationStep({
         <CenterPin moving={moving} bubble={bubble} bubblePlacement={bubbleBelow ? 'below' : 'above'} />
         <View style={[styles.mapTop, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
           <MapIconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" testID="wizard-close" />
-          <View style={styles.mapTitle} pointerEvents="none">
-            <Pill label="Étape 1 sur 3" tone="dark" floating />
-          </View>
-          <View style={{ width: 48 }} />
         </View>
       </View>
       <View style={styles.sheet}>
         <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+          {/* Même en-tête qu'aux étapes 2 et 3 (sur-titre « ÉTAPE 1 SUR 3 », titre, barres). */}
           <View style={{ gap: 4 }}>
-            <Text style={styles.title} accessibilityRole="header">
-              Où livrer ?
-            </Text>
+            <StepTitle step={1} title="Où livrer ?" />
             <Text style={styles.muted}>Déplacez la carte jusqu’au lieu de livraison, ou choisissez un quartier.</Text>
           </View>
           {!approved ? storeBanner : null}
@@ -370,6 +392,7 @@ function DestinationStep({
             value={dropoff.address}
             onChangeText={(t) => {
               autoAddress.current = null;
+              clearError('address');
               updateDropoff({ address: t });
             }}
             error={errors.address}
@@ -389,7 +412,10 @@ function DestinationStep({
             label="Nom du destinataire"
             placeholder="Ex. Awa Ouédraogo"
             value={form.recipientName}
-            onChangeText={(t) => setForm((f) => ({ ...f, recipientName: t }))}
+            onChangeText={(t) => {
+              clearError('recipientName');
+              setForm((f) => ({ ...f, recipientName: t }));
+            }}
             error={errors.recipientName}
             maxLength={80}
             testID="recipient-name"
@@ -399,7 +425,10 @@ function DestinationStep({
             placeholder="70 12 34 56"
             keyboardType="phone-pad"
             value={form.recipientPhone}
-            onChangeText={(t) => setForm((f) => ({ ...f, recipientPhone: t }))}
+            onChangeText={(t) => {
+              clearError('recipientPhone');
+              setForm((f) => ({ ...f, recipientPhone: t }));
+            }}
             error={errors.recipientPhone}
             hint="Il recevra le lien de suivi de son colis."
             maxLength={20}
@@ -679,7 +708,7 @@ const styles = StyleSheet.create({
   stepBars: { flexDirection: 'row', gap: 4 },
   stepBar: { width: 18, height: 5, borderRadius: 3, backgroundColor: dark.raisedHigh },
   mapTop: { position: 'absolute', left: spacing.md, right: spacing.md, flexDirection: 'row', alignItems: 'center' },
-  mapTitle: { flex: 1, alignItems: 'center' },
+  stepTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   sheet: {
     flex: 1,
     marginTop: -SHEET_RADIUS,
@@ -693,7 +722,6 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   sheetContent: { padding: spacing.lg, gap: spacing.md },
-  title: { ...typeScale.title, color: dark.text },
   muted: { color: dark.textMuted, fontSize: 14, lineHeight: 20 },
   small: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },
   chips: { gap: spacing.sm, paddingRight: spacing.md },

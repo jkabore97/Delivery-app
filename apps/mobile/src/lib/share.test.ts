@@ -135,7 +135,8 @@ describe('boutons des livraisons de l’entreprise', () => {
     expect(writeText).toHaveBeenCalledWith(URL_);
     expect(desktop.opened).toEqual([]);
     await expect(shareOrCopyTrackingLink(input, env())).resolves.toBe('failed');
-    expect(shareFeedback('copied')).toBe('Lien copié ✓');
+    expect(shareFeedback('copied')).toBe('Lien copié.');
+    expect(shareFeedback('failed')).toBe('Partage impossible : copiez le lien ci-dessous.');
     expect(shareFeedback('shared')).toBe('Lien envoyé.');
     expect(shareFeedback('dismissed')).toBeNull();
     expect(shareButtonShortLabel(env())).toBe('Envoyer par WhatsApp');

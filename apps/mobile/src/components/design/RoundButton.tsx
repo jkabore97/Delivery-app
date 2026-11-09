@@ -1,9 +1,13 @@
 import { isValidElement, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { touchTarget } from '../../lib/touchTarget';
 import { colors, dark } from '../../theme';
 import { Icon, type IconName } from './Icon';
 
-/** Diamètres (px) : big 84, medium 64, small 48 (zone tactile portée à 56 par `hitSlop`). */
+/**
+ * Diamètres (px) : big 84, medium 64, small 48 (zone tactile portée à 56 : `hitSlop` en natif ; sur le web, qui
+ * l'ignore, marge intérieure compensée par une marge négative, voir lib/touchTarget.ts).
+ */
 export const ROUND_BUTTON_SIZES = { big: 84, medium: 64, small: 48 } as const;
 export type RoundButtonSize = keyof typeof ROUND_BUTTON_SIZES;
 
@@ -93,7 +97,7 @@ export function RoundButton({
   const iconNode =
     typeof icon === 'string' ? <Icon name={icon as IconName} size={iconSize} color={t.fg} strokeWidth={2.4} /> : isValidElement(icon) ? icon : null;
   const shadow = elevated ?? d >= ROUND_BUTTON_SIZES.big;
-  const touchPad = Math.max(0, Math.ceil((56 - d) / 2));
+  const touch = touchTarget(d);
   const labelColor = surface === 'dark' ? dark.text : colors.text;
 
   return (
@@ -104,8 +108,8 @@ export function RoundButton({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: inactive, busy: !!loading }}
-      hitSlop={touchPad ? { top: touchPad, bottom: touchPad, left: touchPad, right: touchPad } : undefined}
-      style={[styles.column, style]}
+      hitSlop={touch.hitSlop}
+      style={[styles.column, touch.style, style]}
       testID={testID}
     >
       {({ pressed }) => (

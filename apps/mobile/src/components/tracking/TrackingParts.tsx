@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { arrivalClockFr, formatDurationFr, LABELS, type VehicleType } from '@yaar/shared';
 import { formatFcfa } from '../../lib/format';
 import { telUrl, whatsappUrl } from '../../lib/tel';
+import { touchTarget } from '../../lib/touchTarget';
 import type { Headline, TrackingStep } from '../../lib/trackingSteps';
 import { MAP_COLORS } from '../../lib/map/style';
 import { colors, dark, radius, spacing } from '../../theme';
@@ -97,10 +98,25 @@ export function openLink(url: string): void {
   }
 }
 
+/** Largeur du contenu d'une feuille avant sa mesure : téléphone (fenêtre − marges), colonne de 440 px sur un ordinateur. */
+const SHEET_CONTENT_GUESS = (windowWidth: number) => Math.min(windowWidth, 440) - 32;
+
+/**
+ * Taille de l'heure d'arrivée pour qu'elle tienne sur la même ligne que sa pastille « dans 12 min » dans `width` px :
+ * de `max` (30 px sur une feuille sombre, 24 sur une claire) à 20 px. Estimation prudente de la largeur des
+ * caractères très gras (0,52 × la taille ; pastille : 8,4 px par caractère + 24 px) ; si la police du téléphone est
+ * plus large ou agrandie, la pastille passe simplement à la ligne.
+ */
+export function headlineFontSize(text: string, pill: string | null, width: number, max: number): number {
+  const room = width - (pill ? 24 + pill.length * 8.4 + 8 : 0);
+  return Math.max(20, Math.min(max, Math.floor(room / (0.52 * Math.max(1, text.length)))));
+}
+
 /**
  * Titre de la feuille : grande heure d'arrivée pendant la course (« Arrivée vers 14:32 » et « dans 12 min » en
- * pastille), sinon l'état de la livraison. `label` : « Arrivée vers » (livraison) ou « Au retrait vers » (entreprise,
- * livreur en route vers elle) ; `secondary` : seconde estimation plus discrète (heure de livraison pendant le retrait).
+ * pastille, sur la même ligne : l'heure rapetisse sur un petit écran, voir `headlineFontSize`), sinon l'état de la
+ * livraison. `label` : « Arrivée vers » (livraison) ou « Au retrait vers » (entreprise, livreur en route vers elle) ;
+ * `secondary` : seconde estimation plus discrète (heure de livraison pendant le retrait).
  */
 export function ArrivalHeadline({
   etaMinutes,
@@ -123,19 +139,31 @@ export function ArrivalHeadline({
 }) {
   const p = TRACKING_PALETTES[theme];
   const big = theme === 'dark';
+  const { width: windowWidth } = useWindowDimensions();
+  const [boxWidth, setBoxWidth] = useState<number | null>(null);
   const imminent = etaMinutes !== null && (!Number.isFinite(etaMinutes) || etaMinutes < 1);
   const clock = etaMinutes !== null && !imminent ? arrivalClockFr(Math.round(etaMinutes), now) : null;
   const eta = etaMinutes === null ? null : imminent ? imminentLabel : `${label} ${clock} · dans ${formatDurationFr(etaMinutes)}`;
+  const main = imminent ? imminentLabel : `${label} ${clock}`;
+  const pill = etaMinutes !== null && !imminent ? `dans ${formatDurationFr(etaMinutes)}` : null;
+  const fontSize = headlineFontSize(main, pill, boxWidth ?? SHEET_CONTENT_GUESS(windowWidth), big ? 30 : 24);
   return (
-    <View style={{ gap: 3 }} testID={testID}>
+    <View
+      style={{ gap: 3 }}
+      testID={testID}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w > 0 && w !== boxWidth) setBoxWidth(w);
+      }}
+    >
       {eta ? (
         <>
-          {/* « Arrivée vers 14:32 · dans 12 min » : heure en grand, délai en pastille. */}
+          {/* « Arrivée vers 14:32 · dans 12 min » : heure en grand, délai en pastille, sur une ligne. */}
           <View style={styles.etaRow} accessible accessibilityRole="header" accessibilityLabel={eta}>
-            <Text style={[styles.eta, big && styles.etaBig, { color: p.text }]}>{imminent ? imminentLabel : `${label} ${clock}`}</Text>
-            {!imminent ? (
+            <Text style={[styles.eta, { fontSize, letterSpacing: fontSize >= 28 ? -0.6 : -0.4, color: p.text }]}>{main}</Text>
+            {pill ? (
               <View style={[styles.etaPill, { backgroundColor: p.accent }]}>
-                <Text style={[styles.etaPillText, { color: p.accentInk }]}>dans {formatDurationFr(etaMinutes!)}</Text>
+                <Text style={[styles.etaPillText, { color: p.accentInk }]}>{pill}</Text>
               </View>
             ) : null}
           </View>
@@ -233,7 +261,7 @@ export function TrackingRoundButton({
   testID?: string;
 }) {
   const t = ROUND_TONES[theme][tone];
-  const pad = Math.max(0, Math.ceil((56 - size) / 2));
+  const touch = touchTarget(size);
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
@@ -241,8 +269,8 @@ export function TrackingRoundButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!disabled }}
-      hitSlop={pad ? { top: pad, bottom: pad, left: pad, right: pad } : undefined}
-      style={styles.roundColumn}
+      hitSlop={touch.hitSlop}
+      style={[styles.roundColumn, touch.style]}
       testID={testID}
     >
       {({ pressed }) => (
@@ -359,18 +387,23 @@ export function DriverCard({
   );
 }
 
-/** Code de livraison en grand (destinataire uniquement). */
-export function DeliveryCodeChip({ code, theme = 'light' }: { code: string; theme?: TrackingTheme }) {
+/**
+ * Code de livraison en grand (destinataire uniquement). `compact` (écran court, ex. 360 × 640) : chiffres de 44 px et
+ * marges réduites, pour que le montant à payer reste visible sans faire défiler la feuille.
+ */
+export function DeliveryCodeChip({ code, theme = 'light', compact = false }: { code: string; theme?: TrackingTheme; compact?: boolean }) {
   const p = TRACKING_PALETTES[theme];
   const spaced = code.split('').join(' ');
   return (
     <View
-      style={[styles.code, { backgroundColor: p.codeBg, borderColor: p.accent }]}
+      style={[styles.code, compact && styles.codeCompact, { backgroundColor: p.codeBg, borderColor: p.accent }]}
       accessibilityLabel={`Code de livraison ${spaced}`}
       testID="delivery-code"
     >
-      <Text style={[styles.codeLabel, { color: p.accent }]}>Donnez ce code au livreur</Text>
-      <Text style={[styles.codeDigits, theme === 'dark' && styles.codeDigitsBig, { color: p.accent }]}>{code.split('').join('  ')}</Text>
+      <Text style={[styles.codeLabel, compact && styles.codeLabelCompact, { color: p.accent }]}>Donnez ce code au livreur</Text>
+      <Text style={[styles.codeDigits, compact ? styles.codeDigitsCompact : theme === 'dark' && styles.codeDigitsBig, { color: p.accent }]}>
+        {code.split('').join('  ')}
+      </Text>
       <Text style={[styles.codeHint, { color: p.muted }]}>Seulement quand vous avez le colis en main.</Text>
     </View>
   );
@@ -452,10 +485,10 @@ export function InfoBlock({ children, theme = 'light', testID }: { children: Rea
 }
 
 const styles = StyleSheet.create({
+  // Sur une ligne (taille de l'heure calculée) ; à la ligne seulement si la police du téléphone est bien plus large.
   etaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: spacing.sm, rowGap: 4 },
-  eta: { fontSize: 24, fontWeight: '900', letterSpacing: -0.4 },
-  etaBig: { fontSize: 30, letterSpacing: -0.6 },
-  etaPill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  eta: { fontWeight: '900' },
+  etaPill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, flexShrink: 0 },
   etaPillText: { fontWeight: '900', fontSize: 14, fontVariant: ['tabular-nums'] },
   title: { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
   titleBig: { fontSize: 26, letterSpacing: -0.5 },
@@ -495,9 +528,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
+  codeCompact: { paddingVertical: spacing.sm, gap: 0 },
   codeLabel: { fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
+  codeLabelCompact: { fontSize: 12 },
   codeDigits: { fontSize: 42, fontWeight: '900', letterSpacing: 2, fontVariant: ['tabular-nums'] },
   codeDigitsBig: { fontSize: 50, lineHeight: 58 },
+  codeDigitsCompact: { fontSize: 44, lineHeight: 50 },
   codeHint: { fontSize: 12.5 },
   amount: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: 16, padding: spacing.md },
   amountLabel: { fontSize: 14, fontWeight: '800' },

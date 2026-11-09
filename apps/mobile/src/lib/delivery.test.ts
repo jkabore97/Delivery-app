@@ -2,9 +2,13 @@ import type { QuoteResponse } from '@yaar/shared';
 import {
   amountsToCollect,
   buildDeliveryInput,
+  businessStatusLabel,
   canBusinessCancel,
   collectDetail,
   EMPTY_DELIVERY_FORM,
+  feePaymentText,
+  goodsAmountText,
+  historyFeeText,
   nextStep,
   offerCash,
   parseAmount,
@@ -185,17 +189,54 @@ describe('nouvelle livraison : validation', () => {
 });
 
 describe('liste et actions de l’entreprise', () => {
-  it('en recherche d’abord, puis par étape ; annulation seulement avant le retrait', () => {
+  it('colis en route d’abord (par heure d’arrivée), puis livreurs vers le retrait, puis recherches regroupées ; annulation avant le retrait', () => {
     const list = sortActiveDeliveries([
-      delivery({ id: 'p', status: 'PICKED_UP' }),
-      delivery({ id: 'a', status: 'ASSIGNED' }),
-      delivery({ id: 's', status: 'SEARCHING_DRIVER' }),
+      delivery({ id: 's1', status: 'SEARCHING_DRIVER', driver: null, route: null, etaMinutes: null, createdAt: '2026-11-08T14:00:00.000Z' }),
+      delivery({ id: 'a', status: 'ASSIGNED', etaMinutes: 20 }),
+      delivery({ id: 'p-late', status: 'PICKED_UP', etaMinutes: 14 }),
+      delivery({ id: 's2', status: 'SEARCHING_DRIVER', driver: null, route: null, etaMinutes: null, createdAt: '2026-11-08T14:10:00.000Z' }),
+      delivery({ id: 'p-soon', status: 'PICKED_UP', etaMinutes: 3 }),
+      delivery({ id: 'a-soon', status: 'ASSIGNED', etaMinutes: 12 }),
     ]);
-    expect(list.map((o) => o.id)).toEqual(['s', 'a', 'p']);
+    expect(list.map((o) => o.id)).toEqual(['p-soon', 'p-late', 'a-soon', 'a', 's2', 's1']);
     expect(canBusinessCancel('SEARCHING_DRIVER')).toBe(true);
     expect(canBusinessCancel('ASSIGNED')).toBe(true);
     expect(canBusinessCancel('PICKED_UP')).toBe(false);
     expect(canBusinessCancel('DELIVERED')).toBe(false);
+  });
+
+  it('un seul nom pour la recherche d’un livreur (puce des cartes)', () => {
+    expect(businessStatusLabel('SEARCHING_DRIVER').label).toBe('RECHERCHE D’UN LIVREUR');
+    expect(businessStatusLabel('PENDING').label).toBe('RECHERCHE D’UN LIVREUR');
+  });
+});
+
+describe('phrases d’argent vraies à chaque étape', () => {
+  it('frais : « à payer » avant, « payés » après ; annulée : aucuns frais, sans payeur', () => {
+    expect(feePaymentText('SEARCHING_DRIVER', 'SENDER')).toBe('À payer par l’entreprise au retrait du colis');
+    expect(feePaymentText('ASSIGNED', 'SENDER')).toBe('À payer par l’entreprise au retrait du colis');
+    expect(feePaymentText('PICKED_UP', 'SENDER')).toBe('Payés par l’entreprise au retrait du colis');
+    expect(feePaymentText('DELIVERED', 'SENDER')).toBe('Payés par l’entreprise au retrait du colis');
+    expect(feePaymentText('ASSIGNED', 'RECIPIENT')).toBe('À payer par le destinataire à la livraison');
+    expect(feePaymentText('PICKED_UP', 'RECIPIENT')).toBe('À payer par le destinataire à la livraison');
+    expect(feePaymentText('DELIVERED', 'RECIPIENT')).toBe('Payés par le destinataire à la livraison');
+    for (const payer of ['SENDER', 'RECIPIENT', null] as const) expect(feePaymentText('CANCELLED', payer)).toBe('Aucuns frais à payer');
+    expect(feePaymentText('DELIVERED', null)).toBeNull();
+  });
+
+  it('historique : frais et payeur d’une livraison livrée ; annulée : « Annulée · aucuns frais »', () => {
+    expect(historyFeeText(delivery({ status: 'DELIVERED', deliveryFee: 1500, feePaidBy: 'RECIPIENT' }))).toMatch(/^livraison 1\s500\sFCFA payée par le destinataire$/);
+    expect(historyFeeText(delivery({ status: 'DELIVERED', deliveryFee: 2300, feePaidBy: 'SENDER' }))).toMatch(/payée par l’entreprise$/);
+    expect(historyFeeText(delivery({ status: 'CANCELLED', deliveryFee: 2300, feePaidBy: 'SENDER' }))).toBe('Annulée · aucuns frais');
+  });
+
+  it('marchandise : jamais « reversé » (reversement non suivi) ; « à reverser » une fois livrée', () => {
+    expect(goodsAmountText('PICKED_UP').label).toBe('Pour votre entreprise');
+    expect(goodsAmountText('DELIVERED').label).toBe('À reverser à votre entreprise');
+    for (const s of ['SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP', 'DELIVERED'] as const) {
+      const t = goodsAmountText(s);
+      expect(`${t.label} ${t.detail}`).not.toMatch(/\b[Rr]eversée? à votre|a été reversé/);
+    }
   });
 });
 

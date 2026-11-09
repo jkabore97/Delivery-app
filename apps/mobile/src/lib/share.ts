@@ -161,7 +161,10 @@ export async function shareOrCopyTrackingLink(
   return shareTrackingLink(p, env);
 }
 
-/** Message affiché après un envoi du lien (null : partage annulé, rien à dire). */
+/**
+ * Message affiché après un envoi du lien (null : partage annulé, rien à dire). Sans symbole : l'écran l'accompagne
+ * d'un pictogramme du système de design. Échec : le lien est alors affiché (sélectionnable) sous le message.
+ */
 export function shareFeedback(outcome: QuickShareOutcome): string | null {
   switch (outcome) {
     case 'whatsapp':
@@ -169,10 +172,13 @@ export function shareFeedback(outcome: QuickShareOutcome): string | null {
     case 'shared':
       return 'Lien envoyé.';
     case 'copied':
-      return 'Lien copié ✓';
+      return 'Lien copié.';
     case 'failed':
-      return 'Partage impossible : copiez le lien.';
+      return 'Partage impossible : copiez le lien ci-dessous.';
     default:
       return null;
   }
 }
+
+/** Durée d'affichage d'un message de réussite (« Lien copié. ») avant qu'il ne s'efface. */
+export const SHARE_FEEDBACK_MS = 4000;

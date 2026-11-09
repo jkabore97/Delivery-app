@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
-import { Linking } from 'react-native';
+import { Dimensions, Linking } from 'react-native';
 import { StyleSheet } from 'react-native';
+import { headlineFontSize } from '../components/tracking/TrackingParts';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { TrackingDto } from '@yaar/shared';
@@ -188,11 +189,54 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     const r = await render(wrap(<PublicTrackingScreen />));
     await act(async () => jest.advanceTimersByTimeAsync(0));
     expect(r.getByTestId('tracking-error')).toBeTruthy();
+    // « Connexion impossible » une seule fois (titre), le texte donne la marche à suivre.
+    expect(r.getByTestId('tracking-error')).toHaveTextContent(
+      /^Connexion impossibleVérifiez votre connexion Internet\. Nouvel essai automatique dans quelques secondes\.$/,
+    );
     // Intervalle doublé après l'échec (8 s → 16 s).
     await act(async () => jest.advanceTimersByTimeAsync(8000));
     expect(r.getByTestId('tracking-error')).toBeTruthy();
     await act(async () => jest.advanceTimersByTimeAsync(8000));
     expect(r.getByText('Votre colis est en route')).toBeTruthy();
+  });
+});
+
+describe('page publique sur un petit téléphone (360 × 640) et sur une page claire', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: T0 });
+    mockTrack.mockReset();
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1 });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite pour garder la pastille sur sa ligne', async () => {
+    const r = await show(tracking());
+    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(640 * 0.6));
+    const digits = r.getByText('4  8  2  1');
+    expect(StyleSheet.flatten(digits.props.style)).toMatchObject({ fontSize: 44 });
+    const clock = r.getByText('Arrivée vers 14:29');
+    expect(StyleSheet.flatten(clock.props.style).fontSize).toBeLessThanOrEqual(23);
+    // La pastille « dans 9 min » est dans la même rangée que l'heure.
+    expect(clock.parent?.parent).toBe(r.getByText('dans 9 min').parent?.parent?.parent);
+    expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16 500 FCFA');
+  });
+
+  it('taille de l’heure : tient avec sa pastille, de 30 (24 sur une feuille claire) à 20 px', () => {
+    // 360 px (contenu 328) : 22 px ; 390 (358) : 25 ; panneau latéral d'un ordinateur (388) : 29.
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 328, 30)).toBe(22);
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 358, 30)).toBe(25);
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 388, 30)).toBe(29);
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 358, 24)).toBe(24);
+    expect(headlineFontSize('Arrivée imminente', null, 328, 30)).toBe(30);
+    expect(headlineFontSize('Au retrait vers 14:24', 'dans 1 h 05', 200, 30)).toBe(20);
+  });
+
+  it('erreur du serveur (pas le réseau) : titre « Suivi momentanément indisponible »', async () => {
+    const r = await show(new ApiError(500, 'INTERNAL', 'Erreur interne du serveur'));
+    expect(r.getByTestId('tracking-error')).toHaveTextContent(/^Suivi momentanément indisponibleErreur interne du serveur\. Nouvel essai/);
   });
 });
 

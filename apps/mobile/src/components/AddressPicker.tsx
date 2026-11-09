@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 import { approximateZone, OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
 import { isPinAtDefault, PIN_NOT_PLACED_MESSAGE } from '../lib/address';
 import { colors, radius, spacing } from '../theme';
+import { Icon } from './design/Icon';
 import { CenterPin } from './map/CenterPin';
 import { PickerMap, type PickerMapHandle } from './map/PickerMap';
 import { Button, Field, Muted } from './ui';
@@ -89,7 +90,14 @@ export function AddressPicker({
         />
         <CenterPin moving={moving} variant={variant} bubble={isPinAtDefault(current) ? null : { title: zoneName(current) }} />
         <View style={styles.locateBtn}>
-          <Button title="📍 Ma position" small variant="outline" onPress={useMyPosition} loading={locating} />
+          <Button
+            title="Ma position"
+            small
+            variant="outline"
+            icon={(c) => <Icon name="navigation" size={15} color={c} />}
+            onPress={useMyPosition}
+            loading={locating}
+          />
         </View>
       </View>
       <Muted>Déplacez la carte pour placer l’épingle sur l’entrée exacte.</Muted>

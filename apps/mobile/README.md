@@ -98,12 +98,18 @@ livreur, à la carte d’ensemble et au choix d’adresse :
   seconde en natif.
 - **Rafraîchissements** : page publique toutes les `trackingPollIntervalMs` de `/config` (8 s par défaut) pendant la
   course, deux fois moins souvent pendant la recherche d’un livreur ; carte d’ensemble de l’entreprise toutes les
-  10 s, démontée quand une livraison est ouverte par-dessus (une seule carte WebGL à la fois).
+  10 s, démontée quand une livraison est ouverte par-dessus (une seule carte WebGL à la fois). Ses itinéraires (la
+  liste n’en porte que la date de calcul, `routeComputedAt`) sont relus sur `GET /orders/:id` seulement à un
+  changement d’étape, ou quand cette date change alors que le livreur a quitté le tracé en cache (nouveau chemin),
+  plus une relecture de sécurité toutes les 5 min (`src/lib/liveRoutes.ts`).
 - **Caméra** : cadre livreur + cible (entreprise tant que le colis n’est pas récupéré, puis destinataire ; la page du
   destinataire garde aussi sa propre épingle pendant le retrait) avec des marges de feuille + 90 px en bas et 60 px
   au moins sur les côtés ; suit le livreur jusqu’au premier geste de l’utilisateur, puis « Recentrer ». Avant
-  l’affectation : entreprise + destinataire en pointillés et radar « Recherche d’un livreur… ». Page publique sur
-  ordinateur (≥ 900 px) : carte à gauche, feuille en panneau à droite.
+  l’affectation : entreprise + destinataire en pointillés et radar « Recherche d’un livreur… ». Carte d’ensemble de
+  l’entreprise : cadrée sur l’entreprise et les livraisons en route (livreur et cible de son étape), les destinataires
+  en attente d’un livreur seulement s’il n’y a rien en route. Page publique sur ordinateur (≥ 900 px) : carte à
+  gauche, feuille en panneau à droite ; sur un petit téléphone (hauteur < 700 px), feuille à 0,6 de l’écran et code
+  compact : heure d’arrivée, code et montant à payer visibles sans défiler.
 - **Heure d’arrivée** : le destinataire voit l’heure de livraison ; l’entreprise voit, pendant le retrait, l’arrivée
   du livreur CHEZ ELLE (durée restante de l’itinéraire vers le retrait), l’heure de livraison étant rappelée dessous.
 - **Page publique en 3G** : écran de démarrage écrit dans `public/index.html` (visible avant le JavaScript), blocs

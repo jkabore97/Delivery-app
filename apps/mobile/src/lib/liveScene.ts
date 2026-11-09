@@ -216,6 +216,11 @@ export function trackingSceneInput(t: TrackingDto): SceneInput {
  * Carte d'ensemble de l'entreprise : son point de retrait (radar si une livraison attend un livreur), les
  * destinataires et les livreurs de toutes les livraisons en cours. `recipientInitials` : destinataires en épingles
  * « avatar » à leurs initiales (l'entreprise garde son pictogramme : c'est « chez elle »).
+ *
+ * Cadrage : l'entreprise et les livraisons qui bougent (livreur et cible de son étape : l'entreprise pour un retrait,
+ * le destinataire pour une livraison) ; les destinataires des livraisons qui attendent un livreur n'entrent dans le
+ * cadre que s'il n'y a aucune livraison en route (avec beaucoup de livraisons, la carte ne se dézoome plus sur toute
+ * la ville : leurs épingles restent sur la carte, hors du cadre au besoin).
  */
 export function overviewScene(
   business: MapPoint | null,
@@ -225,7 +230,8 @@ export function overviewScene(
 ): { markers: SceneMarker[]; lines: SceneLine[]; fitPoints: MapPoint[] } {
   const markers: SceneMarker[] = [];
   const lines: SceneLine[] = [];
-  const fitPoints: MapPoint[] = [];
+  const live: MapPoint[] = [];
+  const waiting: MapPoint[] = [];
   let searching = false;
   for (const o of deliveries) {
     const input = orderSceneInput(o);
@@ -237,8 +243,15 @@ export function overviewScene(
       markers.push(m);
     }
     lines.push(...s.lines);
-    fitPoints.push(...s.markers.map((m) => ({ lat: m.lat, lng: m.lng })));
+    if (isLiveStage(s.stage) && s.driver) {
+      // Livreur et cible de l'étape en cours (pas le destinataire pendant le retrait).
+      const target = s.target === 'PICKUP' ? pt(input.pickup) : pt(input.dropoff);
+      live.push({ lat: s.driver.lat, lng: s.driver.lng }, ...(target ? [target] : []));
+    } else {
+      waiting.push(...s.markers.map((m) => ({ lat: m.lat, lng: m.lng })));
+    }
   }
+  const fitPoints = live.length > 0 ? live : waiting;
   if (business) {
     markers.unshift({ id: 'business', kind: 'pickup', ...business, pulse: searching, title: businessName });
     fitPoints.push(business);
@@ -302,7 +315,9 @@ export function deliveryEtaLine(
 
 /**
  * Ligne d'arrivée d'une livraison dans la liste de l'entreprise : livreur en route vers le retrait → « Au retrait
- * dans 2 min · livraison vers 14:41 » ; colis récupéré → « Arrivée vers 14:41 · dans 12 min ».
+ * dans 2 min · livraison vers 14:41 » (déjà chez l'entreprise : « Livreur sur place · livraison vers 14:41 » ; position
+ * inconnue : « Livraison vers 14:41 ») ; colis récupéré → « Arrivée vers 14:41 · dans 12 min ». Toujours avec une
+ * majuscule initiale.
  */
 export function arrivalSummary(o: OrderDto, now: number): string | null {
   const input = orderSceneInput(o);
@@ -310,10 +325,21 @@ export function arrivalSummary(o: OrderDto, now: number): string | null {
   const delivery = estimateArrivalMinutes(scene, input, o.etaMinutes);
   if (scene.stage === 'toPickup') {
     const pickup = estimatePickupMinutes(scene, input);
-    const first = pickup === null ? null : pickup < 1 ? 'Au retrait' : `Au retrait dans ${formatDurationFr(pickup)}`;
+    const first = pickup === null ? null : pickup < 1 ? 'Livreur sur place' : `Au retrait dans ${formatDurationFr(pickup)}`;
     const then = delivery === null ? null : `livraison vers ${arrivalClockFr(Math.round(Math.max(pickup ?? 0, delivery)), now)}`;
-    return [first, then].filter(Boolean).join(' · ') || null;
+    const text = [first, then].filter(Boolean).join(' · ');
+    return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : null;
   }
   if (delivery === null) return null;
   return delivery < 1 ? 'Arrivée imminente' : `Arrivée vers ${arrivalClockFr(Math.round(delivery), now)} · dans ${formatDurationFr(delivery)}`;
+}
+
+/**
+ * Minutes avant l'arrivée chez le destinataire d'une livraison de la liste (tri de l'accueil de l'entreprise) :
+ * la même estimation que la ligne d'arrivée de sa carte ; null sans livreur en route ou sans estimation.
+ */
+export function arrivalMinutesOf(o: OrderDto): number | null {
+  const input = orderSceneInput(o);
+  const scene = buildScene(input);
+  return estimateArrivalMinutes(scene, input, o.etaMinutes);
 }

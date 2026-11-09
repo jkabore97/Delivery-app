@@ -1,5 +1,6 @@
 import { isValidElement, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { touchTarget } from '../../lib/touchTarget';
 import { colors, dark, MIN_TOUCH } from '../../theme';
 import { Icon, type IconName } from './Icon';
 import type { Surface } from './RoundButton';
@@ -24,8 +25,9 @@ export interface PillProps {
   icon?: IconName | ReactNode;
   tone?: PillTone;
   /**
-   * md : 40 px de haut (44 avec une action, zone tactile portée à 56 par `hitSlop`) ; lg : 56 px, la cible tactile
-   * minimale (action principale secondaire, ex. « Refuser »).
+   * md : 40 px de haut (44 avec une action, zone tactile portée à 56 : `hitSlop` en natif, marge intérieure compensée
+   * sur le web, voir lib/touchTarget.ts) ; lg : 56 px, la cible tactile minimale (action principale secondaire, ex.
+   * « Refuser »).
    */
   size?: 'md' | 'lg';
   /** Avec une action, la pastille devient un bouton. */
@@ -108,6 +110,7 @@ export function Pill({
       </View>
     );
   }
+  const touch = lg ? {} : touchTarget(44);
   return (
     <Pressable
       onPress={inactive ? undefined : onPress}
@@ -115,7 +118,8 @@ export function Pill({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: inactive, busy: !!loading }}
-      hitSlop={lg ? undefined : 6}
+      hitSlop={touch.hitSlop}
+      style={touch.style}
       testID={testID}
     >
       {({ pressed }) => body(pressed)}
@@ -155,7 +159,10 @@ export function StatusChip({ label, tone = 'grey', surface = 'dark', testID }: {
   );
 }
 
-/** Bouton rond posé sur une carte (retour, recentrer) : 48 px, blanc sur carte claire, sombre sur carte sombre. */
+/**
+ * Bouton rond posé sur une carte (retour, recentrer) : 48 px, blanc sur carte claire, sombre sur carte sombre ; zone
+ * tactile de 56 px (lib/touchTarget.ts).
+ */
 export function MapIconButton({
   icon,
   onPress,
@@ -170,16 +177,21 @@ export function MapIconButton({
   testID?: string;
 }) {
   const darkTheme = theme === 'dark';
+  const touch = touchTarget(48);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      hitSlop={4}
-      style={({ pressed }) => [styles.mapButton, darkTheme && styles.mapButtonDark, pressed && styles.pressed]}
+      hitSlop={touch.hitSlop}
+      style={touch.style}
       testID={testID}
     >
-      <Icon name={icon} size={22} color={darkTheme ? dark.text : colors.text} strokeWidth={2.4} />
+      {({ pressed }) => (
+        <View style={[styles.mapButton, darkTheme && styles.mapButtonDark, pressed && styles.pressed]}>
+          <Icon name={icon} size={22} color={darkTheme ? dark.text : colors.text} strokeWidth={2.4} />
+        </View>
+      )}
     </Pressable>
   );
 }

@@ -79,13 +79,20 @@ describe('Nouvelle livraison (entreprise)', () => {
     await fireEvent.press(r.getByTestId('simulate-move'));
     expect(r.getByTestId('dropoff-address').props.value).toBe('Patte d’Oie');
     expect(r.getByTestId('pin-bubble')).toHaveTextContent(/Patte d’Oie/);
+    // Épingle déplacée : son message d'erreur disparaît aussitôt.
+    expect(r.queryByText('Déplacez la carte pour placer l’épingle sur le lieu de livraison.')).toBeNull();
+    // Même en-tête qu'aux étapes 2 et 3 : « ÉTAPE 1 SUR 3 » en sur-titre.
+    expect(r.getByTestId('wizard-step')).toHaveTextContent('Étape 1 sur 3');
     // Téléphone courant (390 × 844) : bulle au-dessus de l'épingle.
     expect(StyleSheet.flatten(r.getByTestId('pin-bubble').props.style)).toMatchObject({ bottom: '50%' });
     await fireEvent.changeText(r.getByTestId('recipient-name'), 'Awa Kaboré');
+    expect(r.queryByText('Nom du destinataire requis.')).toBeNull();
     await fireEvent.changeText(r.getByTestId('recipient-phone'), '7011');
     await fireEvent.press(r.getByTestId('wizard-next'));
     expect(r.getByText('Numéro invalide : 8 chiffres (ex. 70 12 34 56).')).toBeTruthy();
     expect(r.queryByText('Colis et prix')).toBeNull();
+    await fireEvent.changeText(r.getByTestId('recipient-phone'), '70 11 22 33');
+    expect(r.queryByText('Numéro invalide : 8 chiffres (ex. 70 12 34 56).')).toBeNull();
   });
 
   it('suggestion de quartier : recentre la carte et remplit l’adresse', async () => {
@@ -117,8 +124,15 @@ describe('Nouvelle livraison (entreprise)', () => {
     await fireEvent.press(r.getByTestId('wizard-next'));
     expect(r.getByText('Décrivez le colis (ex. « 2 cartons », « documents »).')).toBeTruthy();
 
+    // Le message d'erreur d'un champ disparaît dès qu'il est corrigé (sans attendre « Continuer »).
     await fireEvent.changeText(r.getByTestId('package-description'), '2 boîtes de médicaments');
+    expect(r.queryByText('Décrivez le colis (ex. « 2 cartons », « documents »).')).toBeNull();
     await fireEvent.press(r.getByTestId('payer-RECIPIENT'));
+    // Choix exclusifs : état « coché » (Android / iOS ; sur le web, aria-checked, vérifié dans le navigateur).
+    expect(r.getByTestId('payer-RECIPIENT').props.accessibilityRole).toBe('radio');
+    expect(r.getByTestId('payer-RECIPIENT').props.accessibilityState).toMatchObject({ checked: true });
+    expect(r.getByTestId('payer-SENDER').props.accessibilityState).toMatchObject({ checked: false });
+    expect(r.getByTestId('vehicle-MOTO').props.accessibilityState).toMatchObject({ checked: true });
     await fireEvent.changeText(r.getByTestId('cash-to-collect'), '15 000');
     expect(r.getByTestId('recipient-pays')).toHaveTextContent(/16 500 FCFA/);
     await fireEvent.press(r.getByTestId('wizard-next'));
@@ -163,7 +177,7 @@ describe('Nouvelle livraison (entreprise)', () => {
   it('entreprise en attente de validation : bandeau et demande impossible', async () => {
     mockBusiness.store = businessStore({ approvalStatus: 'PENDING' });
     const r = await render(wrap(<NewDeliveryScreen />));
-    expect(r.getByText('⏳ Entreprise en attente de validation')).toBeTruthy();
+    expect(r.getByText('Entreprise en attente de validation')).toBeTruthy();
     // Jusqu'au récapitulatif : le bouton « Demander un livreur » reste désactivé, aucune demande n'est envoyée.
     await fireEvent.press(r.getByTestId('simulate-move'));
     await fireEvent.changeText(r.getByTestId('recipient-name'), 'Awa');

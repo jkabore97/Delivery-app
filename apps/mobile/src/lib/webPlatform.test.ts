@@ -69,6 +69,9 @@ describe('confirmAsync / notify', () => {
     confirm.mockReturnValueOnce(false);
     await expect(confirmAsync({ title: 'Supprimer' }, 'web')).resolves.toBe(false);
     expect(alert).not.toHaveBeenCalled();
+    // Boutons du navigateur ambigus (« Annuler » qui garde la livraison) : la phrase d'aide est ajoutée, sur le web seulement.
+    await confirmAsync({ title: 'Annuler la livraison ?', message: 'Le livreur sera prévenu.', webHint: '« OK » annule la livraison ; « Annuler » la garde.' }, 'web');
+    expect(confirm).toHaveBeenLastCalledWith('Annuler la livraison ?\n\nLe livreur sera prévenu.\n\n« OK » annule la livraison ; « Annuler » la garde.');
     notify('SOS envoyé', 'Restez en sécurité.', 'web');
     expect((globalThis as unknown as { window: { alert: jest.Mock } }).window.alert).toHaveBeenCalledWith(
       'SOS envoyé\n\nRestez en sécurité.',

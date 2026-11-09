@@ -118,7 +118,24 @@ describe('overviewScene', () => {
     expect(scene.markers.filter((m) => m.kind === 'pickup')).toEqual([expect.objectContaining({ id: 'business', pulse: true })]);
     expect(scene.markers.filter((m) => m.kind === 'dropoff')).toHaveLength(2);
     expect(scene.markers.filter((m) => m.kind === 'driver').map((m) => m.id)).toEqual(['b:driver']);
-    expect(scene.fitPoints.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('cadrage : livraisons en route (livreur + cible de l’étape) et entreprise ; les autres seulement sans livraison en route', () => {
+    const business = { lat: 12.3686, lng: -1.5275 };
+    const key = (p: { lat: number; lng: number }) => `${p.lat},${p.lng}`;
+    const searching = delivery({ id: 'a', status: 'SEARCHING_DRIVER', driver: null, route: null, dropoff: { lat: 12.3226, lng: -1.4977, address: 'Ouaga 2000', landmark: '' } });
+    const toPickup = delivery({ id: 'c', status: 'ASSIGNED', dropoff: { lat: 12.3812, lng: -1.4968, address: 'Zogona', landmark: '' } });
+    const scene = overviewScene(business, [searching, delivery({ id: 'b' }), toPickup]);
+    const fit = scene.fitPoints.map(key);
+    // Colis récupéré (b) : livreur et destinataire ; retrait (c) : livreur et entreprise, pas son destinataire.
+    expect(fit).toEqual(expect.arrayContaining(['12.3627,-1.521', '12.3395,-1.517', key(business)]));
+    expect(fit).not.toContain('12.3226,-1.4977');
+    expect(fit).not.toContain('12.3812,-1.4968');
+    // Les épingles restent toutes sur la carte.
+    expect(scene.markers.filter((m) => m.kind === 'dropoff')).toHaveLength(3);
+    // Rien en route : l'entreprise et les destinataires en attente d'un livreur.
+    const idle = overviewScene(business, [searching]);
+    expect(idle.fitPoints.map(key)).toEqual(expect.arrayContaining(['12.3226,-1.4977', key(business)]));
   });
 
   it('destinataires en épingles « avatar » (option de l’accueil de l’entreprise) ; l’entreprise garde son pictogramme', () => {
@@ -188,6 +205,22 @@ describe('arrivée au retrait (entreprise, livreur en route vers elle)', () => {
     expect(arrivalSummary(assigned(), now)).toBe('Au retrait dans 4 min · livraison vers 14:45');
     expect(arrivalSummary(delivery({ etaMinutes: 9 }), now)).toBe('Arrivée vers 14:29 · dans 9 min');
     expect(arrivalSummary(delivery({ status: 'SEARCHING_DRIVER', driver: null, route: null }), now)).toBeNull();
+  });
+
+  it('cartes de la liste : livreur déjà sur place, position inconnue (majuscule), cas limites des durées', () => {
+    const now = Date.parse('2026-11-08T14:20:00.000Z');
+    const atPickup = { ...delivery().driver!, lastLocation: { lat: 12.36865, lng: -1.52752, at: '2026-11-08T14:19:50.000Z', heading: 0 } };
+    expect(arrivalSummary(assigned({ driver: atPickup }), now)).toBe('Livreur sur place · livraison vers 14:45');
+    // Livreur sans position connue mais estimation de l'API : la phrase commence par une majuscule.
+    const noFix = { ...delivery().driver!, lastLocation: null };
+    expect(arrivalSummary(assigned({ driver: noFix, route: null, etaMinutes: 50 }), Date.parse('2026-11-08T23:20:00.000Z'))).toBe('Livraison vers 00:10');
+    expect(arrivalSummary(assigned({ driver: noFix, route: null, etaMinutes: null }), now)).toBeNull();
+    // Colis récupéré : imminent, 1 min, 1 h, 1 h 01, passage de minuit (heure UTC de Ouagadougou).
+    expect(arrivalSummary(delivery({ etaMinutes: 0 }), now)).toBe('Arrivée imminente');
+    expect(arrivalSummary(delivery({ etaMinutes: 1 }), now)).toBe('Arrivée vers 14:21 · dans 1 min');
+    expect(arrivalSummary(delivery({ etaMinutes: 60 }), now)).toBe('Arrivée vers 15:20 · dans 1 h');
+    expect(arrivalSummary(delivery({ etaMinutes: 61 }), now)).toBe('Arrivée vers 15:21 · dans 1 h 01');
+    expect(arrivalSummary(delivery({ etaMinutes: 50 }), Date.parse('2026-11-08T23:30:00.000Z'))).toBe('Arrivée vers 00:20 · dans 50 min');
   });
 });
 

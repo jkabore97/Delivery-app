@@ -65,7 +65,7 @@ export default function BusinessHistoryScreen() {
         <Text style={styles.title} accessibilityRole="header">
           Historique
         </Text>
-        {error ? <DarkBanner message={error} /> : null}
+        {error ? <DarkBanner message={error} action={{ label: 'Réessayer', onPress: () => void load(1), loading, testID: 'retry-history' }} /> : null}
         {items === null && loading ? <ActivityIndicator color={dark.green} style={{ marginTop: spacing.xl }} /> : null}
         {items?.length === 0 ? (
           <View style={styles.empty}>

@@ -31,6 +31,7 @@ export type IconName =
   | 'plus'
   | 'power'
   | 'recenter'
+  | 'refresh'
   | 'route'
   | 'share'
   | 'star'
@@ -101,6 +102,8 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   plus: [{ p: 'M12 5v14M5 12h14' }],
   power: [{ p: 'M12 3.2v8' }, { p: 'M7.1 6.3a7.6 7.6 0 1 0 9.8 0' }],
   recenter: [{ c: [12, 12, 6.5] }, { c: [12, 12, 2.2], fill: true }, { p: 'M12 2.8v2.7M12 18.5v2.7M2.8 12h2.7M18.5 12h2.7' }],
+  // Flèche circulaire (« Réessayer »).
+  refresh: [{ p: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }, { p: 'M17.3 3.1v3.6h-3.6' }],
   route: [{ c: [6, 18, 2.2] }, { c: [18, 6, 2.2] }, { p: 'M8.2 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8' }],
   // Partage (trois points reliés, comme sur Android).
   share: [{ c: [17.8, 5.6, 2.6] }, { c: [6.2, 12, 2.6] }, { c: [17.8, 18.4, 2.6] }, { p: 'M8.5 10.7l7-3.9M8.5 13.3l7 3.9' }],

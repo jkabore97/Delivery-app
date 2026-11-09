@@ -20,7 +20,7 @@ export function storeApprovalNotice(
     case 'PENDING':
       return {
         tone: 'orange',
-        title: '⏳ Entreprise en attente de validation',
+        title: 'Entreprise en attente de validation',
         message:
           'Yaar vérifie votre entreprise (généralement sous 24 h). Vous pourrez demander des livraisons dès sa validation.' +
           (note ? ` Remarque de Yaar : ${note}` : ''),
@@ -28,7 +28,7 @@ export function storeApprovalNotice(
     case 'SUSPENDED':
       return {
         tone: 'red',
-        title: '⛔ Entreprise suspendue par Yaar',
+        title: 'Entreprise suspendue par Yaar',
         message:
           'Vous ne pouvez plus demander de nouvelles livraisons. Les livraisons déjà en cours continuent.' +
           (note ? ` Motif : ${note}.` : '') +
@@ -37,6 +37,23 @@ export function storeApprovalNotice(
     default:
       return null;
   }
+}
+
+/**
+ * Que faire d'un appui sur « Nouvelle » (onglet de l'entreprise) : `open` ouvre le parcours (entreprise validée, ou
+ * profil encore en chargement : le parcours affiche son propre état) ; `profile` : pas encore d'entreprise, son profil
+ * est à créer ; `notice` : entreprise en attente de validation ou suspendue, le bandeau est montré à la place.
+ */
+export type NewDeliveryAccess = { kind: 'open' } | { kind: 'profile' } | { kind: 'notice'; notice: StoreApprovalNotice };
+
+export function newDeliveryAccess(
+  stores: readonly unknown[] | undefined,
+  store: Pick<StoreDto, 'approvalStatus' | 'approvalNote'> | null | undefined,
+): NewDeliveryAccess {
+  if (stores === undefined) return { kind: 'open' };
+  if (!store) return { kind: 'profile' };
+  const notice = storeApprovalNotice(store);
+  return notice ? { kind: 'notice', notice } : { kind: 'open' };
 }
 
 /** Seule une boutique validée peut être ouverte aux commandes. */

@@ -6,6 +6,11 @@ interface ContactButtonProps {
   /** Numéro (E.164 de l'API, ou local à 8 chiffres) ; absent = bouton inactif. */
   phone: string | null | undefined;
   label?: string;
+  /**
+   * Nom du contact dans le libellé lu par les lecteurs d'écran (« Appeler Awa Kaboré (+226…) », « Écrire à Awa Kaboré
+   * sur WhatsApp (+226…) ») : indispensable quand plusieurs cartes ont leurs boutons.
+   */
+  contactName?: string | null;
   size?: RoundButtonSize;
   surface?: Surface;
   /** false : bouton icône seul (le libellé reste lu par les lecteurs d'écran). */
@@ -25,7 +30,17 @@ function open(url: string) {
 }
 
 /** « Appeler » : bouton rond qui ouvre le composeur (lien `tel:` de lib/tel.ts). */
-export function CallRoundButton({ phone, label = 'Appeler', size = 'medium', surface = 'dark', showLabel = true, slot, testID }: ContactButtonProps) {
+export function CallRoundButton({
+  phone,
+  label = 'Appeler',
+  contactName,
+  size = 'medium',
+  surface = 'dark',
+  showLabel = true,
+  slot,
+  testID,
+}: ContactButtonProps) {
+  const who = contactName?.trim() ? `${label} ${contactName.trim()}` : label;
   return (
     <RoundButton
       label={label}
@@ -37,7 +52,7 @@ export function CallRoundButton({ phone, label = 'Appeler', size = 'medium', sur
       slot={slot}
       disabled={!phone}
       onPress={() => phone && open(telUrl(phone))}
-      accessibilityLabel={phone ? `${label} (${phone})` : `${label} : numéro indisponible`}
+      accessibilityLabel={phone ? `${who} (${phone})` : `${who} : numéro indisponible`}
       testID={testID}
     />
   );
@@ -51,12 +66,14 @@ export function WhatsAppRoundButton({
   phone,
   text,
   label = 'WhatsApp',
+  contactName,
   size = 'medium',
   surface = 'dark',
   showLabel = true,
   slot,
   testID,
 }: ContactButtonProps & { text?: string | null }) {
+  const name = contactName?.trim();
   return (
     <RoundButton
       label={label}
@@ -68,7 +85,11 @@ export function WhatsAppRoundButton({
       slot={slot}
       disabled={!phone}
       onPress={() => phone && open(whatsappUrl(phone, text))}
-      accessibilityLabel={phone ? `Écrire sur WhatsApp (${phone})` : 'WhatsApp : numéro indisponible'}
+      accessibilityLabel={
+        phone
+          ? `Écrire${name ? ` à ${name}` : ''} sur WhatsApp (${phone})`
+          : `${name ? `Écrire à ${name} sur WhatsApp` : 'WhatsApp'} : numéro indisponible`
+      }
       testID={testID}
     />
   );

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { dark, spacing } from '../../theme';
+import { Pill } from '../design/Pill';
 
 /**
  * Formulaire sur fond sombre (parcours « Nouvelle livraison » de l'entreprise) : champ, bandeau, titre de section et
@@ -36,13 +37,36 @@ const BANNER = {
   green: { bg: dark.greenSoft, fg: dark.green },
 } as const;
 
-/** Message (erreur, avertissement, confirmation) dans une feuille sombre. */
-export function DarkBanner({ message, tone = 'red', testID }: { message: string; tone?: keyof typeof BANNER; testID?: string }) {
+/**
+ * Message (erreur, avertissement, confirmation) dans une feuille sombre. `action` : bouton sous le message (ex.
+ * « Réessayer » après un chargement en échec, quand rien ne relancera l'appel tout seul).
+ */
+export function DarkBanner({
+  message,
+  tone = 'red',
+  action,
+  testID,
+}: {
+  message: string;
+  tone?: keyof typeof BANNER;
+  action?: { label: string; onPress: () => void; loading?: boolean; testID?: string } | null;
+  testID?: string;
+}) {
   const t = BANNER[tone];
+  if (!action) {
+    return (
+      <Text style={[styles.banner, { backgroundColor: t.bg, color: t.fg }]} accessibilityRole="alert" testID={testID}>
+        {message}
+      </Text>
+    );
+  }
   return (
-    <Text style={[styles.banner, { backgroundColor: t.bg, color: t.fg }]} accessibilityRole="alert" testID={testID}>
-      {message}
-    </Text>
+    <View style={[styles.bannerBox, { backgroundColor: t.bg }]} testID={testID}>
+      <Text style={[styles.bannerText, { color: t.fg }]} accessibilityRole="alert">
+        {message}
+      </Text>
+      <Pill label={action.label} icon="refresh" tone="outline" onPress={action.onPress} loading={action.loading} testID={action.testID} />
+    </View>
   );
 }
 
@@ -82,7 +106,9 @@ export function ChoiceRow({
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ selected, disabled: !!disabled }}
+      // État coché : `checked` pour Android / iOS, `aria-checked` pour le web (react-native-web ignore `selected`).
+      accessibilityState={{ checked: selected, disabled: !!disabled }}
+      aria-checked={selected}
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onPress={disabled ? undefined : onPress}
@@ -122,6 +148,8 @@ const styles = StyleSheet.create({
   error: { fontSize: 13, fontWeight: '700', color: dark.red },
   hint: { fontSize: 12.5, lineHeight: 17, color: dark.textFaint },
   banner: { borderRadius: 12, padding: spacing.md, fontWeight: '700', fontSize: 14, lineHeight: 19, overflow: 'hidden' },
+  bannerBox: { borderRadius: 12, padding: spacing.md, gap: spacing.sm, alignItems: 'flex-start' },
+  bannerText: { fontWeight: '700', fontSize: 14, lineHeight: 19 },
   section: {
     fontSize: 12,
     fontWeight: '900',

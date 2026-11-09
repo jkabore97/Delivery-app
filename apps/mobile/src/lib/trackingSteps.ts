@@ -9,6 +9,12 @@ export interface TrackingStep {
   state: StepState;
 }
 
+/**
+ * Nom unique de l'état « recherche d'un livreur » : titre du suivi (« Recherche d’un livreur… »), puce des cartes de
+ * l'entreprise (« RECHERCHE D’UN LIVREUR »), pastille de sa carte d'ensemble (« 1 recherche d’un livreur »).
+ */
+export const SEARCHING_LABEL = 'Recherche d’un livreur';
+
 /** Point de vue : destinataire (page publique) ou entreprise expéditrice. */
 export type Perspective = 'recipient' | 'business';
 
@@ -68,7 +74,7 @@ export function trackingHeadline(
     case 'pending':
     case 'searching':
       return {
-        title: 'Recherche d’un livreur…',
+        title: `${SEARCHING_LABEL}…`,
         subtitle: perspective === 'recipient' ? `${sender} a confirmé votre commande.` : 'Un livreur proche va accepter la course.',
       };
     case 'toPickup':

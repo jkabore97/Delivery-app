@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { AddressDto, StoreDto } from '@yaar/shared';
 import { AddressPicker } from '../../../components/AddressPicker';
-import { BUSINESS_ACCENT } from '../../../components/business/accent';
+import { BUSINESS_ACCENT, ORANGE_INK, ORANGE_TEXT } from '../../../components/business/accent';
 import { Icon } from '../../../components/design/Icon';
 import { StatusChip, type ChipTone } from '../../../components/design/Pill';
 import { avatarInitials } from '../../../components/map/markerArt';
@@ -121,7 +121,14 @@ function BusinessProfileCard() {
       {stores.length > 1 && !creating ? (
         <Row style={{ flexWrap: 'wrap' }}>
           {stores.map((s) => (
-            <Chip key={s.id} label={s.name} selected={s.id === store?.id} color={BUSINESS_ACCENT} onPress={() => selectStore(s.id)} />
+            <Chip
+              key={s.id}
+              label={s.name}
+              selected={s.id === store?.id}
+              color={BUSINESS_ACCENT}
+              selectedTextColor={ORANGE_INK}
+              onPress={() => selectStore(s.id)}
+            />
           ))}
         </Row>
       ) : null}
@@ -157,9 +164,11 @@ function BusinessProfileCard() {
         />
         <SectionTitle>Adresse de retrait</SectionTitle>
         <AddressPicker value={form.location} onChange={(a) => set('location', a)} variant="pickup" addressLabel="Adresse de l’entreprise" />
+        {/* Orange de l'entreprise : texte en encre foncée (7,6:1), le blanc n'aurait que 2,4:1. */}
         <Button
           title={editing ? 'Enregistrer' : 'Créer mon entreprise'}
           color={BUSINESS_ACCENT}
+          textColor={ORANGE_INK}
           onPress={save}
           loading={busy}
           disabled={!valid}
@@ -167,10 +176,12 @@ function BusinessProfileCard() {
         />
         {stores.length > 0 ? (
           <Button
-            title={creating ? 'Annuler' : '＋ Ajouter un autre établissement'}
+            title={creating ? 'Annuler' : 'Ajouter un autre établissement'}
             variant="ghost"
-            color={BUSINESS_ACCENT}
+            color={ORANGE_TEXT}
+            icon={creating ? undefined : (c) => <Icon name="plus" size={18} color={c} strokeWidth={2.6} />}
             onPress={() => setCreating((c) => !c)}
+            testID="add-store"
           />
         ) : null}
       </Card>
@@ -179,7 +190,7 @@ function BusinessProfileCard() {
 }
 
 export default function BusinessProfile() {
-  return <ProfileScreen color={BUSINESS_ACCENT} top={<BusinessProfileCard />} />;
+  return <ProfileScreen color={BUSINESS_ACCENT} buttonTextColor={ORANGE_INK} top={<BusinessProfileCard />} />;
 }
 
 const styles = StyleSheet.create({
@@ -194,7 +205,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.orangeLight, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 22, fontWeight: '900', color: '#9A4F00', letterSpacing: 0.3 },
+  avatarText: { fontSize: 22, fontWeight: '900', color: ORANGE_TEXT, letterSpacing: 0.3 },
   name: { ...typeScale.subtitle, fontSize: 20, fontWeight: '900', color: colors.text },
   addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   address: { flex: 1, fontSize: 13.5, color: colors.textMuted },

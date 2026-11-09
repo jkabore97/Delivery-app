@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Head from 'expo-router/head';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -90,8 +90,9 @@ export default function PublicTrackingScreen() {
             testID="tracking-error"
             theme={theme}
             icon="alert"
-            title="Connexion impossible"
-            text={`${state.message} Nouvel essai automatique dans quelques secondes.`}
+            title={state.network ? 'Connexion impossible' : 'Suivi momentanément indisponible'}
+            // Réseau coupé : le titre le dit déjà, le texte donne la marche à suivre (pas « Connexion impossible » deux fois).
+            text={`${state.network ? 'Vérifiez votre connexion Internet.' : sentence(state.message)} Nouvel essai automatique dans quelques secondes.`}
           />
         )
       ) : (
@@ -99,6 +100,12 @@ export default function PublicTrackingScreen() {
       )}
     </>
   );
+}
+
+/** Message d'erreur de l'API en phrase (point final ajouté au besoin, avant « Nouvel essai… »). */
+function sentence(message: string): string {
+  const m = message.trim();
+  return /[.!?…]$/.test(m) ? m : `${m}.`;
 }
 
 function CenteredCard({ children, theme, testID }: { children: ReactNode; theme: TrackingTheme; testID?: string }) {
@@ -129,7 +136,15 @@ function MessageCard({ icon, title, text, theme, testID }: { icon: IconName; tit
   );
 }
 
+/**
+ * Écran court (téléphone d'entrée de gamme, 360 × 640) : feuille un peu plus haute (0,6 de l'écran) et code plus
+ * compact, pour que l'heure d'arrivée, le code ET le montant à payer se voient sans faire défiler.
+ */
+const SHORT_SCREEN_MAX_HEIGHT = 700;
+
 function TrackingView({ data: t, stale, animationMs, theme }: { data: TrackingDto; stale: boolean; animationMs: number; theme: TrackingTheme }) {
+  const { height } = useWindowDimensions();
+  const short = height < SHORT_SCREEN_MAX_HEIGHT;
   // Entreprise en épingle « avatar » à ses initiales ; « chez vous » garde l'épingle à maison.
   const input = useMemo(() => ({ ...trackingSceneInput(t), initials: { pickup: avatarInitials(t.sender.name) } }), [t]);
   const scene = useMemo(() => buildScene(input), [input]);
@@ -150,6 +165,7 @@ function TrackingView({ data: t, stale, animationMs, theme }: { data: TrackingDt
       animationMs={animationMs}
       allowWide
       sheetTheme={theme}
+      sheetMaxRatio={short ? 0.6 : undefined}
       topCenter={
         <FloatingChip testID="brand-chip">
           <Text style={styles.chipLogo}>Yaar</Text>
@@ -164,7 +180,7 @@ function TrackingView({ data: t, stale, animationMs, theme }: { data: TrackingDt
       <ArrivalHeadline etaMinutes={eta} headline={headline} theme={theme} />
       {t.status !== 'CANCELLED' ? <StepsProgress steps={trackingSteps(t.status, 'recipient')} theme={theme} /> : null}
 
-      {t.deliveryCode && !done ? <DeliveryCodeChip code={t.deliveryCode} theme={theme} /> : null}
+      {t.deliveryCode && !done ? <DeliveryCodeChip code={t.deliveryCode} theme={theme} compact={short} /> : null}
       {t.amountToPay > 0 && !done ? (
         <AmountBox
           label="À payer au livreur à la réception"

@@ -10,12 +10,12 @@ import { DarkScreen } from '../../../components/design/Surfaces';
 import { DisputeBox } from '../../../components/DisputeBox';
 import { avatarInitials } from '../../../components/map/markerArt';
 import { RatingCard, Stars } from '../../../components/Rating';
-import { ShareTrackingCard } from '../../../components/ShareTrackingCard';
+import { ShareFeedback, ShareTrackingCard, useShareNotice } from '../../../components/ShareTrackingCard';
 import { FloatingChip, LiveTrackingLayout } from '../../../components/tracking/LiveTrackingLayout';
 import { AmountBox, ArrivalHeadline, DriverCard, InfoRow, StepsProgress } from '../../../components/tracking/TrackingParts';
 import { useAsync } from '../../../hooks/useAsync';
 import { errorMessage } from '../../../lib/api';
-import { amountsToCollect, canBusinessCancel, collectDetail, FEE_PAYER_LABELS } from '../../../lib/delivery';
+import { amountsToCollect, canBusinessCancel, collectDetail, feePaymentText, goodsAmountText } from '../../../lib/delivery';
 import { confirmAsync } from '../../../lib/dialog';
 import { formatDateTime, formatFcfa, formatOrderNumber, formatTime } from '../../../lib/format';
 import {
@@ -41,8 +41,9 @@ import { dark, spacing, typeScale } from '../../../theme';
  * Suivi d'une livraison par l'entreprise (comme Uber Direct) : carte claire en direct (livreur animé, itinéraire
  * jusqu'au destinataire en épingle à ses initiales), feuille sombre : heure d'arrivée et état, étapes, « Colis pour
  * … » (adresse, repère, colis), livreur, montants (ce que paie le destinataire, ce qui revient à l'entreprise),
- * annulation avant le retrait ; en bas, boutons ronds « Partager le lien », « WhatsApp » (au destinataire, message
- * prérempli avec le lien de suivi) et « Appeler le livreur ». L'entreprise ne voit jamais le code de livraison.
+ * annulation avant le retrait ; en bas, boutons ronds « Partager » (le lien de suivi), « WhatsApp client » (au
+ * destinataire, message prérempli avec le lien de suivi) et « Appeler le livreur ». L'entreprise ne voit jamais le
+ * code de livraison.
  *
  * Pendant que le livreur vient chercher le colis, le titre donne SON arrivée chez l'entreprise (durée restante de
  * l'itinéraire vers le retrait) ; l'heure de livraison au destinataire est rappelée en dessous.
@@ -57,7 +58,9 @@ export default function BusinessDeliveryScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  // Réussite (« Lien copié. ») effacée après quelques secondes ; échec : le lien s'affiche, à copier à la main.
+  const [shareNotice, setShareNotice] = useShareNotice();
+  const [retrying, setRetrying] = useState(false);
 
   useOrderRoom(id);
   useSocketEvent('order.updated', (e) => {
@@ -82,13 +85,25 @@ export default function BusinessDeliveryScreen() {
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/business'));
 
   if (!o || !scene || !input) {
+    const retry = async () => {
+      setRetrying(true);
+      try {
+        await order.reload();
+      } finally {
+        setRetrying(false);
+      }
+    };
     return (
       <DarkScreen>
         <View style={styles.waiting}>
           {order.error ? (
-            <Text style={styles.error} accessibilityRole="alert">
-              {order.error}
-            </Text>
+            <>
+              <Text style={styles.error} accessibilityRole="alert">
+                {order.error}
+              </Text>
+              {/* Mode socket : aucun rafraîchissement automatique ne relancera le chargement. */}
+              <Pill label="Réessayer" icon="refresh" tone="green" onPress={() => void retry()} loading={retrying} testID="retry-order" />
+            </>
           ) : (
             <ActivityIndicator size="large" color={dark.green} />
           )}
@@ -107,6 +122,10 @@ export default function BusinessDeliveryScreen() {
   const now = Date.now();
   const headline = trackingHeadline(o.status, 'business', { recipient: o.recipientName, driver: o.driver?.name?.split(' ')[0] });
   const amounts = amountsToCollect(o);
+  const cancelled = o.status === 'CANCELLED';
+  // Phrases d'argent vraies à chaque étape (« à payer » / « payés », « à reverser », annulée : aucuns frais).
+  const goods = goodsAmountText(o.status);
+  const feeText = feePaymentText(o.status, amounts.feePaidBy);
   const recipient = o.recipientName ?? 'le destinataire';
   const shareParty = {
     recipientName: o.recipientName,
@@ -118,11 +137,13 @@ export default function BusinessDeliveryScreen() {
 
   const cancel = () => {
     void confirmAsync({
-      title: 'Annuler la livraison',
-      message: 'Le livreur et le destinataire seront prévenus. Annuler cette demande ?',
-      cancelText: 'Non',
+      title: 'Annuler la livraison ?',
+      message: 'Le livreur et le destinataire seront prévenus.',
+      cancelText: 'Non, la garder',
       confirmText: 'Oui, annuler',
       destructive: true,
+      // Navigateur : boutons « OK » / « Annuler » imposés, où « Annuler » garderait la livraison : on le dit.
+      webHint: '« OK » annule la livraison ; « Annuler » la garde.',
     }).then(async (ok) => {
       if (!ok) return;
       setCancelling(true);
@@ -140,11 +161,13 @@ export default function BusinessDeliveryScreen() {
   const shareLink = async () => {
     if (!o.trackingUrl) return;
     setSharing(true);
-    setShareMessage(null);
+    setShareNotice(null);
     try {
-      setShareMessage(shareFeedback(await shareOrCopyTrackingLink({ ...shareParty, url: o.trackingUrl })));
+      const outcome = await shareOrCopyTrackingLink({ ...shareParty, url: o.trackingUrl });
+      const text = shareFeedback(outcome);
+      setShareNotice(text ? { text, ok: outcome !== 'failed' } : null);
     } catch {
-      setShareMessage(shareFeedback('failed'));
+      setShareNotice({ text: shareFeedback('failed')!, ok: false });
     } finally {
       setSharing(false);
     }
@@ -156,14 +179,18 @@ export default function BusinessDeliveryScreen() {
   const promptShare = created === '1' && !terminal;
   const actions = terminal || (promptShare && !driverPhone) ? undefined : (
     <View style={{ gap: spacing.sm }}>
-      {shareMessage ? (
-        <Text style={styles.feedback} accessibilityLiveRegion="polite">
-          {shareMessage}
+      {shareNotice ? <ShareFeedback notice={shareNotice} tone="dark" testID="share-feedback" /> : null}
+      {shareNotice && !shareNotice.ok && o.trackingUrl ? (
+        // Copie impossible : le lien, sélectionnable, à copier à la main.
+        <Text style={styles.link} selectable testID="tracking-link">
+          {o.trackingUrl}
         </Text>
       ) : null}
       <View style={styles.actions}>
         <RoundButton
-          label="Partager le lien"
+          // « Partager » (le pictogramme et le libellé lu disent « lien de suivi ») : les trois libellés tiennent côte à
+          // côte sur un écran de 360 px.
+          label="Partager"
           icon="share"
           tone="primary"
           slot={slot}
@@ -173,9 +200,12 @@ export default function BusinessDeliveryScreen() {
           accessibilityLabel="Partager le lien de suivi"
           testID="share-round-button"
         />
+        {/* « WhatsApp client » : à côté de « Appeler le livreur », le libellé dit à qui l'on écrit. */}
         <WhatsAppRoundButton
           phone={o.recipientPhone}
           text={recipientWhatsappText({ ...shareParty, url: o.trackingUrl, orderNumber: o.number })}
+          label="WhatsApp client"
+          contactName={o.recipientName}
           slot={slot}
           testID="whatsapp-recipient"
         />
@@ -262,9 +292,9 @@ export default function BusinessDeliveryScreen() {
         ) : null}
         {amounts.goods > 0 && o.status !== 'CANCELLED' ? (
           <AmountBox
-            label={o.status === 'DELIVERED' ? 'Reversé à votre entreprise' : 'Pour votre entreprise'}
+            label={goods.label}
             amount={amounts.goods}
-            detail="Valeur de la marchandise : encaissée par le livreur, reversée par Yaar."
+            detail={goods.detail}
             tone="green"
             theme="dark"
             testID="business-amount"
@@ -276,13 +306,10 @@ export default function BusinessDeliveryScreen() {
         <View style={styles.feeRow} testID="delivery-fee">
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.feeLabel}>Frais de livraison · {LABELS.vehicleType[o.vehicleType].toLowerCase()}</Text>
-            {amounts.feePaidBy ? (
-              <Text style={styles.feePayer}>
-                Payés par {FEE_PAYER_LABELS[amounts.feePaidBy].title.toLowerCase()} {FEE_PAYER_LABELS[amounts.feePaidBy].detail}
-              </Text>
-            ) : null}
+            {feeText ? <Text style={styles.feePayer}>{feeText}</Text> : null}
           </View>
-          <Text style={styles.feeValue}>{formatFcfa(o.deliveryFee)}</Text>
+          {/* Annulée : montant barré, rien n'est facturé. */}
+          <Text style={[styles.feeValue, cancelled && styles.feeValueCancelled]}>{formatFcfa(o.deliveryFee)}</Text>
         </View>
       </View>
 
@@ -339,7 +366,7 @@ export default function BusinessDeliveryScreen() {
 const styles = StyleSheet.create({
   waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingVertical: spacing.xl * 3 },
   actions: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'flex-start', paddingTop: spacing.xs },
-  feedback: { color: dark.green, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  link: { color: dark.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   reason: { color: dark.red, fontSize: 14, fontWeight: '700' },
   block: { gap: spacing.md, padding: spacing.md, borderRadius: 18, backgroundColor: dark.raised, borderWidth: 1, borderColor: dark.border },
   recipientTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -351,6 +378,7 @@ const styles = StyleSheet.create({
   feeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   feeLabel: { color: dark.text, fontSize: 14, fontWeight: '800' },
   feeValue: { color: dark.text, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  feeValueCancelled: { color: dark.textMuted, textDecorationLine: 'line-through' },
   feePayer: { color: dark.textMuted, fontSize: 12.5, fontWeight: '600' },
   delivered: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: dark.greenSoft, borderRadius: 12, padding: spacing.md },
   deliveredText: { color: dark.green, fontWeight: '800', fontSize: 14 },
