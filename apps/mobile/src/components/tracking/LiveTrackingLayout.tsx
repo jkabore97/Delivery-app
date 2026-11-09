@@ -24,7 +24,8 @@ const SIDE_SHEET_WIDTH = 420;
  * bouton rond ; la caméra le garde dégagé), `insetBottom={false}` (écran au-dessus d'une barre d'onglets : pas de
  * marge de zone sûre sous la feuille), `mapVisible={false}` (carte démontée, ex. écran masqué : une seule carte
  * WebGL à la fois), `sheetHeader` (bloc fixé en haut de la feuille, au-dessus du contenu qui défile : titre et
- * action principale d'une liste).
+ * action principale d'une liste), `sheetMaxRatio` (hauteur maximale de la feuille repliée, 0,56 de l'écran par défaut :
+ * plus basse pour laisser plus de carte à une vue d'ensemble).
  */
 export function LiveTrackingLayout({
   markers,
@@ -46,6 +47,7 @@ export function LiveTrackingLayout({
   mapTheme = 'light',
   insetBottom = true,
   mapVisible = true,
+  sheetMaxRatio = 0.56,
   testID,
 }: {
   markers: SceneMarker[];
@@ -77,6 +79,8 @@ export function LiveTrackingLayout({
   insetBottom?: boolean;
   /** false : carte démontée (fond uni à la place), le reste de l'écran reste affiché. */
   mapVisible?: boolean;
+  /** Hauteur maximale de la feuille repliée (part de l'écran, 0,56 par défaut) ; dépliée : 0,86. */
+  sheetMaxRatio?: number;
   testID?: string;
 }) {
   const insets = useSafeAreaInsets();
@@ -86,7 +90,7 @@ export function LiveTrackingLayout({
   const [sheetHeight, setSheetHeight] = useState(Math.round(height * 0.45));
   const [aboveHeight, setAboveHeight] = useState(0);
   const camera = useFollowCamera(stageKey, fitPoints.length);
-  const maxSheet = Math.round(height * (expanded ? 0.86 : 0.56));
+  const maxSheet = Math.round(height * (expanded ? 0.86 : sheetMaxRatio));
   const wide = allowWide && width >= WIDE_LAYOUT_MIN_WIDTH;
   const mapWidth = wide ? width - SIDE_SHEET_WIDTH : width;
   const above = aboveSheet && !wide ? aboveHeight + ABOVE_SHEET_GAP : 0;

@@ -136,6 +136,11 @@ export async function copyText(text: string, env: ShareEnv = defaultShareEnv()):
   return ok;
 }
 
+/** Libellé court du même bouton (carte sombre : « Envoyer par WhatsApp » / « Envoyer le lien de suivi »). */
+export function shareButtonShortLabel(env: Pick<ShareEnv, 'platform' | 'navigator'> = defaultShareEnv()): string {
+  return env.platform === 'web' && typeof env.navigator?.share !== 'function' ? 'Envoyer par WhatsApp' : 'Envoyer le lien de suivi';
+}
+
 /** Le web sans navigator.share ouvre WhatsApp : le bouton le dit. */
 export function shareButtonLabel(env: Pick<ShareEnv, 'platform' | 'navigator'> = defaultShareEnv()): string {
   if (env.platform === 'web' && typeof env.navigator?.share !== 'function') return 'Envoyer le lien de suivi par WhatsApp';

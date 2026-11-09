@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   distanceM,
@@ -19,14 +20,21 @@ import {
   OUAGADOUGOU_NEIGHBOURHOODS,
   type AddressDto,
   type FeePayer,
+  type QuoteOptionDto,
   type QuoteResponse,
+  type VehicleType,
 } from '@yaar/shared';
 import { zoneName } from '../../components/AddressPicker';
+import { BUSINESS_ACCENT } from '../../components/business/accent';
+import { ChoiceRow, DarkBanner, DarkField, SectionLabel } from '../../components/business/DarkForm';
+import { MapIconButton, Pill } from '../../components/design/Pill';
+import { AmountRow } from '../../components/design/Surfaces';
 import { CenterPin } from '../../components/map/CenterPin';
+import { vehicleSideGlyph } from '../../components/map/markerArt';
+import { ArtView } from '../../components/map/MarkerViews';
 import { PickerMap, type PickerMapHandle } from '../../components/map/PickerMap';
 import { StoreApprovalBanner } from '../../components/StoreApprovalBanner';
-import { Banner, Button, Chip, Empty, Field, KeyValue, Loading, Muted, Row, SectionTitle } from '../../components/ui';
-import { VEHICLE_EMOJI, VehicleOptions } from '../../components/VehicleOptions';
+import { VEHICLE_HINT } from '../../components/VehicleOptions';
 import { useDeliveryQuote } from '../../hooks/useDeliveryQuote';
 import { isPinAtDefault, toAddressInput } from '../../lib/address';
 import { errorMessage } from '../../lib/api';
@@ -45,16 +53,21 @@ import {
   type FormErrors,
 } from '../../lib/delivery';
 import { formatFcfa, formatKm } from '../../lib/format';
+import { MAP_COLORS } from '../../lib/map/style';
 import { formatPhone } from '../../lib/phone';
 import { useApi } from '../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../state/business';
-import { colors, radius, spacing } from '../../theme';
+import { dark, SHEET_RADIUS, spacing, typeScale } from '../../theme';
 
 const PACKAGE_SUGGESTIONS = ['Documents', 'Petit colis', 'Carton', 'Repas', 'Médicaments', 'Vêtements'];
 
 type Step = 1 | 2 | 3;
 
-/** Nouvelle livraison (comme Uber Direct) : 1. destination sur la carte, 2. colis et prix, 3. récapitulatif. */
+/**
+ * Nouvelle livraison (comme Uber Direct), sur fond sombre : 1. destination sur la carte (feuille sombre posée sur la
+ * carte à épingle centrale, quartiers proches en pastilles, destinataire), 2. colis, véhicule et prix (choix en
+ * pastilles, qui paie, montant à encaisser), 3. récapitulatif (trajet, montants) ; un grand bouton vert par étape.
+ */
 export default function NewDeliveryScreen() {
   const api = useApi();
   const { store, stores } = useBusiness();
@@ -84,14 +97,19 @@ export default function NewDeliveryScreen() {
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/business'));
 
-  if (stores === undefined) return <Loading />;
+  if (stores === undefined) {
+    return (
+      <SafeAreaView style={[styles.root, styles.centered]}>
+        <ActivityIndicator size="large" color={dark.green} />
+      </SafeAreaView>
+    );
+  }
   if (!store) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-        <Empty title="Créez d’abord le profil de votre entreprise (adresse de retrait).">
-          <Button title="Mon profil d’entreprise" color={colors.orange} onPress={() => router.replace('/business/profile')} />
-          <Button title="Fermer" variant="ghost" color={colors.textMuted} onPress={close} />
-        </Empty>
+      <SafeAreaView style={[styles.root, styles.centered]}>
+        <Text style={styles.emptyTitle}>Créez d’abord le profil de votre entreprise (adresse de retrait).</Text>
+        <Pill label="Mon profil d’entreprise" icon="store" tone="green" size="lg" onPress={() => router.replace('/business/profile')} />
+        <Pill label="Fermer" icon="close" tone="outline" onPress={close} />
       </SafeAreaView>
     );
   }
@@ -149,7 +167,7 @@ export default function NewDeliveryScreen() {
         errors={errors}
         pickup={pickup}
         approved={isBusinessApproved(store)}
-        storeBanner={<StoreApprovalBanner store={store} />}
+        storeBanner={<StoreApprovalBanner store={store} tone="dark" />}
         onClose={close}
         onNext={next}
       />
@@ -158,65 +176,81 @@ export default function NewDeliveryScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <StatusBar style="light" />
       <WizardHeader step={step} onBack={back} title={step === 2 ? 'Colis et prix' : 'Récapitulatif'} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {step === 2 ? (
-          <PackageStep
-            form={form}
-            set={set}
-            errors={errors}
-            quote={quote}
-            quoteError={quoteError}
-            quoteLoading={quoteLoading}
-            vehicle={vehicle}
-            fee={option?.deliveryFee ?? null}
-            storeName={store.name}
-          />
-        ) : (
-          <SummaryStep form={form} storeName={store.name} storeAddress={store.address} quote={quote} vehicle={vehicle} />
-        )}
-        {!isBusinessApproved(store) && step === 3 ? <StoreApprovalBanner store={store} /> : null}
-        {submitError ? <Banner message={submitError} /> : null}
-      </ScrollView>
-      <View style={styles.footer}>
-        {step === 2 ? (
-          <Button
-            title={option ? `Continuer · ${formatFcfa(option.deliveryFee)}` : 'Continuer'}
-            color={colors.orange}
-            onPress={next}
-            disabled={quoteLoading && !quote}
-            testID="wizard-next"
-          />
-        ) : (
-          <Button
-            title="Demander un livreur"
-            color={colors.green}
-            onPress={submit}
-            loading={busy}
-            disabled={!option || !isBusinessApproved(store)}
-            testID="request-driver"
-          />
-        )}
-      </View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {step === 2 ? (
+            <PackageStep
+              form={form}
+              set={set}
+              errors={errors}
+              quote={quote}
+              quoteError={quoteError}
+              quoteLoading={quoteLoading}
+              vehicle={vehicle}
+              fee={option?.deliveryFee ?? null}
+              storeName={store.name}
+            />
+          ) : (
+            <SummaryStep form={form} storeName={store.name} storeAddress={store.address} quote={quote} vehicle={vehicle} />
+          )}
+          {!isBusinessApproved(store) && step === 3 ? <StoreApprovalBanner store={store} tone="dark" /> : null}
+          {submitError ? <DarkBanner message={submitError} /> : null}
+        </ScrollView>
+        <View style={styles.footer}>
+          {step === 2 ? (
+            <Pill
+              label={option ? `Continuer · ${formatFcfa(option.deliveryFee)}` : 'Continuer'}
+              icon="chevronRight"
+              tone="green"
+              size="lg"
+              onPress={next}
+              disabled={quoteLoading && !quote}
+              style={styles.stretch}
+              testID="wizard-next"
+            />
+          ) : (
+            <Pill
+              label="Demander un livreur"
+              icon="check"
+              tone="green"
+              size="lg"
+              onPress={submit}
+              loading={busy}
+              disabled={!option || !isBusinessApproved(store)}
+              style={styles.stretch}
+              testID="request-driver"
+            />
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/** Trois barres d'étape (orange de l'entreprise jusqu'à l'étape en cours). */
+function StepBars({ step }: { step: Step }) {
+  return (
+    <View style={styles.stepBars} accessibilityRole="progressbar" accessibilityLabel={`Étape ${step} sur 3`}>
+      {[1, 2, 3].map((i) => (
+        <View key={i} style={[styles.stepBar, i <= step && { backgroundColor: BUSINESS_ACCENT }]} />
+      ))}
+    </View>
   );
 }
 
 function WizardHeader({ step, title, onBack }: { step: Step; title: string; onBack: () => void }) {
   return (
     <View style={styles.header}>
-      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Retour" style={styles.headerBtn} testID="wizard-back">
-        <Text style={styles.headerBtnText}>←</Text>
-      </Pressable>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.stepText}>Étape {step} sur 3</Text>
-        <Text style={styles.headerTitle}>{title}</Text>
+      <MapIconButton icon="back" theme="dark" onPress={onBack} accessibilityLabel="Retour" testID="wizard-back" />
+      <View style={styles.flex}>
+        <Text style={[typeScale.kicker, styles.stepText]}>Étape {step} sur 3</Text>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {title}
+        </Text>
       </View>
-      <View style={styles.stepDots}>
-        {[1, 2, 3].map((i) => (
-          <View key={i} style={[styles.dot, i <= step && { backgroundColor: colors.orange }]} />
-        ))}
-      </View>
+      <StepBars step={step} />
     </View>
   );
 }
@@ -279,7 +313,7 @@ function DestinationStep({
     ? { title: zoneName(dropoff), subtitle: dropoff.address.trim() && dropoff.address !== zoneName(dropoff) ? dropoff.address : 'Livrer ici' }
     : { title: 'Déplacez la carte', subtitle: 'jusqu’au lieu de livraison' };
   const mapHeight = Math.max(280, Math.round(height * 0.5));
-  // Petit téléphone (360 × 640) : la bulle au-dessus de l'épingle toucherait la pastille « 1/3 » ; elle passe dessous.
+  // Petit téléphone (360 × 640) : la bulle au-dessus de l'épingle toucherait les boutons du haut ; elle passe dessous.
   const bubbleBelow = mapHeight / 2 < insets.top + 172;
 
   return (
@@ -295,35 +329,42 @@ function DestinationStep({
         />
         <CenterPin moving={moving} bubble={bubble} bubblePlacement={bubbleBelow ? 'below' : 'above'} />
         <View style={[styles.mapTop, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
-          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Fermer" style={styles.fab} testID="wizard-close">
-            <Text style={styles.fabText}>✕</Text>
-          </Pressable>
-          <View style={styles.mapTitle}>
-            <Text style={styles.mapTitleText}>1/3 · Où livrer ?</Text>
+          <MapIconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" testID="wizard-close" />
+          <View style={styles.mapTitle} pointerEvents="none">
+            <Pill label="Étape 1 sur 3" tone="dark" floating />
           </View>
-          <View style={{ width: 44 }} />
+          <View style={{ width: 48 }} />
         </View>
       </View>
       <View style={styles.sheet}>
         <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+          <View style={{ gap: 4 }}>
+            <Text style={styles.title} accessibilityRole="header">
+              Où livrer ?
+            </Text>
+            <Text style={styles.muted}>Déplacez la carte jusqu’au lieu de livraison, ou choisissez un quartier.</Text>
+          </View>
           {!approved ? storeBanner : null}
-          {errors.dropoff ? <Banner message={errors.dropoff} /> : null}
-          <SectionTitle>Quartiers proches</SectionTitle>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {suggestions.map((n) => (
-              <Chip
-                key={n.name}
-                label={n.name}
-                selected={zoneName(dropoff) === n.name && pinPlaced}
-                color={colors.green}
-                onPress={() => {
-                  mapRef.current?.centerOn(n.lat, n.lng, 15);
-                  onCenter(n.lat, n.lng);
-                }}
-              />
-            ))}
+          {errors.dropoff ? <DarkBanner message={errors.dropoff} /> : null}
+          <SectionLabel>Quartiers proches</SectionLabel>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled">
+            {suggestions.map((n) => {
+              const selected = zoneName(dropoff) === n.name && pinPlaced;
+              return (
+                <Pill
+                  key={n.name}
+                  label={n.name}
+                  tone={selected ? 'green' : 'outline'}
+                  icon={selected ? 'check' : undefined}
+                  onPress={() => {
+                    mapRef.current?.centerOn(n.lat, n.lng, 15);
+                    onCenter(n.lat, n.lng);
+                  }}
+                />
+              );
+            })}
           </ScrollView>
-          <Field
+          <DarkField
             label="Adresse de livraison"
             placeholder="Quartier, rue (ex. Patte d’Oie, rue 15.23)"
             value={dropoff.address}
@@ -335,7 +376,7 @@ function DestinationStep({
             maxLength={200}
             testID="dropoff-address"
           />
-          <Field
+          <DarkField
             label="Point de repère"
             placeholder="Ex. derrière la station Total, portail bleu"
             value={dropoff.landmark}
@@ -343,8 +384,8 @@ function DestinationStep({
             maxLength={200}
             testID="dropoff-landmark"
           />
-          <SectionTitle>Destinataire</SectionTitle>
-          <Field
+          <SectionLabel>Destinataire</SectionLabel>
+          <DarkField
             label="Nom du destinataire"
             placeholder="Ex. Awa Ouédraogo"
             value={form.recipientName}
@@ -353,7 +394,7 @@ function DestinationStep({
             maxLength={80}
             testID="recipient-name"
           />
-          <Field
+          <DarkField
             label="Téléphone du destinataire"
             placeholder="70 12 34 56"
             keyboardType="phone-pad"
@@ -364,22 +405,23 @@ function DestinationStep({
             maxLength={20}
             testID="recipient-phone"
           />
-          <Row style={styles.switchRow}>
-            <View style={{ flex: 1 }}>
+          <View style={styles.switchRow}>
+            <View style={styles.flex}>
               <Text style={styles.switchLabel}>Le destinataire est une entreprise</Text>
-              <Muted>Boutique, bureau, autre commerce…</Muted>
+              <Text style={styles.small}>Boutique, bureau, autre commerce…</Text>
             </View>
             <Switch
               value={form.recipientIsBusiness}
               onValueChange={(v) => setForm((f) => ({ ...f, recipientIsBusiness: v }))}
-              trackColor={{ true: colors.green, false: colors.border }}
+              trackColor={{ true: dark.green, false: dark.raisedHigh }}
+              thumbColor="#FFFFFF"
               accessibilityLabel="Le destinataire est une entreprise"
               testID="recipient-business"
             />
-          </Row>
+          </View>
         </ScrollView>
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-          <Button title="Continuer" color={colors.orange} onPress={onNext} testID="wizard-next" />
+          <Pill label="Continuer" icon="chevronRight" tone="green" size="lg" onPress={onNext} style={styles.stretch} testID="wizard-next" />
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -389,6 +431,41 @@ function DestinationStep({
 /* ------------------------------------------------------------------ */
 /* 2. Colis et prix                                                    */
 /* ------------------------------------------------------------------ */
+
+/** Disque vert au véhicule de profil : le même dessin que le marqueur du livreur sur les cartes. */
+function VehicleDisc({ type }: { type: VehicleType }) {
+  return (
+    <View style={styles.vehicleDisc}>
+      <ArtView rects={vehicleSideGlyph(type)} size={26} />
+    </View>
+  );
+}
+
+/** Choix du véhicule avec le prix et la durée du devis (pastilles sélectionnables, façon Uber). */
+function VehicleChoices({ options, selected, onSelect }: { options: QuoteOptionDto[]; selected: VehicleType | null; onSelect: (v: VehicleType) => void }) {
+  return (
+    <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
+      {options.map((o) => {
+        const isSel = selected === o.vehicleType;
+        return (
+          <ChoiceRow
+            key={o.vehicleType}
+            shape="pill"
+            selected={isSel}
+            disabled={!o.available}
+            onPress={() => onSelect(o.vehicleType)}
+            leading={<VehicleDisc type={o.vehicleType} />}
+            title={LABELS.vehicleType[o.vehicleType]}
+            subtitle={o.available ? `~${o.estimatedMinutes} min · ${VEHICLE_HINT[o.vehicleType]}` : 'Indisponible pour le moment'}
+            right={<Text style={[styles.price, isSel && { color: dark.green }]}>{o.available ? formatFcfa(o.deliveryFee) : '—'}</Text>}
+            accessibilityLabel={`${LABELS.vehicleType[o.vehicleType]}, ${o.available ? formatFcfa(o.deliveryFee) : 'indisponible'}`}
+            testID={`vehicle-${o.vehicleType}`}
+          />
+        );
+      })}
+    </View>
+  );
+}
 
 function PackageStep({
   form,
@@ -414,7 +491,7 @@ function PackageStep({
   const cash = parseAmount(form.cashToCollect) ?? 0;
   return (
     <>
-      <Field
+      <DarkField
         label="Que livrez-vous ?"
         placeholder="Ex. 2 cartons, une enveloppe de documents"
         value={form.packageDescription}
@@ -423,48 +500,45 @@ function PackageStep({
         maxLength={200}
         testID="package-description"
       />
-      <Row style={{ flexWrap: 'wrap' }} gap={6}>
+      <View style={styles.wrap}>
         {PACKAGE_SUGGESTIONS.map((p) => (
-          <Chip key={p} label={p} selected={form.packageDescription === p} color={colors.orange} onPress={() => set('packageDescription', p)} />
+          <Pill key={p} label={p} tone={form.packageDescription === p ? 'green' : 'outline'} onPress={() => set('packageDescription', p)} />
         ))}
-      </Row>
-
-      <SectionTitle>Véhicule</SectionTitle>
-      {quoteLoading && !quote ? <Loading label="Calcul des prix…" /> : null}
-      {quote ? <VehicleOptions options={quote.options} selected={vehicle} onSelect={(v) => set('vehicleType', v)} /> : null}
-      {quote ? (
-        <Muted>
-          Distance estimée : {formatKm(quote.distanceKm)} · retrait chez {storeName}.
-        </Muted>
-      ) : null}
-      {quoteError ? <Banner message={quoteError} /> : null}
-      {errors.vehicleType ? <Banner message={errors.vehicleType} /> : null}
-
-      <SectionTitle>Qui paie la livraison ?</SectionTitle>
-      <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
-        {(['SENDER', 'RECIPIENT'] as FeePayer[]).map((p) => {
-          const sel = form.feePaidBy === p;
-          return (
-            <Pressable
-              key={p}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: sel }}
-              onPress={() => set('feePaidBy', p)}
-              style={[styles.payer, sel && styles.payerSelected]}
-              testID={`payer-${p}`}
-            >
-              <View style={[styles.radio, sel && styles.radioOn]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.payerTitle}>{FEE_PAYER_LABELS[p].title}</Text>
-                <Muted>{p === 'SENDER' ? 'En espèces au livreur, au retrait du colis' : 'En espèces au livreur, à la livraison'}</Muted>
-              </View>
-              {fee !== null ? <Text style={styles.payerFee}>{formatFcfa(fee)}</Text> : null}
-            </Pressable>
-          );
-        })}
       </View>
 
-      <Field
+      <SectionLabel>Véhicule</SectionLabel>
+      {quoteLoading && !quote ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color={dark.green} />
+          <Text style={styles.muted}>Calcul des prix…</Text>
+        </View>
+      ) : null}
+      {quote ? <VehicleChoices options={quote.options} selected={vehicle} onSelect={(v) => set('vehicleType', v)} /> : null}
+      {quote ? (
+        <Text style={styles.small}>
+          Distance estimée : {formatKm(quote.distanceKm)} · retrait chez {storeName}.
+        </Text>
+      ) : null}
+      {quoteError ? <DarkBanner message={quoteError} /> : null}
+      {errors.vehicleType ? <DarkBanner message={errors.vehicleType} /> : null}
+
+      <SectionLabel>Qui paie la livraison ?</SectionLabel>
+      <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
+        {(['SENDER', 'RECIPIENT'] as FeePayer[]).map((p) => (
+          <ChoiceRow
+            key={p}
+            shape="pill"
+            selected={form.feePaidBy === p}
+            onPress={() => set('feePaidBy', p)}
+            title={FEE_PAYER_LABELS[p].title}
+            subtitle={p === 'SENDER' ? 'En espèces au livreur, au retrait du colis' : 'En espèces au livreur, à la livraison'}
+            right={fee !== null ? <Text style={styles.price}>{formatFcfa(fee)}</Text> : null}
+            testID={`payer-${p}`}
+          />
+        ))}
+      </View>
+
+      <DarkField
         label="Montant à encaisser auprès du destinataire (facultatif)"
         placeholder="0"
         keyboardType="number-pad"
@@ -476,12 +550,14 @@ function PackageStep({
         testID="cash-to-collect"
       />
       {cash > 0 || form.feePaidBy === 'RECIPIENT' ? (
-        <View style={styles.collectBox} testID="recipient-pays">
-          <Text style={styles.collectLabel}>Le destinataire paiera au livreur</Text>
-          <Text style={styles.collectValue}>{formatFcfa(recipientPays(fee, form.feePaidBy, cash))}</Text>
-        </View>
+        <AmountRow
+          label="Le destinataire paiera au livreur"
+          amount={recipientPays(fee, form.feePaidBy, cash)}
+          detail={cash > 0 && form.feePaidBy === 'RECIPIENT' ? 'Marchandise + frais de livraison, en espèces.' : 'En espèces, à la livraison.'}
+          testID="recipient-pays"
+        />
       ) : null}
-      <Field
+      <DarkField
         label="Instructions pour le livreur (facultatif)"
         placeholder="Ex. appeler en arrivant, fragile"
         value={form.notes}
@@ -495,6 +571,15 @@ function PackageStep({
 /* ------------------------------------------------------------------ */
 /* 3. Récapitulatif                                                    */
 /* ------------------------------------------------------------------ */
+
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryLine}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
 
 function SummaryStep({
   form,
@@ -515,154 +600,127 @@ function SummaryStep({
   const d = form.dropoff;
   return (
     <>
-      <View style={styles.trip} testID="summary-trip">
+      <View style={styles.card} testID="summary-trip">
         <View style={styles.tripRow}>
-          <View style={[styles.tripDot, { backgroundColor: colors.orange, borderRadius: 4 }]} />
-          <View style={{ flex: 1 }}>
+          <View style={[styles.tripDot, styles.tripDotPickup]} />
+          <View style={styles.flex}>
             <Text style={styles.tripTitle}>{storeName}</Text>
-            <Muted numberOfLines={1}>Retrait · {storeAddress}</Muted>
+            <Text style={styles.small} numberOfLines={1}>
+              Retrait · {storeAddress}
+            </Text>
           </View>
         </View>
         <View style={styles.tripLine} />
         <View style={styles.tripRow}>
-          <View style={[styles.tripDot, { backgroundColor: colors.green }]} />
-          <View style={{ flex: 1 }}>
+          <View style={[styles.tripDot, styles.tripDotDropoff]} />
+          <View style={styles.flex}>
             <Text style={styles.tripTitle}>
               {form.recipientName.trim()}
-              {form.recipientIsBusiness ? '  🏢' : ''}
+              {form.recipientIsBusiness ? <Text style={styles.small}> · entreprise</Text> : null}
             </Text>
-            <Muted>
+            <Text style={styles.small}>
               {d?.address}
               {d?.landmark ? ` · Repère : ${d.landmark}` : ''}
-            </Muted>
-            <Muted>📞 {formatPhone(form.recipientPhone.trim()) || form.recipientPhone}</Muted>
+            </Text>
+            <Text style={styles.small}>{formatPhone(form.recipientPhone.trim()) || form.recipientPhone}</Text>
           </View>
         </View>
       </View>
 
-      <View style={styles.summaryCard}>
-        <KeyValue label="Colis" value={form.packageDescription.trim()} />
-        {vehicle ? (
-          <KeyValue
-            label="Véhicule"
-            value={`${VEHICLE_EMOJI[vehicle]} ${LABELS.vehicleType[vehicle]}${option ? ` · ~${option.estimatedMinutes} min` : ''}`}
-          />
-        ) : null}
-        <KeyValue label="Frais de livraison" value={fee !== null ? formatFcfa(fee) : '…'} />
-        <KeyValue label="Payés par" value={`${FEE_PAYER_LABELS[form.feePaidBy].title} (${FEE_PAYER_LABELS[form.feePaidBy].detail})`} />
-        {cash > 0 ? <KeyValue label="Marchandise à encaisser" value={formatFcfa(cash)} /> : null}
-        {form.notes.trim() ? <Muted>Instructions : {form.notes.trim()}</Muted> : null}
+      <View style={[styles.card, { gap: spacing.sm }]}>
+        <SummaryLine label="Colis" value={form.packageDescription.trim()} />
+        {vehicle ? <SummaryLine label="Véhicule" value={`${LABELS.vehicleType[vehicle]}${option ? ` · ~${option.estimatedMinutes} min` : ''}`} /> : null}
+        <SummaryLine label="Frais de livraison" value={fee !== null ? formatFcfa(fee) : '…'} />
+        <SummaryLine label="Payés par" value={`${FEE_PAYER_LABELS[form.feePaidBy].title} (${FEE_PAYER_LABELS[form.feePaidBy].detail})`} />
+        {cash > 0 ? <SummaryLine label="Marchandise à encaisser" value={formatFcfa(cash)} /> : null}
+        {form.notes.trim() ? <Text style={styles.notes}>« {form.notes.trim()} »</Text> : null}
       </View>
 
       {form.feePaidBy === 'SENDER' && fee !== null ? (
-        <View style={[styles.collectBox, { backgroundColor: colors.orangeLight }]}>
-          <Text style={styles.collectLabel}>Vous payez au livreur au retrait</Text>
-          <Text style={styles.collectValue}>{formatFcfa(fee)}</Text>
-        </View>
+        <AmountRow label="Vous payez au livreur au retrait" amount={fee} detail="Frais de livraison, en espèces." tone="text" />
       ) : null}
-      <View style={styles.collectBox} testID="summary-recipient-pays">
-        <Text style={styles.collectLabel}>Le destinataire paie à la livraison</Text>
-        <Text style={styles.collectValue} testID="summary-recipient-pays-value">
-          {formatFcfa(recipientPays(fee, form.feePaidBy, cash))}
-        </Text>
-      </View>
-      <Muted>
+      <AmountRow
+        label="Le destinataire paie à la livraison"
+        amount={recipientPays(fee, form.feePaidBy, cash)}
+        detail={cash > 0 ? 'Marchandise encaissée par le livreur, reversée à votre entreprise par Yaar.' : null}
+        testID="summary-recipient-pays"
+      />
+      <Text style={styles.small}>
         Après la demande, envoyez au destinataire son lien de suivi : il verra le livreur en direct et le code à lui donner.
-      </Muted>
+      </Text>
     </>
   );
 }
 
-const shadow = {
-  shadowColor: '#0F2E22',
-  shadowOpacity: 0.2,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 6,
-} as const;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
+  root: { flex: 1, backgroundColor: dark.background },
+  centered: { alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.xl },
+  emptyTitle: { color: dark.text, fontSize: 17, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
   footer: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
+    backgroundColor: dark.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: dark.border,
   },
+  stretch: { alignSelf: 'stretch', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.white,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
   },
-  headerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F3F5' },
-  headerBtnText: { fontSize: 20, fontWeight: '800', color: colors.text },
-  stepText: { fontSize: 12, color: colors.textMuted, fontWeight: '700' },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
-  stepDots: { flexDirection: 'row', gap: 4 },
-  dot: { width: 18, height: 5, borderRadius: 3, backgroundColor: colors.border },
+  stepText: { color: BUSINESS_ACCENT },
+  headerTitle: { ...typeScale.title, color: dark.text },
+  stepBars: { flexDirection: 'row', gap: 4 },
+  stepBar: { width: 18, height: 5, borderRadius: 3, backgroundColor: dark.raisedHigh },
   mapTop: { position: 'absolute', left: spacing.md, right: spacing.md, flexDirection: 'row', alignItems: 'center' },
-  fab: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', ...shadow },
-  fabText: { fontSize: 18, fontWeight: '800', color: colors.text },
   mapTitle: { flex: 1, alignItems: 'center' },
-  mapTitleText: {
-    backgroundColor: colors.white,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    fontWeight: '800',
-    color: colors.text,
-    overflow: 'hidden',
-  },
   sheet: {
     flex: 1,
-    marginTop: -18,
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    ...shadow,
-    shadowOffset: { width: 0, height: -3 },
+    marginTop: -SHEET_RADIUS,
+    backgroundColor: dark.surface,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 12,
   },
   sheetContent: { padding: spacing.lg, gap: spacing.md },
-  switchRow: { alignItems: 'center', gap: spacing.md },
-  switchLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
-  payer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
+  title: { ...typeScale.title, color: dark.text },
+  muted: { color: dark.textMuted, fontSize: 14, lineHeight: 20 },
+  small: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },
+  chips: { gap: spacing.sm, paddingRight: spacing.md },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xs },
+  switchLabel: { fontSize: 15, fontWeight: '800', color: dark.text },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  vehicleDisc: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: MAP_COLORS.driver,
     borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-  },
-  payerSelected: { borderColor: colors.green, backgroundColor: colors.greenLight },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border },
-  radioOn: { borderColor: colors.green, borderWidth: 6 },
-  payerTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  payerFee: { fontSize: 15, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
-  collectBox: {
-    flexDirection: 'row',
+    borderColor: '#FFFFFF',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    backgroundColor: colors.greenLight,
+    justifyContent: 'center',
   },
-  collectLabel: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.text },
-  collectValue: { fontSize: 18, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
-  trip: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
+  price: { fontSize: 16, fontWeight: '900', color: dark.text, fontVariant: ['tabular-nums'] },
+  card: { backgroundColor: dark.raised, borderRadius: 18, borderWidth: 1, borderColor: dark.border, padding: spacing.md },
   tripRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
-  tripDot: { width: 14, height: 14, borderRadius: 7, marginTop: 4 },
-  tripLine: { width: 2, height: 18, backgroundColor: colors.border, marginLeft: 6, marginVertical: 2 },
-  tripTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  summaryCard: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm },
+  tripDot: { width: 16, height: 16, marginTop: 3, borderWidth: 2, borderColor: '#FFFFFF' },
+  tripDotPickup: { backgroundColor: MAP_COLORS.pickup, borderRadius: 5 },
+  tripDotDropoff: { backgroundColor: dark.green, borderRadius: 8 },
+  tripLine: { width: 2, height: 20, backgroundColor: dark.border, marginLeft: 7, marginVertical: 3 },
+  tripTitle: { fontSize: 16, fontWeight: '900', color: dark.text },
+  summaryLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
+  summaryLabel: { color: dark.textMuted, fontSize: 14, fontWeight: '700' },
+  summaryValue: { flex: 1, color: dark.text, fontSize: 14, fontWeight: '900', textAlign: 'right', fontVariant: ['tabular-nums'] },
+  notes: { color: dark.textMuted, fontSize: 14, lineHeight: 20, fontStyle: 'italic' },
 });

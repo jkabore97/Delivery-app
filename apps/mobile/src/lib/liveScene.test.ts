@@ -120,6 +120,20 @@ describe('overviewScene', () => {
     expect(scene.markers.filter((m) => m.kind === 'driver').map((m) => m.id)).toEqual(['b:driver']);
     expect(scene.fitPoints.length).toBeGreaterThanOrEqual(4);
   });
+
+  it('destinataires en épingles « avatar » (option de l’accueil de l’entreprise) ; l’entreprise garde son pictogramme', () => {
+    const list = [delivery({ id: 'a' }), delivery({ id: 'b', recipientName: 'Boutique Faso Mode', status: 'ASSIGNED' })];
+    const plain = overviewScene({ lat: 12.3686, lng: -1.5275 }, list);
+    expect(plain.markers.every((m) => m.initials === undefined)).toBe(true);
+    const avatars = overviewScene({ lat: 12.3686, lng: -1.5275 }, list, 'Pharmacie du Centre', { recipientInitials: true });
+    expect(avatars.markers.map((m) => [m.id, m.initials ?? null])).toEqual([
+      ['business', null],
+      ['a:dropoff', 'AK'],
+      ['a:driver', null],
+      ['b:dropoff', 'BF'],
+      ['b:driver', null],
+    ]);
+  });
 });
 
 describe('estimateArrivalMinutes', () => {

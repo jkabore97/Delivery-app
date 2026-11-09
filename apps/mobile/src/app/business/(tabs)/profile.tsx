@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import type { AddressDto, StoreDto } from '@yaar/shared';
 import { AddressPicker } from '../../../components/AddressPicker';
+import { BUSINESS_ACCENT } from '../../../components/business/accent';
+import { Icon } from '../../../components/design/Icon';
+import { StatusChip, type ChipTone } from '../../../components/design/Pill';
+import { avatarInitials } from '../../../components/map/markerArt';
 import { ProfileScreen } from '../../../components/ProfileScreen';
 import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import { Banner, Button, Card, Chip, Field, Loading, Muted, Row, SectionTitle, Subtitle } from '../../../components/ui';
@@ -9,7 +14,7 @@ import { errorMessage } from '../../../lib/api';
 import { formatPhone, normalizePhone } from '../../../lib/phone';
 import { useApi } from '../../../state/auth';
 import { useBusiness } from '../../../state/business';
-import { colors } from '../../../theme';
+import { colors, spacing, typeScale } from '../../../theme';
 
 interface BusinessForm {
   name: string;
@@ -27,6 +32,36 @@ function formFromStore(s: StoreDto | null): BusinessForm {
     openingHours: s?.openingHours ?? '',
     location: s ? { lat: s.lat, lng: s.lng, address: s.address, landmark: s.landmark } : null,
   };
+}
+
+const APPROVAL_CHIP: Record<NonNullable<StoreDto['approvalStatus']>, { label: string; tone: ChipTone }> = {
+  APPROVED: { label: 'VALIDÉE PAR YAAR', tone: 'green' },
+  PENDING: { label: 'EN ATTENTE DE VALIDATION', tone: 'amber' },
+  SUSPENDED: { label: 'SUSPENDUE', tone: 'red' },
+};
+
+/** En-tête : initiales de l'entreprise (comme son épingle chez ses clients), nom, adresse de retrait, validation. */
+function BusinessIdentity({ store }: { store: StoreDto }) {
+  const chip = APPROVAL_CHIP[store.approvalStatus ?? 'APPROVED'];
+  return (
+    <View style={styles.identity} testID="business-identity">
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{avatarInitials(store.name) ?? '?'}</Text>
+      </View>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={styles.name} numberOfLines={2}>
+          {store.name}
+        </Text>
+        <View style={styles.addressRow}>
+          <Icon name="pin" size={15} color={colors.textMuted} strokeWidth={2.2} />
+          <Text style={styles.address} numberOfLines={2}>
+            {store.address}
+          </Text>
+        </View>
+        <StatusChip label={chip.label} tone={chip.tone} surface="light" />
+      </View>
+    </View>
+  );
 }
 
 /** Profil de l'entreprise (nom, téléphone, adresse de retrait) + compte et déconnexion. */
@@ -86,13 +121,14 @@ function BusinessProfileCard() {
       {stores.length > 1 && !creating ? (
         <Row style={{ flexWrap: 'wrap' }}>
           {stores.map((s) => (
-            <Chip key={s.id} label={s.name} selected={s.id === store?.id} color={colors.orange} onPress={() => selectStore(s.id)} />
+            <Chip key={s.id} label={s.name} selected={s.id === store?.id} color={BUSINESS_ACCENT} onPress={() => selectStore(s.id)} />
           ))}
         </Row>
       ) : null}
+      {editing ? <BusinessIdentity store={editing} /> : null}
       {editing ? <StoreApprovalBanner store={editing} /> : null}
       <Card>
-        <Subtitle>{editing ? `🏪 ${editing.name}` : '🏪 Mon entreprise'}</Subtitle>
+        <Subtitle style={styles.cardTitle}>{editing ? 'Mon entreprise' : 'Nouvelle entreprise'}</Subtitle>
         <Muted>
           L’adresse de l’entreprise est le point de retrait des livreurs. Vos clients voient son nom sur le suivi de leur colis.
         </Muted>
@@ -123,7 +159,7 @@ function BusinessProfileCard() {
         <AddressPicker value={form.location} onChange={(a) => set('location', a)} variant="pickup" addressLabel="Adresse de l’entreprise" />
         <Button
           title={editing ? 'Enregistrer' : 'Créer mon entreprise'}
-          color={colors.orange}
+          color={BUSINESS_ACCENT}
           onPress={save}
           loading={busy}
           disabled={!valid}
@@ -133,7 +169,7 @@ function BusinessProfileCard() {
           <Button
             title={creating ? 'Annuler' : '＋ Ajouter un autre établissement'}
             variant="ghost"
-            color={colors.orange}
+            color={BUSINESS_ACCENT}
             onPress={() => setCreating((c) => !c)}
           />
         ) : null}
@@ -143,5 +179,24 @@ function BusinessProfileCard() {
 }
 
 export default function BusinessProfile() {
-  return <ProfileScreen color={colors.orange} top={<BusinessProfileCard />} />;
+  return <ProfileScreen color={BUSINESS_ACCENT} top={<BusinessProfileCard />} />;
 }
+
+const styles = StyleSheet.create({
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.orangeLight, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 22, fontWeight: '900', color: '#9A4F00', letterSpacing: 0.3 },
+  name: { ...typeScale.subtitle, fontSize: 20, fontWeight: '900', color: colors.text },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  address: { flex: 1, fontSize: 13.5, color: colors.textMuted },
+  cardTitle: { fontWeight: '900', letterSpacing: -0.2 },
+});

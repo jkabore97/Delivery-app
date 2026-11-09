@@ -1,16 +1,24 @@
 import { useCallback, useState } from 'react';
-import { Pressable } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LOCATION_RETENTION_MONTHS, type OrderDto } from '@yaar/shared';
-import { Badge, Banner, Button, Card, Empty, KeyValue, Loading, Muted, Row, Screen, Subtitle, Title } from '../../../components/ui';
+import { DarkBanner } from '../../../components/business/DarkForm';
+import { HistoryDeliveryCard } from '../../../components/business/DeliveryCards';
+import { Icon } from '../../../components/design/Icon';
+import { Pill } from '../../../components/design/Pill';
 import { errorMessage } from '../../../lib/api';
-import { amountsToCollect, BUSINESS_HISTORY_STATUSES, businessStatusLabel, FEE_PAYER_LABELS } from '../../../lib/delivery';
-import { formatDateTime, formatFcfa, formatOrderNumber } from '../../../lib/format';
+import { BUSINESS_HISTORY_STATUSES } from '../../../lib/delivery';
 import { useApi } from '../../../state/auth';
+import { dark, spacing, typeScale } from '../../../theme';
 
 const PAGE_SIZE = 20;
 
-/** Onglet « Historique » : livraisons terminées (livrées ou annulées), « Voir plus » pour la suite. */
+/**
+ * Onglet « Historique » (fond sombre, comme celui du livreur) : livraisons terminées (livrées ou annulées) en cartes
+ * de colis, montant encaissé auprès du destinataire, « Voir plus » pour la suite ; toucher une carte → son détail.
+ */
 export default function BusinessHistoryScreen() {
   const api = useApi();
   const [items, setItems] = useState<OrderDto[] | null>(null);
@@ -18,6 +26,8 @@ export default function BusinessHistoryScreen() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Barre d'état claire sur ce fond sombre, seulement quand l'onglet est affiché (les onglets restent montés).
+  const [focused, setFocused] = useState(false);
 
   const load = useCallback(
     async (p: number) => {
@@ -39,50 +49,55 @@ export default function BusinessHistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setFocused(true);
       void load(1);
+      return () => setFocused(false);
     }, [load]),
   );
 
   return (
-    <Screen refreshing={loading} onRefresh={() => void load(1)}>
-      <Title>Historique</Title>
-      {error ? <Banner message={error} /> : null}
-      {items === null && loading ? <Loading /> : null}
-      {items?.length === 0 ? <Empty title="Aucune livraison terminée pour le moment." /> : null}
-      {items?.map((o) => {
-        const badge = businessStatusLabel(o.status);
-        const when = o.deliveredAt ?? o.cancelledAt ?? o.createdAt;
-        // Même montant que le détail de la livraison : marchandise + frais si le destinataire les paie.
-        const collected = o.status === 'DELIVERED' ? amountsToCollect(o).atDropoff : 0;
-        return (
-          <Pressable key={o.id} onPress={() => router.push(`/business/livraison/${o.id}`)} accessibilityRole="button">
-            <Card>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Subtitle style={{ fontSize: 16, flex: 1 }}>
-                  {formatOrderNumber(o.number)} · {o.recipientName ?? 'Destinataire'}
-                </Subtitle>
-                <Badge label={badge.label} tone={badge.tone} />
-              </Row>
-              {o.parcelDescription ? <Muted numberOfLines={1}>📦 {o.parcelDescription}</Muted> : null}
-              <KeyValue
-                label={formatDateTime(when)}
-                value={`${formatFcfa(o.deliveryFee)}${o.feePaidBy ? ` · ${FEE_PAYER_LABELS[o.feePaidBy].title.toLowerCase()}` : ''}`}
-              />
-              {collected > 0 ? (
-                <Muted testID={`history-collected-${o.id}`}>Encaissé auprès du destinataire : {formatFcfa(collected)}</Muted>
-              ) : null}
-              {o.status === 'CANCELLED' && o.cancelReason ? <Muted>Motif : {o.cancelReason}</Muted> : null}
-            </Card>
-          </Pressable>
-        );
-      })}
-      {items && items.length < total ? (
-        <Button title="Voir plus" variant="outline" onPress={() => void load(page + 1)} loading={loading} />
-      ) : null}
-      <Muted>
-        Touchez une livraison pour revoir son détail. Les adresses et numéros des destinataires sont effacés{' '}
-        {LOCATION_RETENTION_MONTHS} mois après la livraison (protection des données) ; les montants restent dans l’historique.
-      </Muted>
-    </Screen>
+    <SafeAreaView style={styles.root} edges={['top']}>
+      {focused ? <StatusBar style="light" /> : null}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={loading && items !== null} onRefresh={() => void load(1)} tintColor={dark.text} />}
+      >
+        <Text style={styles.title} accessibilityRole="header">
+          Historique
+        </Text>
+        {error ? <DarkBanner message={error} /> : null}
+        {items === null && loading ? <ActivityIndicator color={dark.green} style={{ marginTop: spacing.xl }} /> : null}
+        {items?.length === 0 ? (
+          <View style={styles.empty}>
+            <Icon name="package" size={40} color={dark.textFaint} />
+            <Text style={styles.emptyText}>Aucune livraison terminée pour le moment.</Text>
+          </View>
+        ) : null}
+        {items && items.length > 0 ? (
+          <Text style={styles.summary}>{`${total} livraison${total > 1 ? 's' : ''} terminée${total > 1 ? 's' : ''}`}</Text>
+        ) : null}
+        {items?.map((o) => (
+          <HistoryDeliveryCard key={o.id} order={o} onPress={() => router.push(`/business/livraison/${o.id}`)} />
+        ))}
+        {items && items.length < total ? (
+          <Pill label="Voir plus" icon="chevronDown" tone="outline" onPress={() => void load(page + 1)} loading={loading} style={styles.more} testID="history-more" />
+        ) : null}
+        <Text style={styles.note}>
+          Touchez une livraison pour revoir son détail. Les adresses et numéros des destinataires sont effacés{' '}
+          {LOCATION_RETENTION_MONTHS} mois après la livraison (protection des données) ; les montants restent dans l’historique.
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: dark.background },
+  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
+  title: { ...typeScale.title, color: dark.text, marginTop: spacing.xs },
+  empty: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xl * 2 },
+  emptyText: { color: dark.textMuted, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  summary: { color: dark.textMuted, fontSize: 13, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase', paddingHorizontal: 4 },
+  more: { alignSelf: 'center' },
+  note: { color: dark.textFaint, fontSize: 12.5, lineHeight: 17, textAlign: 'center', marginTop: spacing.sm },
+});

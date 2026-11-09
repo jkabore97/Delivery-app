@@ -2,6 +2,10 @@ import { Share } from 'react-native';
 import {
   copyText,
   recipientCallName,
+  recipientWhatsappText,
+  shareFeedback,
+  shareButtonShortLabel,
+  shareOrCopyTrackingLink,
   shareButtonLabel,
   shareTrackingLink,
   trackingShareMessage,
@@ -108,5 +112,33 @@ describe('« Copier le lien »', () => {
     expect(area.value).toBe(URL_);
     expect(doc.execCommand).toHaveBeenCalledWith('copy');
     await expect(copyText(URL_, env())).resolves.toBe(false);
+  });
+});
+
+describe('boutons des livraisons de l’entreprise', () => {
+  it('WhatsApp au destinataire : message du lien de suivi, sinon bonjour avec le numéro du colis', () => {
+    expect(recipientWhatsappText(input)).toBe(trackingShareMessage(input));
+    expect(recipientWhatsappText({ ...input, url: null, orderNumber: 1052 })).toBe(
+      'Bonjour Awa, Pharmacie du Centre vous envoie un colis (#1052) avec Yaar Livraison.',
+    );
+    expect(recipientWhatsappText({ url: null, recipientName: null, businessName: null })).toBe(
+      'Bonjour, votre expéditeur vous envoie un colis avec Yaar Livraison.',
+    );
+  });
+
+  it('« Partager le lien » : partage du téléphone ; ordinateur sans partage : lien copié (pas WhatsApp)', async () => {
+    const phone = env({ platform: 'android' });
+    await expect(shareOrCopyTrackingLink(input, phone)).resolves.toBe('shared');
+    const writeText = jest.fn(async () => undefined);
+    const desktop = env({ navigator: { clipboard: { writeText } } });
+    await expect(shareOrCopyTrackingLink(input, desktop)).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith(URL_);
+    expect(desktop.opened).toEqual([]);
+    await expect(shareOrCopyTrackingLink(input, env())).resolves.toBe('failed');
+    expect(shareFeedback('copied')).toBe('Lien copié ✓');
+    expect(shareFeedback('shared')).toBe('Lien envoyé.');
+    expect(shareFeedback('dismissed')).toBeNull();
+    expect(shareButtonShortLabel(env())).toBe('Envoyer par WhatsApp');
+    expect(shareButtonShortLabel(env({ platform: 'android' }))).toBe('Envoyer le lien de suivi');
   });
 });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import { copyText, recipientCallName, shareButtonLabel, shareFeedback, shareTrackingLink } from '../lib/share';
+import { copyText, recipientCallName, shareButtonLabel, shareButtonShortLabel, shareFeedback, shareTrackingLink } from '../lib/share';
 import { colors, dark, radius, spacing } from '../theme';
 import { Icon } from './design/Icon';
 import { Pill } from './design/Pill';
@@ -73,7 +73,7 @@ export function ShareTrackingCard({
         {who} suivra le livreur en direct sur la carte, sans créer de compte, et y trouvera le code à donner au livreur.
       </Text>
       {d ? (
-        <Pill label={shareButtonLabel()} icon="share" tone="green" size="lg" onPress={send} loading={busy} style={styles.stretch} testID="share-link-button" />
+        <Pill label={shareButtonShortLabel()} icon="share" tone="green" size="lg" onPress={send} loading={busy} style={styles.stretch} testID="share-link-button" />
       ) : (
         <Button title={shareButtonLabel()} color={colors.green} onPress={send} loading={busy} testID="share-link-button" />
       )}

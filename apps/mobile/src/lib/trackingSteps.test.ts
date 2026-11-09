@@ -1,4 +1,4 @@
-import { trackingHeadline, trackingSteps } from './trackingSteps';
+import { recipientToDriverText, trackingHeadline, trackingSteps } from './trackingSteps';
 
 const states = (status: Parameters<typeof trackingSteps>[0]) => trackingSteps(status).map((s) => s.state);
 
@@ -27,5 +27,14 @@ describe('étapes du suivi', () => {
     expect(trackingHeadline('PICKED_UP', 'business', { recipient: 'Awa' }).title).toBe('En route vers Awa');
     expect(trackingHeadline('DELIVERED', 'recipient').title).toBe('Colis livré : merci !');
     expect(trackingHeadline('CANCELLED', 'recipient', { sender: 'Pharmacie du Centre' }).subtitle).toMatch(/Contactez Pharmacie du Centre/);
+  });
+});
+
+describe('message WhatsApp du destinataire à son livreur', () => {
+  it('prénom du livreur, numéro du colis et entreprise ; sans nom : bonjour simple', () => {
+    expect(recipientToDriverText({ driver: 'Issouf', sender: 'Pharmacie du Centre', number: 1052 })).toBe(
+      'Bonjour Issouf, je suis le destinataire du colis #1052 de Pharmacie du Centre (Yaar Livraison).',
+    );
+    expect(recipientToDriverText({ driver: null, sender: ' ', number: 7 })).toBe('Bonjour, je suis le destinataire du colis #7 (Yaar Livraison).');
   });
 });

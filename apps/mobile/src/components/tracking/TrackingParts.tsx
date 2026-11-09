@@ -313,31 +313,33 @@ export function DriverCard({
 }) {
   const p = TRACKING_PALETTES[theme];
   return (
-    <View style={[styles.card, { backgroundColor: p.card, borderColor: p.border }]} testID="driver-card">
-      <DriverAvatar vehicleType={vehicleType} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[styles.cardTitle, { color: p.text }]} numberOfLines={1}>
-          {name ?? 'Votre livreur'}
-          {ratingAvg !== null ? <Text style={[styles.rating, { color: p.star }]}>{`  ★ ${ratingAvg.toFixed(1).replace('.', ',')}`}</Text> : null}
-        </Text>
-        <Text style={[styles.muted, { color: p.muted }]} numberOfLines={1}>
-          {LABELS.vehicleType[vehicleType]}
-          {plate ? ` · ${plate}` : ''}
-        </Text>
-        <View style={styles.verifiedRow}>
-          <TrackingIcon name="check" size={13} color={p.accent} strokeWidth={3} />
-          <Text style={[styles.verified, { color: p.accent }]} numberOfLines={1}>
-            Identité vérifiée par Yaar
+    <View style={[styles.driverCard, { backgroundColor: p.card, borderColor: p.border }]} testID="driver-card">
+      <View style={styles.driverRow}>
+        <DriverAvatar vehicleType={vehicleType} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[styles.cardTitle, { color: p.text }]} numberOfLines={1}>
+            {name ?? 'Votre livreur'}
+            {ratingAvg !== null ? <Text style={[styles.rating, { color: p.star }]}>{`  ★ ${ratingAvg.toFixed(1).replace('.', ',')}`}</Text> : null}
           </Text>
+          <Text style={[styles.muted, { color: p.muted }]} numberOfLines={1}>
+            {LABELS.vehicleType[vehicleType]}
+            {plate ? ` · ${plate}` : ''}
+          </Text>
+          <View style={styles.verifiedRow}>
+            <TrackingIcon name="check" size={13} color={p.accent} strokeWidth={3} />
+            <Text style={[styles.verified, { color: p.accent }]} numberOfLines={1}>
+              Identité vérifiée par Yaar
+            </Text>
+          </View>
         </View>
       </View>
       {phone ? (
-        <View style={styles.contacts}>
+        <View style={[styles.contacts, { borderTopColor: p.border }]}>
           <TrackingRoundButton
             label="Appeler"
             icon="phone"
-            size={48}
             theme={theme}
+            size={52}
             onPress={() => openLink(telUrl(phone))}
             accessibilityLabel={`Appeler ${name ?? 'le livreur'} (${phone})`}
             testID="call-driver"
@@ -345,8 +347,8 @@ export function DriverCard({
           <TrackingRoundButton
             label="WhatsApp"
             icon="chat"
-            size={48}
             theme={theme}
+            size={52}
             onPress={() => openLink(whatsappUrl(phone, whatsappText))}
             accessibilityLabel={`Écrire à ${name ?? 'votre livreur'} sur WhatsApp`}
             testID="whatsapp-driver"
@@ -477,19 +479,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: 18,
-    borderWidth: 1,
-  },
   cardTitle: { fontSize: 17, fontWeight: '900', letterSpacing: -0.2 },
   rating: { fontSize: 14, fontWeight: '800' },
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   verified: { fontSize: 11.5, fontWeight: '800' },
-  contacts: { flexDirection: 'row', gap: 10 },
+  driverCard: { gap: spacing.md, padding: spacing.md, borderRadius: 18, borderWidth: 1 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  contacts: { flexDirection: 'row', justifyContent: 'space-evenly', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.md },
   code: {
     borderRadius: 18,
     borderWidth: 2,

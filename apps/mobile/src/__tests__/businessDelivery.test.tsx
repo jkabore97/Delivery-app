@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Share } from 'react-native';
+import { Alert, Linking, Share } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OrderDto } from '@yaar/shared';
@@ -24,8 +24,11 @@ jest.mock('../state/socket', () => ({
 jest.mock('../components/map/LiveMap', () => {
   const { Text: RNText } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    LiveMap: (p: { markers: { kind: string }[]; lines: { kind: string }[] }) => (
-      <RNText testID="live-map">{`${p.markers.map((m) => m.kind).join(',')}|${p.lines.map((l) => l.kind).join(',')}`}</RNText>
+    LiveMap: (p: { markers: { kind: string; initials?: string | null }[]; lines: { kind: string }[] }) => (
+      <>
+        <RNText testID="live-map">{`${p.markers.map((m) => m.kind).join(',')}|${p.lines.map((l) => l.kind).join(',')}`}</RNText>
+        <RNText testID="live-map-initials">{p.markers.map((m) => m.initials ?? '-').join(',')}</RNText>
+      </>
     ),
   };
 });
@@ -93,8 +96,10 @@ describe('Suivi d’une livraison par l’entreprise', () => {
     mockApi.getOrder.mockResolvedValue(delivery({ status: 'SEARCHING_DRIVER', driver: null, route: null }));
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction, activityType: undefined });
     const r = await render(wrap(<BusinessDeliveryScreen />));
-    await waitFor(() => expect(r.getByText('📩 Prévenez le destinataire')).toBeTruthy());
+    await waitFor(() => expect(r.getByText('Prévenez le destinataire')).toBeTruthy());
     expect(r.getByTestId('tracking-url')).toHaveTextContent('yaar-livraison.vercel.app/suivi/tok-abc');
+    // La carte est l'action de l'écran : pas de boutons ronds qui la doubleraient tant qu'aucun livreur n'est en route.
+    expect(r.queryByTestId('share-round-button')).toBeNull();
     await fireEvent.press(r.getByTestId('share-link-button'));
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('https://yaar-livraison.vercel.app/suivi/tok-abc') }));
     expect(r.getByText('Lien envoyé.')).toBeTruthy();
@@ -112,6 +117,45 @@ describe('Suivi d’une livraison par l’entreprise', () => {
     await waitFor(() => expect(r.getByText('Livraison annulée')).toBeTruthy());
     expect(mockApi.cancelOrder).toHaveBeenCalledWith('del-1', 'Annulée par l’entreprise');
     expect(r.queryByTestId('cancel-delivery')).toBeNull();
+  });
+
+  it('boutons ronds : partager le lien, WhatsApp au destinataire (lien prérempli), appeler le livreur', async () => {
+    mockApi.getOrder.mockResolvedValue(delivery());
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction, activityType: undefined });
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(r.getByTestId('share-round-button')).toBeTruthy());
+    // Itinéraire jusqu'au destinataire, épinglé à ses initiales ; l'entreprise garde son pictogramme.
+    expect(r.getByTestId('live-map-initials').props.children).toBe('AK,-');
+    await fireEvent.press(r.getByTestId('share-round-button'));
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('https://yaar-livraison.vercel.app/suivi/tok-abc') }));
+    expect(r.getByText('Lien envoyé.')).toBeTruthy();
+    await fireEvent.press(r.getByTestId('whatsapp-recipient'));
+    const text =
+      'Bonjour Awa, Pharmacie du Centre vous envoie un colis avec Yaar Livraison. Suivez votre livreur en direct (le code à lui donner s’affiche sur la page) : https://yaar-livraison.vercel.app/suivi/tok-abc';
+    expect(open).toHaveBeenCalledWith(`https://wa.me/22670112233?text=${encodeURIComponent(text)}`);
+    await fireEvent.press(r.getByTestId('call-driver'));
+    expect(open).toHaveBeenLastCalledWith('tel:+22673000001');
+    // Montants : ce que paie le destinataire, ce qui revient à l'entreprise (marchandise).
+    expect(r.getByTestId('recipient-amount-value')).toHaveTextContent('16 500 FCFA');
+    expect(r.getByTestId('business-amount')).toHaveTextContent(/Pour votre entreprise.*15 000 FCFA/);
+    expect(r.getByTestId('recipient-card')).toHaveTextContent(/Colis pour.*Awa Kaboré.*Patte d’Oie, rue 15\.23.*Repère : Station Total.*2 boîtes de médicaments/);
+    share.mockRestore();
+    open.mockRestore();
+  });
+
+  it('recherche d’un livreur : pas encore de livreur à appeler ; livrée : plus de boutons ronds', async () => {
+    mockApi.getOrder.mockResolvedValue(delivery({ status: 'SEARCHING_DRIVER', driver: null, route: null }));
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(r.getByTestId('share-round-button')).toBeTruthy());
+    expect(r.getByTestId('whatsapp-recipient')).toBeTruthy();
+    expect(r.queryByTestId('call-driver')).toBeNull();
+    mockApi.getOrder.mockResolvedValue(delivery({ status: 'DELIVERED', driver: null, route: null, deliveredAt: '2026-11-08T14:51:00.000Z' }));
+    const done = await render(wrap(<BusinessDeliveryScreen />));
+    await waitFor(() => expect(done.getByText('Livrée à Awa Kaboré')).toBeTruthy());
+    expect(done.queryByTestId('share-round-button')).toBeNull();
+    expect(done.getByTestId('recipient-amount')).toHaveTextContent(/Encaissé auprès du destinataire/);
+    expect(done.getByTestId('business-amount')).toHaveTextContent(/Reversé à votre entreprise/);
   });
 
   it('colis récupéré : plus d’annulation', async () => {

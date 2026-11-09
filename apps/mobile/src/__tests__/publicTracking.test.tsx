@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Linking } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { TrackingDto } from '@yaar/shared';
@@ -24,10 +25,13 @@ jest.mock('../lib/publicApi', () => ({ publicApi: { trackDelivery: (token: strin
 jest.mock('../components/map/LiveMap', () => {
   const { Text: RNText } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    LiveMap: (p: { markers: { kind: string; pulse?: boolean }[]; lines: { kind: string }[]; fitPoints: unknown[] }) => (
-      <RNText testID="live-map">
-        {`${p.markers.map((m) => `${m.kind}${m.pulse ? '*' : ''}`).join(',')}|${p.lines.map((l) => l.kind).join(',')}|${p.fitPoints.length}`}
-      </RNText>
+    LiveMap: (p: { markers: { kind: string; pulse?: boolean; initials?: string | null }[]; lines: { kind: string }[]; fitPoints: unknown[] }) => (
+      <>
+        <RNText testID="live-map">
+          {`${p.markers.map((m) => `${m.kind}${m.pulse ? '*' : ''}`).join(',')}|${p.lines.map((l) => l.kind).join(',')}|${p.fitPoints.length}`}
+        </RNText>
+        <RNText testID="live-map-initials">{p.markers.map((m) => m.initials ?? '-').join(',')}</RNText>
+      </>
     ),
   };
 });
@@ -115,6 +119,37 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(mockTrack).toHaveBeenCalledTimes(3);
   });
 
+  it('feuille sombre (RECIPIENT_SHEET_THEME) ; entreprise à ses initiales, « chez vous » en épingle à maison', async () => {
+    const r = await show(tracking({ status: 'ASSIGNED', pickedUpAt: null, route: route({ target: 'PICKUP', points: [[12.3627, -1.521], [12.3686, -1.5275]] }) }));
+    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style)).toMatchObject({ backgroundColor: '#131917' });
+    // Retrait (Pharmacie du Centre → PC), destinataire sans initiales (maison), livreur.
+    expect(r.getByTestId('live-map-initials').props.children).toBe('PC,-,-');
+    expect(r.getByTestId('dropoff-address')).toHaveTextContent(/Patte d’Oie, rue 15\.23.*Repère : Station Total/);
+  });
+
+  it('livreur : WhatsApp prérempli (destinataire du colis #1052 de l’entreprise)', async () => {
+    const r = await show(tracking());
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    await fireEvent.press(r.getByTestId('whatsapp-driver'));
+    const text = 'Bonjour Issouf, je suis le destinataire du colis #1052 de Pharmacie du Centre (Yaar Livraison).';
+    expect(open).toHaveBeenCalledWith(`https://wa.me/22673000001?text=${encodeURIComponent(text)}`);
+    // Un livreur est en route : l'expéditeur n'est plus le contact proposé.
+    expect(r.queryByTestId('call-sender')).toBeNull();
+    open.mockRestore();
+  });
+
+  it('annulée : ni étapes ni code, l’expéditeur à appeler', async () => {
+    const r = await show(tracking({ status: 'CANCELLED', deliveryCode: null, driver: null, route: null, cancelledAt: '2026-11-08T14:15:00.000Z' }));
+    expect(r.getByText('Livraison annulée')).toBeTruthy();
+    expect(r.getByText('Contactez Pharmacie du Centre pour plus d’informations.')).toBeTruthy();
+    expect(r.queryByTestId('tracking-steps')).toBeNull();
+    expect(r.queryByTestId('delivery-code')).toBeNull();
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    await fireEvent.press(r.getByTestId('call-sender'));
+    expect(open).toHaveBeenCalledWith('tel:+22671000001');
+    open.mockRestore();
+  });
+
   it('trop de requêtes (429) : message clair, sans contradiction, et nouvel essai automatique', async () => {
     mockTrack.mockRejectedValueOnce(new ApiError(429, 'RATE_LIMITED', 'Trop de requêtes'));
     mockTrack.mockResolvedValue(tracking());
@@ -141,6 +176,7 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
   it('lien expiré ou inconnu (404) : message clair, sans carte, plus de requête', async () => {
     const r = await show(new ApiError(404, 'NOT_FOUND', 'Lien de suivi introuvable ou expiré'));
     expect(r.getByText('Ce lien de suivi n’est plus valide')).toBeTruthy();
+    expect(StyleSheet.flatten(r.getByTestId('tracking-expired').props.style)).toMatchObject({ backgroundColor: '#131917' });
     expect(r.queryByTestId('live-map')).toBeNull();
     await act(async () => jest.advanceTimersByTimeAsync(20_000));
     expect(mockTrack).toHaveBeenCalledTimes(1);

@@ -64,6 +64,7 @@ export function ChoiceRow({
   subtitle,
   right,
   accessibilityLabel,
+  shape = 'card',
   testID,
 }: {
   selected: boolean;
@@ -74,6 +75,8 @@ export function ChoiceRow({
   subtitle?: string | null;
   right?: ReactNode;
   accessibilityLabel?: string;
+  /** card : coins de 18 px ; pill : bouts entièrement arrondis (choix du véhicule, qui paie). */
+  shape?: 'card' | 'pill';
   testID?: string;
 }) {
   return (
@@ -83,7 +86,7 @@ export function ChoiceRow({
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onPress={disabled ? undefined : onPress}
-      style={({ pressed }) => [styles.choice, selected && styles.choiceOn, disabled && styles.choiceOff, pressed && !disabled && { opacity: 0.88 }]}
+      style={({ pressed }) => [styles.choice, shape === 'pill' && styles.choicePill, selected && styles.choiceOn, disabled && styles.choiceOff, pressed && !disabled && { opacity: 0.88 }]}
       testID={testID}
     >
       {leading ?? <View style={[styles.radio, selected && styles.radioOn]} />}
@@ -139,6 +142,7 @@ const styles = StyleSheet.create({
     borderColor: dark.border,
     backgroundColor: dark.raised,
   },
+  choicePill: { borderRadius: 999, paddingLeft: 10, paddingRight: 20 },
   choiceOn: { borderColor: dark.green, backgroundColor: '#13261E' },
   choiceOff: { opacity: 0.45 },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: dark.textFaint },
