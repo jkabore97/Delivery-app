@@ -186,7 +186,7 @@ display them through a blob / object URL (an `<img src>` cannot send the header)
 
 `GET /config` (public, no auth) → `PublicConfigDto`. Read it when the app starts, before logging in.
 ```json
-{ "realtime": "poll", "pollIntervalMs": 4000, "demoMode": true, "otpChannel": "console" }
+{ "realtime": "poll", "pollIntervalMs": 4000, "demoMode": true, "otpChannel": "console", "trackingPollIntervalMs": 8000 }
 ```
 - `realtime`: `"socket"` → connect Socket.IO (§9); `"poll"` → do not open a socket, poll the REST endpoints
   listed in [Mode polling (Vercel)](#mode-polling-vercel) every `pollIntervalMs`.
@@ -199,6 +199,10 @@ display them through a blob / object URL (an `<img src>` cannot send the header)
 - `otpChannel`: how the login code is delivered: `"console"` (written in the API log: demo/dev), `"whatsapp"`
   (planned, not implemented yet: `POST /auth/otp/request` answers `503 OTP_PROVIDER_UNAVAILABLE`),
   `"sms"` (reserved). Use it for the wording ("Code envoyé par WhatsApp" / "par SMS").
+- `trackingPollIntervalMs` (`TRACKING_POLL_INTERVAL_MS`, default **8000**): refresh rate of the recipient's public
+  tracking page ([Suivi public du destinataire](#suivi-public-du-destinataire)) while a driver is on the way
+  (`ASSIGNED`/`PICKED_UP`); about twice slower (≈ 16 s) while `SEARCHING_DRIVER`; stop once delivered or cancelled.
+  Absent on an older API: use `pollIntervalMs`.
 
 ---
 
@@ -244,9 +248,16 @@ Body `RequestOtpInput`: `{ "phone": "70 11 22 33" }`
 { "sent": true, "expiresInSeconds": 300 }
 ```
 Errors: `400 VALIDATION_ERROR` (bad phone), `429 OTP_RATE_LIMITED` (max 5 per phone per hour),
-`429 RATE_LIMITED` (too many requests from this IP, `AUTH_RATE_LIMIT_REQUEST`, default 20 per 10 min),
-`503 OTP_PROVIDER_UNAVAILABLE` (the delivery channel is not configured, e.g. `OTP_PROVIDER=whatsapp` before a
+`429 RATE_LIMITED` (too many requests from this IP, `AUTH_RATE_LIMIT_REQUEST`, default 20 per 10 min, 100 in demo
+mode), `503 OTP_PROVIDER_UNAVAILABLE` (the delivery channel is not configured, e.g. `OTP_PROVIDER=whatsapp` before a
 WhatsApp provider is plugged in; in demo mode the code `123456` still works).
+
+Demo mode (`DEMO_MODE=true`): the accounts created by the demo seed (§12) are never locked out by the per-phone limit,
+because several partners test the same account: the business, driver and client demo accounts (which log in with
+`123456`) have no per-phone limit, the two console demo accounts get 30 codes per hour instead of 5 (each code allows 5
+attempts of the demo access code: the cap keeps it from being brute-forced). Every other phone keeps 5 per hour. The
+per-IP limits stay, with larger defaults in demo mode (`AUTH_RATE_LIMIT_REQUEST` 100 and `AUTH_RATE_LIMIT_VERIFY` 300
+per 10 min, for partners behind one office or mobile-carrier IP; an explicit value is used as is).
 
 ### `POST /auth/otp/verify` (public)
 
@@ -278,7 +289,7 @@ Body `VerifyOtpInput`:
 }
 ```
 Errors: `400 OTP_INVALID` ("Code incorrect" / "Code invalide ou expiré. Demandez un nouveau code."),
-`403 ACCOUNT_SUSPENDED`, `429 RATE_LIMITED` (per IP, default 60 per 10 min). Each attempt is reserved
+`403 ACCOUNT_SUSPENDED`, `429 RATE_LIMITED` (per IP, default 60 per 10 min, 300 in demo mode). Each attempt is reserved
 atomically before the comparison: parallel requests cannot exceed 5 attempts per code.
 
 Demo mode (`DEMO_MODE=true`): `123456` logs in any `CLIENT`/`SELLER`/`DRIVER` account and creates new accounts
@@ -637,8 +648,9 @@ Field notes:
 ### 6.5 Listing and reading
 
 `GET /orders` (any role, *paginated*, newest first). Query: `status` (comma-separated list, e.g.
-`status=ASSIGNED,PICKED_UP`), `type` (`FOOD`|`PARCEL`), `q` (back office only: order number `1048`/`#1048`,
-client phone or name), `updatedSince` (ISO 8601, for incremental polling: pass the largest `updatedAt`
+`status=ASSIGNED,PICKED_UP`), `type` (`FOOD`|`PARCEL`), `q` (back office only, case-insensitive: order number
+`1048`/`#1048`, client or business account phone or name, store (business) name, recipient name or phone; spaces and
+separators are ignored for phones, so `76 12 34 56` finds `+22676123456`), `updatedSince` (ISO 8601, for incremental polling: pass the largest `updatedAt`
 already received; see [Mode polling](#mode-polling-vercel)), `page`, `pageSize`. Scope by role: client = own
 orders, seller = orders of own stores, driver = orders assigned to him (current and past), back office = all.
 
@@ -702,14 +714,17 @@ profile) sends a parcel to a **recipient**, a person or another business, who ha
 |---|---|---|---|
 | `POST /business/deliveries/quote` | SELLER | `DeliveryQuoteInput` `{ "pickup"?: AddressInput, "dropoff": AddressInput }` | `200 QuoteResponse` (`type: "PARCEL"`, `itemsTotal: 0`, one option per vehicle as in §6.2) |
 | `POST /business/deliveries` | SELLER | `CreateDeliveryInput` | `201 OrderDto` (status `SEARCHING_DRIVER`) ⚙ |
-| `GET /business/deliveries` | SELLER | `status`, `updatedSince`, `page`, `pageSize` (same semantics as `GET /orders`, §6.5) | `200 Paginated<OrderDto>`: the deliveries requested by this business only (not the former food orders of its store) ⚙ |
+| `GET /business/deliveries` | SELLER | `status`, `updatedSince`, `page`, `pageSize` (same semantics as `GET /orders`, §6.5) | `200 Paginated<OrderDto>`: the deliveries requested by this business only (not the former food orders of its store), whatever its approval status ⚙ |
 | `GET /orders/:id` | SELLER (requesting business) | | `200 OrderDto` with `events` |
 | `POST /orders/:id/cancel` | SELLER (requesting business) | `{ "reason"?: string }` | `200 OrderDto` in `SEARCHING_DRIVER` or `ASSIGNED` (the driver on the way is freed); `409 INVALID_TRANSITION` after pickup |
 | `GET /orders/:id/proof-photo` | SELLER (requesting business) | | binary proof-of-delivery photo |
 
-`/business/deliveries*` need a business profile validated by the console: without any store, or before approval
-(`PENDING` / `SUSPENDED`), `403 STORE_NOT_APPROVED` ("Votre entreprise doit être validée par Yaar avant de demander une
-livraison"). With several stores, the oldest approved one is the business profile.
+`POST /business/deliveries/quote` and `POST /business/deliveries` need a business profile validated by the console:
+without any store, or before approval (`PENDING` / `SUSPENDED`), `403 STORE_NOT_APPROVED` ("Votre entreprise doit être
+validée par Yaar avant de demander une livraison"). With several stores, the oldest approved one is the business profile.
+`GET /business/deliveries` does **not** need the approval: any `SELLER` gets `200` with its own list (empty for a
+business waiting for approval; a suspended business still sees its past deliveries), so the app can show the list screen
+with a "en attente de validation" banner instead of an error.
 
 `CreateDeliveryInput`:
 ```json
@@ -741,22 +756,30 @@ At creation:
    takes its commission on the delivery fee); `total` = `deliveryFee + cashToCollect` = all the cash of the job;
    `paymentMethod: "CASH"` (mobile money later).
 2. Events `null → PENDING` and `PENDING → SEARCHING_DRIVER` are recorded (no accept / prepare step) and dispatch starts at
-   once (nearest driver with the vehicle type, §7.3). The offer shows the business name and address (a professional
-   place) and only an approximate zone for the recipient.
+   once (nearest driver with the vehicle type and enough cash headroom, §7.3). Before acceptance the offer shows the
+   business name, the business address only when the pickup **is** the business address (a professional place; a
+   custom `pickup`, e.g. a warehouse or a home, shows only its approximate zone), and only an approximate zone for the
+   recipient.
 3. A 4-digit delivery code and a tracking token (18 random bytes = 144 bits, base64url, unique index) are generated;
    `trackingUrl` = `${PUBLIC_APP_URL}/suivi/<token>` (default `https://yaar-livraison.vercel.app`). The business **never**
    gets the delivery code in its `OrderDto` (the code is on the recipient's tracking page).
 4. The recipient gets a message (`RecipientNotifier`; `RECIPIENT_NOTIFIER=console`: written in the API log; `whatsapp`:
    placeholder, not implemented, the send fails and is logged) in French with the business name, the tracking link, the
-   delivery code and the amount to pay at delivery; a second short message when the driver picks the parcel up. Sending
-   runs in the background (`waitUntil` on Vercel): a failing or slow channel never blocks or fails the request.
-   `DEMO_MODE=true` requires `RECIPIENT_NOTIFIER=console` (no real message from the public demo).
+   delivery code and the amount to pay at delivery; a second short message when the driver picks the parcel up; a third
+   when the delivery is cancelled (by the business or the console, whatever the status; without the cancellation reason).
+   Sending runs in the background (`waitUntil` on Vercel): a failing or slow channel never blocks or fails the request.
+   `DEMO_MODE=true` requires `RECIPIENT_NOTIFIER=console` (no real message from the public demo); in production without
+   `DEMO_MODE`, `RECIPIENT_NOTIFIER=console` is refused at start-up and by the build's config check (recipients would get
+   nothing). Logs: outside `DEMO_MODE` the console channel writes the recipient's phone masked (`+226******56`) and the
+   message without the tracking link and the delivery code; with `DEMO_MODE` (fictitious data) the whole message.
 
 The requesting business then sees, like the client did: the driver (name, phone, vehicle, plate), his live position and
 heading, the road `route` and `etaMinutes` during `ASSIGNED`/`PICKED_UP`; its own addresses and recipient (also after
 delivery); `sellerPayout` (= `cashToCollect`) and `trackingUrl`. Never `deliveryCode`, `commission` or `driverEarning`.
 Another business gets `404`. Push notifications to the business: "Livreur en route" (assigned), "Colis récupéré"
-(picked up), "Livrée", "Livraison annulée".
+(picked up), "Livrée", "Livraison annulée". When an `ASSIGNED` (or, by the console, `PICKED_UP`) delivery is cancelled,
+the driver gets a push "Course annulée" ("…Vous êtes de nouveau disponible.", or after pickup "gardez le colis, le
+support vous contacte pour le rendre"; `data.type = "order.cancelled"`), and the recipient a cancellation message.
 
 **Cash (cash only for now)**, recorded in the driver's cash ledger (`cashHeld`, `COLLECTION` entries, §7.4, §8.7):
 
@@ -767,11 +790,19 @@ Another business gets `404`. Push notifications to the business: "Livreur en rou
 
 At delivery the order gets `cashCollected` = `deliveryFee + cashToCollect` (all the cash of the job) and `owedToBusiness`
 = `cashToCollect`: what the platform owes the business once the driver has deposited the cash. The tracking page shows
-the recipient `amountToPay` = `cashToCollect` + (`deliveryFee` if `RECIPIENT`). If the console cancels after pickup, a fee
-collected at pickup stays in the driver's ledger: settle it with the business by hand (an incident is opened, §8.2).
+the recipient `amountToPay` = `cashToCollect` + (`deliveryFee` if `RECIPIENT`). The driver's offer shows the same split:
+`cashAtPickup` (fee from the business) and `cashAtDelivery` (from the recipient), `cashToCollect` = both (§7.3).
 
-`GET /controller/cash/businesses` (back office) → `BusinessBalanceDto[]`, highest amount first (type defined in
-`apps/api/src/services/deliveries.ts`, not yet in `@yaar/shared`):
+If the console cancels a `SENDER` delivery **after pickup**, the job does not happen and the fee collected at pickup is
+given back to the business with the parcel: an **adjustment entry** cancels it in the driver's ledger (type
+`COLLECTION`, `amount: -deliveryFee`, `recordedBy` = the controller, note "Ajustement : livraison #… annulée après
+retrait, frais de livraison (… FCFA) à rendre à l’entreprise avec le colis"), `cashHeld` goes down by the fee, and the
+order keeps `paymentStatus: CANCELLED`, `cashCollected: null`: the entries of the order sum to 0. The opened incident
+(§8.2) and the driver's push mention the fee to return. If the driver had already deposited everything, `cashHeld` can
+become negative: the platform owes him that amount. Nothing is collected at pickup for `RECIPIENT`: no entry.
+
+`GET /controller/cash/businesses` (back office) → `BusinessBalanceDto[]` (exported by `@yaar/shared`), highest amount
+first:
 ```json
 [{ "storeId": "cmw…", "storeName": "Kaya Market", "ownerId": "cmw…", "ownerName": "Salimata Traoré", "phone": "+22671000005",
    "owedTotal": 17000, "deliveries": 2, "lastDeliveredAt": "2026-11-08T14:03:00.000Z" }]
@@ -780,18 +811,28 @@ collected at pickup stays in the driver's ledger: settle it with the business by
 business back (and marking amounts as paid) is not recorded by the API; the orders CSV export (§8.9) has
 `frais_payes_par`, `marchandise_a_encaisser` and `du_entreprise` columns for the accounting.
 
-Known gaps: no payout workflow; the cash limit is checked before an offer as before (`cashHeld < CASH_LIMIT`), not
-against what the job will collect (a large `cashToCollect` takes the driver above the limit: he is blocked once the job
-is done, until he deposits); no cancellation fee; the WhatsApp channel for recipients is a placeholder; the business
-cannot rate the driver or chat with him (it calls `driver.phone`); pricing still uses haversine × 1.3, not the road route.
+**Cash limit at dispatch**: a job is offered only to a driver who can collect all its cash (`deliveryFee +
+cashToCollect`) without going over `CASH_LIMIT` (`cashHeld + cash of the job ≤ CASH_LIMIT`, and `cashHeld < CASH_LIMIT`).
+If nobody fits (e.g. `cashToCollect` above the limit itself, 50 000 FCFA by default), the delivery **keeps searching**: it
+is offered again at every dispatch cycle (a driver who deposits cash can get it) and stays in the console queue with
+`currentOffer: null`, where a controller can assign a driver by hand (manual assignment only checks `cashHeld <
+CASH_LIMIT`: the controller decides).
+
+Known gaps: no payout workflow; no cancellation fee (a fee paid at pickup is given back when the console cancels after
+pickup, see above); the WhatsApp channel for recipients is a placeholder; the business cannot rate the driver or chat with
+him (it calls `driver.phone`); pricing still uses haversine × 1.3, not the road route.
 
 ---
 
 ## Suivi public du destinataire
 
 `GET /track/:token` (**public, no authentication**) → `TrackingDto`: the page the recipient opens from the link
-`${PUBLIC_APP_URL}/suivi/<token>` (mobile web app). Poll it every `pollIntervalMs` (4 s) while the page is visible; it
-triggers the background dispatch cycle like the other polling endpoints (⚙, [Mode polling](#mode-polling-vercel)).
+`${PUBLIC_APP_URL}/suivi/<token>` (mobile web app). Poll it while the page is visible, at the rate given by `GET /config`:
+every `trackingPollIntervalMs` (**8 s** by default) while a driver is on the way (`ASSIGNED`/`PICKED_UP`: driver positions
+change every 5-10 s), about **twice slower (≈ 16 s)** while `SEARCHING_DRIVER`, and stop once `DELIVERED`/`CANCELLED`
+(one last refresh) or after a `404`; pause while the tab is hidden. That is ≈ 225 requests for a 30-minute delivery
+instead of 450 at 4 s (Vercel Hobby quota). Each poll triggers the background dispatch cycle like the other polling
+endpoints (⚙, [Mode polling](#mode-polling-vercel)).
 
 ```json
 {
@@ -827,12 +868,19 @@ triggers the background dispatch cycle like the other polling endpoints (⚙, [M
 - `amountToPay`: cash to hand to the driver (goods + fee if the recipient pays it); 0 = nothing.
 - `deliveryCode`: until the delivery is delivered or cancelled, then `null`. Anyone holding the link sees it: the link
   goes to the recipient (the business also gets it as `trackingUrl`, to forward it).
-- `404 NOT_FOUND` ("Lien de suivi introuvable ou expiré") for an unknown or malformed token and **24 h after**
-  `deliveredAt` / `cancelledAt`.
-- Per-IP limit: `TRACK_RATE_LIMIT` requests per minute (default 120 = several tabs polling every 4 s behind one IP;
-  `0` = off; in memory, per instance) → `429 RATE_LIMITED`. The token has 144 random bits: it cannot be guessed.
-- `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. The tracking page should keep the browser default referrer
-  policy (or `no-referrer`) so that map tile servers never get the token in a `Referer`.
+- `404 NOT_FOUND` ("Lien de suivi introuvable ou expiré"), always the same JSON body, for an unknown token, a
+  malformed one (wrong characters, invalid percent-encoding, longer than 100 characters: the router's limit answers this
+  404 too, with the CORS and caching headers below, never a `414`), **24 h after** `deliveredAt` / `cancelledAt`, and in
+  any case **7 days after the creation** (absolute expiry: a delivery that never finishes, stuck searching or picked up
+  for days, does not expose the code, the address and the driver's position forever).
+- Per-IP limit: `TRACK_RATE_LIMIT` requests per minute (default 120 = about 16 tabs polling every 8 s behind one IP,
+  e.g. a mobile-carrier NAT; `0` = off; in memory, per instance) → `429 RATE_LIMITED`. The token has 144 random bits: it
+  cannot be guessed.
+- `Cache-Control: no-store`, `Referrer-Policy: no-referrer` on **every** response of this route (200, 404, 429: they are
+  set before the rate limit). The tracking page should keep the browser default referrer policy (or `no-referrer`) so
+  that map tile servers never get the token in a `Referer`.
+- The token is a bearer secret: the API's request logs show `/track/[jeton]`, never the token (the hosting platform's
+  own access log, e.g. Vercel's, still records request paths).
 - CORS: the origin of `PUBLIC_APP_URL` is always allowed (in addition to `CORS_ORIGINS`). Like `/config` and `/health`
   the call needs no `Authorization` header: a poll is a simple request, without preflight.
 
@@ -948,10 +996,19 @@ When a driver is chosen by dispatch he receives the socket event `offer.new` (pa
 **30 seconds** (`expiresAt`) to accept, otherwise the next driver is asked.
 
 `OfferDto`: before acceptance **no client address** is disclosed (no coordinates, free-text address, landmark,
-recipient or phone). `pickup.address` is the store address for a FOOD order or a business delivery (public business
-place, with `pickup.name`) or an approximate zone for a parcel of the former client flow; `dropoff.address` is always an approximate zone ("Secteur Zogona": nearest known
+recipient or phone). `pickup.address` is the store address for a FOOD order or for a business delivery picked up at the
+business address (public business place, with `pickup.name`); for a business delivery with another pickup point (a
+custom `pickup`: warehouse, home…) and for a parcel of the former client flow it is an approximate zone (`pickup.name`
+still names the business). `dropoff.address` is always an approximate zone ("Secteur Zogona": nearest known
 Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zone. Exact addresses are in the
 `OrderDto` returned by `accept`.
+
+Cash of the job: `cashAtPickup` = what the driver collects from the business at pickup (the fee when the business pays
+it, `feePaidBy: SENDER`; else 0), `cashAtDelivery` = what he collects from the recipient (goods + the fee when the
+recipient pays it; the whole amount for a former client order), `cashToCollect` = the total of both (unchanged meaning:
+all the cash of the job, not the goods only as in `OrderDto.cashToCollect`). Show "Encaisser 1 600 FCFA au retrait,
+12 000 FCFA à la livraison". A driver only gets offers whose `cashToCollect` fits under his cash limit
+(`cashHeld + cashToCollect ≤ CASH_LIMIT`, §11).
 ```json
 {
   "id": "cmw8k1...",
@@ -966,6 +1023,8 @@ Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zo
   "dropoff": { "address": "Secteur Patte d’Oie", "zone": "Secteur Patte d’Oie" },
   "distanceKm": 6.2,
   "cashToCollect": 6500,
+  "cashAtPickup": 0,
+  "cashAtDelivery": 6500,
   "driverEarning": 1200
 }
 ```
@@ -1009,6 +1068,8 @@ Ouagadougou neighbourhood, `approximateZone()` in shared). `zone` repeats the zo
 }
 ```
 `recentLedger` = last 20 entries, newest first. Deposits have a negative `amount` and `recordedBy` = the controller.
+A `COLLECTION` with a negative `amount` and `recordedBy` set is an adjustment that cancels an earlier collection (fee
+given back to the business when the console cancels a delivery after pickup, [Livraisons d'entreprise](#livraisons-dentreprise)).
 
 ### 7.5 SOS
 
@@ -1059,12 +1120,13 @@ All routes below require a back-office token. Actions marked **audited** write a
       "dropoff": { "lat": 12.405, "lng": -1.559, "address": "Tampouy, marché" },
       "driverId": null, "createdAt": "2026-11-06T19:17:16.018Z", "route": null }
   ],
-  "stores": [{ "id": "cmw5d3yyo00047d3btdhgncnv", "name": "Le Verdoyant", "lat": 12.3686, "lng": -1.5275, "isOpen": true }],
+  "stores": [{ "id": "cmw5d3yyo00047d3btdhgncnv", "name": "Le Verdoyant", "lat": 12.3686, "lng": -1.5275, "isOpen": true, "approvalStatus": "APPROVED" }],
   "openSos": [ "IncidentDto, type SOS, not resolved" ]
 }
 ```
 `drivers` = online drivers only (offline drivers have no stored position); `heading` = last heading (§7.2), `null` if
-unknown. `orders` = all active orders; `route` = the cached route of the current leg (`ASSIGNED`/`PICKED_UP`, see
+unknown. `stores` = every store (business) with its `approvalStatus` (`PENDING`, `APPROVED`, `SUSPENDED`): hide or fade
+the businesses that are not `APPROVED`. `orders` = all active orders; `route` = the cached route of the current leg (`ASSIGNED`/`PICKED_UP`, see
 [Itinéraires](#itinéraires-carte-de-suivi)), `null` otherwise: this call never asks the routing service for a route.
 Mockup legend: green = free driver (`isBusy: false`), blue = busy driver, orange = store, red = order waiting
 (`status: SEARCHING_DRIVER`).
@@ -1073,12 +1135,12 @@ Mockup legend: green = free driver (`isBusy: false`), blue = busy driver, orange
 
 | Method & path | Body | Response |
 |---|---|---|
-| `GET /orders?status=...&q=...` | | `Paginated<OrderDto>` (all orders, see §6.5) |
+| `GET /orders?status=...&q=...` | | `Paginated<OrderDto>` (all orders, see §6.5; `q` = order number, account name/phone, business name, recipient name/phone) |
 | `GET /orders/:id` | | `OrderDto` with `events` |
 | `GET /controller/orders/pending` | | `PendingOrderDto[]` (status `SEARCHING_DRIVER`, longest waiting first) |
 | `GET /controller/orders/:id/candidates` | | `DriverCandidateDto[]` (approved, same vehicle type, nearest first; offline ones last) |
 | `POST /controller/orders/:id/assign` | `{ "driverId": "cmw..." }` | `200 OrderDto`, **audited** `ORDER_MANUALLY_ASSIGNED` |
-| `POST /orders/:id/cancel` | `{ "reason": "..." }` | `200 OrderDto`, **audited** `ORDER_CANCELLED_BY_CONTROLLER`. Allowed up to `PICKED_UP`; from `PICKED_UP` an `OTHER` incident "récupérer la marchandise auprès du livreur" is opened. The driver is freed. |
+| `POST /orders/:id/cancel` | `{ "reason": "..." }` | `200 OrderDto`, **audited** `ORDER_CANCELLED_BY_CONTROLLER`. Allowed up to `PICKED_UP`; from `PICKED_UP` an `OTHER` incident "récupérer la marchandise auprès du livreur" is opened, and for a business delivery whose fee was paid at pickup an adjustment entry gives the fee back (ledger, audit `feeReturned`). The driver is freed and gets a push "Course annulée"; the recipient of a business delivery gets a cancellation message. |
 | `POST /controller/orders/:id/force-deliver` | `{ "reason": "Client joint par téléphone" }` (required) | `200 OrderDto`; `PICKED_UP` → `DELIVERED` with the same cash ledger effect as a normal delivery; **audited** `ORDER_FORCE_DELIVERED` |
 | `POST /controller/orders/:id/reset-delivery-code` | `{ "reason": "..." }` (optional) | `200 OrderDto`; resets the attempt counter of a `PICKED_UP` order after `423 DELIVERY_CODE_LOCKED`; **audited** `ORDER_DELIVERY_CODE_RESET` |
 | `GET /orders/:id/messages` | | `OrderMessageDto[]` (read only) |
@@ -1352,7 +1414,7 @@ connection), `GET /config` returns `realtime: "poll"`. Then:
 | Console, one order | `GET /orders/:id` | 10 s | `order.updated`, `driver.location` |
 | Business, deliveries screen | ⚙ `GET /business/deliveries?updatedSince=<max updatedAt>&pageSize=100` (merge by `id`) or a constant `?status=…` URL | 10 s | `order.updated` |
 | Business, one delivery on the map | ⚙ `GET /orders/:id` | `pollIntervalMs` (4 s) while `SEARCHING_DRIVER`/`ASSIGNED`/`PICKED_UP`, else 30 s | `order.updated`, `driver.location` (`driver.lastLocation` + `heading`, `route`, `etaMinutes`) |
-| Recipient, public tracking page | ⚙ `GET /track/:token` (no auth) | `pollIntervalMs` (4 s) while visible; stop when delivered/cancelled | |
+| Recipient, public tracking page | ⚙ `GET /track/:token` (no auth) | `trackingPollIntervalMs` (8 s) while `ASSIGNED`/`PICKED_UP`, ≈ 16 s while `SEARCHING_DRIVER`, only while visible; stop when delivered/cancelled or on `404` | |
 
 ⚙ = also triggers the dispatch cycle (`runDueWork`). `POST /orders`, `POST /business/deliveries`,
 `POST /orders/:id/ready` and `PATCH /driver/availability` trigger it too.
@@ -1440,7 +1502,8 @@ usually already carry the new route. In socket mode an `order.updated` event ann
 
 **Routing providers** (`ROUTING_PROVIDER`):
 - `osrm` (default): `GET ${ROUTING_OSRM_URL}/${profile}/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=polyline`,
-  header `User-Agent: YaarLivraison/0.1 (demo)`, timeout `ROUTING_TIMEOUT_MS` (2 500 ms). Default URL
+  header `User-Agent: YaarLivraison/0.1 (+${PUBLIC_APP_URL})` (the application and a contact URL, no e-mail address),
+  timeout `ROUTING_TIMEOUT_MS` (2 500 ms), at most `ROUTING_MAX_RPS` requests per second (below). Default URL
   `https://routing.openstreetmap.de` (FOSSGIS servers); profile `routed-bike` for bikes, `routed-car` for motorbikes and
   cars. The polyline (precision 5) is decoded and simplified by the API. OSRM durations are free-flow (speed limits, no
   traffic): they are multiplied by **1.25 (bike), 1.6 (moto), 1.9 (car)** to reach the average city speeds of the quotes
@@ -1448,6 +1511,17 @@ usually already carry the new route. In socket mode an `order.updated` event ann
   JSON, no route) → straight line (`source: "straight"`) and a warning in the logs (without coordinates), never an error.
 - `straight`: straight line, distance = haversine × 1.3, duration at the average speed of the vehicle (bike 12, moto 22,
   car 20 km/h). No external call (tests, smoke test, or to send no coordinates to a third party).
+
+**Rate limit (courtesy for the public servers).** The FOSSGIS usage policy allows **at most 1 request per second** and
+asks for a `User-Agent` that identifies the application. Each API instance holds a token bucket of `ROUTING_MAX_RPS`
+requests per second (default **1**, no burst): a computation waits at most 1 s for its turn, otherwise it falls back to
+the straight line (`source: "straight"`, warning in the logs) and is retried by a later ping (the route is recomputed
+when older than 3 min). The two computations of an assignment run **one after the other** (the route to the pickup
+first, the one drawn on the maps, then the pickup → dropoff duration), never in parallel. The limit is per instance:
+Vercel may run a few instances at once, so the global rate can briefly exceed 1/s. With the FOSSGIS URL the API refuses
+`ROUTING_MAX_RPS` other than 1 (start-up and build config check); `0` (no limit) or a higher value is for a self-hosted
+OSRM or a paid provider. **Production must self-host OSRM/Valhalla or use a paid routing API**: the public servers
+are for the demo / pilot only.
 
 **Privacy and legal.** The routing service receives **two coordinates per request and nothing else** (the driver's
 position and the pickup or recipient point; no name, phone, address or identifier). With the default URL these requests
@@ -1498,6 +1572,9 @@ recipient (no account) sees only the public tracking page ([Suivi public du dest
   a FOOD pickup = store address is kept); erases incident (SOS) positions; deletes OTPs expired for 24 h.
   Amounts, statuses and dates are kept for accounting.
 - KYC documents are encrypted at rest, only back office can download them, every download is in the audit log.
+- Logs: outside `DEMO_MODE` the API never writes a recipient's full phone (masked `+226******56`), a delivery code or a
+  tracking link; request logs show `/track/[jeton]` instead of the token. `RECIPIENT_NOTIFIER=console` (messages in the
+  logs) is refused in production without `DEMO_MODE`.
 
 ---
 
@@ -1513,19 +1590,21 @@ recipient (no account) sees only the public tracking page ([Suivi public du dest
 | Client pays | `itemsTotal + deliveryFee` (cash on delivery) | |
 | Dispatch radius | 5 km straight line from pickup (`DISPATCH_RADIUS_KM`) | |
 | Offer timeout | 30 s (`OFFER_TIMEOUT_SECONDS`), then next nearest driver; a driver who refused/let expire is not re-asked for 5 min | |
-| Eligible driver | `APPROVED`, account not suspended, online, not busy, same vehicle type, `cashHeld < CASH_LIMIT`, has a position | |
+| Eligible driver | `APPROVED`, account not suspended, online, not busy, same vehicle type, `cashHeld < CASH_LIMIT` **and** `cashHeld + cash of the job ≤ CASH_LIMIT` (cash of the job = `cashToCollect` of the offer), has a position; nobody fits → the order keeps searching | `DispatchService.findCandidates` |
 | Cash limit | 50 000 FCFA (`CASH_LIMIT`); at or above: cannot go online, receives no offers, cannot be assigned | |
 | Delivery code | 4 random digits, 5 attempts (atomic counter), then console reset or force-deliver | |
-| OTP | 6 digits, valid 5 min, 5 attempts (atomic), 5 requests/hour/phone, per-IP limits on `/auth/*` | |
+| OTP | 6 digits, valid 5 min, 5 attempts (atomic), 5 requests/hour/phone (demo mode: no limit for the seeded business/driver/client accounts, 30 for the seeded console accounts), per-IP limits on `/auth/*` (20 / 60 per 10 min; 100 / 300 in demo mode) | `services/demo.ts` |
 | Stale online driver | set offline after 10 min without position (`DRIVER_STALE_MINUTES`) | `DispatchService.tick` |
 | Location retention | 12 months (pings, order client positions, SOS positions, chat) | `runRetention` |
 | Upload size | 5 MB per file decoded; 3 MB on Vercel (and in the mobile app) | `MAX_UPLOAD_BYTES`, `VERCEL_MAX_UPLOAD_BYTES` |
 | Business delivery cash | `feePaidBy` `SENDER`: fee collected at pickup; `RECIPIENT`: fee collected at delivery; `cashToCollect` collected at delivery, owed to the business (`owedToBusiness`) | `OrderService.pickup` / `completeDelivery` |
 | Business delivery amounts | `itemsTotal` = `sellerPayout` = `cashToCollect`; `total` = `deliveryFee + cashToCollect`; commission on the fee only | `DeliveryService.create` |
-| Tracking link | 144-bit token, `${PUBLIC_APP_URL}/suivi/<token>`, `404` 24 h after delivered/cancelled, 120 requests/min/IP | `TRACK_RATE_LIMIT` |
+| Tracking link | 144-bit token, `${PUBLIC_APP_URL}/suivi/<token>`, `404` 24 h after delivered/cancelled and 7 days after creation, 120 requests/min/IP, page refreshed every 8 s (`trackingPollIntervalMs`) | `TRACK_RATE_LIMIT`, `TRACKING_POLL_INTERVAL_MS` |
 | Route recomputation | leg changed, driver > 120 m from the line, or route > 3 min old; ≥ 30 s between attempts per order (all instances) | `services/routes.ts` |
 | ETA from the route | `(1 − progress) × durationS` (+ 120 s handover + pickup → dropoff while `ASSIGNED`), rounded up to the minute | `routeEtaSeconds` |
 | OSRM durations | × 1.25 bike, × 1.6 moto, × 1.9 car (free-flow → city average) | `OSRM_DURATION_FACTOR` |
+| Routing requests | ≤ `ROUTING_MAX_RPS` per second per instance (1: FOSSGIS policy), wait ≤ 1 s, else straight line | `TokenBucket` (`providers/routing.ts`) |
+| Cancelled after pickup (`SENDER`) | fee given back to the business: `COLLECTION` adjustment of `-deliveryFee` | `OrderService.cancel` |
 | Driver heading | phone heading when speed ≥ 1 m/s (or not sent), else bearing after ≥ 15 m, else unchanged | `services/heading.ts` |
 
 Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Format amounts with
@@ -1535,10 +1614,19 @@ Map default center: Ouagadougou `12.3714, -1.5197` (`OUAGADOUGOU_CENTER`). Forma
 
 ## 12. Demo accounts (seed)
 
-`npm run db:seed` (wipes the dev database). With `OTP_DEV_BYPASS=true` (or `DEMO_MODE=true`), log in with code
-`123456`; with `DEMO_MODE=true`, the `ADMIN` and `CONTROLLER` accounts use the demo access code (`DEMO_STAFF_CODE`)
-instead, after "Recevoir le code". On Vercel, the production build seeds the same accounts once, only when the
-database has no user yet (`SEED_DEMO=true` and `DEMO_MODE=true`, `npm run db:seed:if-empty`, never wipes).
+`npm run db:seed` (wipes the dev database; refused with `NODE_ENV=production` or on a non-local database host unless
+`SEED_FORCE=true`). With `OTP_DEV_BYPASS=true` (or `DEMO_MODE=true`), log in with code `123456`; with
+`DEMO_MODE=true`, the `ADMIN` and `CONTROLLER` accounts use the demo access code (`DEMO_STAFF_CODE`) instead, after
+"Recevoir le code". In demo mode these accounts are never locked out by the 5-codes-per-hour limit (§3).
+
+On Vercel, the production build (`SEED_DEMO=true` and `DEMO_MODE=true`) seeds the same accounts once, only when the
+database has no user yet (`npm run db:seed:if-empty`, never wipes). A database that already holds data (e.g. the
+former client/food demo) is **not** upgraded automatically: **to reset the live demo, set `DEMO_RESET_ID` to a new
+value (any text, e.g. `2026-11-09`) in the API project and redeploy.** The production build then compares it with the
+last id applied (stored in the database, table `AppSetting`); if it differs, it **wipes every table** and seeds this
+B2B demo, then stores the id; the same id again does nothing (idempotent: redeploying never wipes twice). Refused (no
+wipe, a warning in the build log) without `DEMO_MODE=true` or `SEED_DEMO=true`; preview deployments never touch the
+database. Partners' accounts, deliveries and uploads made in the demo are deleted by a reset.
 The demo is public: the seeded KYC documents are blank images, never upload real ID documents.
 The demo follows the B2B model: businesses request deliveries to recipients (fictitious names and numbers, no
 accounts); the seed prints the public tracking links of the active deliveries. Routes of the jobs in progress are
@@ -1592,12 +1680,50 @@ Against Annexe 1 of the contract. API side:
 
 Deployment note: several API instances (Vercel) are supported for dispatch: Postgres partial unique indexes
 allow at most one open offer per order and per driver, and the dispatch cycle is guarded by a lease row
-(`JobLease`). The per-IP limits on `/auth/*` are still in memory (per instance); the per-phone OTP limit
-(5 per hour) is in the database. Files can be stored in Postgres (`STORAGE_DRIVER=db`).
+(`JobLease`). The per-IP limits on `/auth/*` and `/track/:token`, and the routing rate limit (`ROUTING_MAX_RPS`), are
+in memory (per instance); the per-phone OTP limit (5 per hour) is in the database. Files can be stored in Postgres
+(`STORAGE_DRIVER=db`).
 
 ---
 
 ## 14. Changelog
+
+Corrections after the review of the B2B release (9 Nov 2026, backward compatible unless marked; migration
+`20261109090000_app_settings`, one new table only):
+
+- **Demo reset**: new `DEMO_RESET_ID` (any text). With `DEMO_MODE=true` and `SEED_DEMO=true`, a production build whose
+  `DEMO_RESET_ID` differs from the last id applied (table `AppSetting`) wipes the database and seeds the B2B demo, then
+  stores the id; same id = nothing. Refused without `DEMO_MODE` ([§12](#12-demo-accounts-seed)). The destructive
+  `npm run db:seed` is now also refused on a non-local database host unless `SEED_FORCE=true`.
+- **Demo logins never locked**: in `DEMO_MODE`, the seeded business/driver/client accounts have no per-phone limit on
+  `POST /auth/otp/request`, the seeded console accounts 30 per hour; per-IP limits default to 100 / 300 per 10 min (§3).
+- `OfferDto.cashAtPickup` (fee paid by the business at pickup) and `OfferDto.cashAtDelivery` (goods + fee paid by the
+  recipient); `cashToCollect` is still the total (§7.3).
+- `PublicConfigDto.trackingPollIntervalMs` (`TRACKING_POLL_INTERVAL_MS`, default 8000): the public tracking page polls
+  every 8 s while a driver is on the way and ≈ 16 s while searching (was 4 s).
+- Cancellation: the assigned driver gets a push "Course annulée" (`data.type: "order.cancelled"`) when the business or the
+  console cancels; the recipient of a business delivery gets a cancellation message.
+- **Behaviour change (dispatch)**: a job is offered only to a driver who can collect all its cash without going over
+  `CASH_LIMIT` (`cashHeld + cashToCollect ≤ CASH_LIMIT`); if nobody fits it keeps searching (console: manual assignment).
+- Console cancellation after pickup of a delivery whose fee was paid at pickup: adjustment entry (`COLLECTION`, negative
+  amount, `recordedBy` = controller) that gives the fee back to the business; the order's ledger entries sum to 0.
+- `GET /track/:token`: `Cache-Control: no-store` and `Referrer-Policy` on every response, `429` included; tokens longer
+  than 100 characters or badly encoded get the same `404` JSON as unknown ones (with CORS) instead of Fastify's `414`;
+  absolute expiry 7 days after creation. On the other routes, a path parameter longer than 100 characters now gets
+  `404 NOT_FOUND` and an invalid percent-encoding `400 VALIDATION_ERROR`, in the API's JSON format with CORS.
+- Logs: outside `DEMO_MODE`, recipient phones are masked and messages logged without tracking link or delivery code;
+  request logs show `/track/[jeton]`. **Breaking for a real production**: `RECIPIENT_NOTIFIER=console` is refused in
+  production without `DEMO_MODE=true` (start-up and `scripts/check-config.ts`).
+- Routing (OSRM): at most `ROUTING_MAX_RPS` requests per second per instance (default 1, the FOSSGIS policy; other
+  values refused with the FOSSGIS URL), straight line when the wait would exceed 1 s, the two assignment-time
+  computations in sequence, `User-Agent: YaarLivraison/0.1 (+${PUBLIC_APP_URL})`.
+- Offers: a business delivery with a custom pickup shows only the pickup zone before acceptance (the business address is
+  shown only when it is the pickup).
+- Console: `GET /orders?q=` also matches the business (store) name and the recipient name/phone; `MapStoreDto.approvalStatus`
+  (optional) in `GET /controller/map`.
+- Docs: `BusinessBalanceDto` is exported by `@yaar/shared`; `GET /business/deliveries` answers `200` with the business's
+  own list whatever its approval status (only quote and creation need the approval).
+- New environment variables: `DEMO_RESET_ID`, `ROUTING_MAX_RPS`, `TRACKING_POLL_INTERVAL_MS` (see `apps/api/README.md`).
 
 Business deliveries, public tracking and road routes (8 Nov 2026, backward compatible; migration
 `20261108220000_routes_business_deliveries`, nullable or defaulted columns only):

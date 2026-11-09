@@ -110,6 +110,54 @@ describe('mode démo en production : code d’accès des comptes de console', ()
   });
 });
 
+describe('mode démo : les comptes de démonstration ne se bloquent pas', () => {
+  it('comptes du seed connectés avec 123456 : pas de plafond de 5 codes par heure ; console du seed : 30 ; autres : 5', async () => {
+    await t.prisma.user.create({ data: { phone: '+22671000001', role: 'SELLER', name: 'Awa Ouédraogo' } });
+    await t.prisma.user.create({ data: { phone: '+22673000002', role: 'DRIVER', name: 'Karim D.' } });
+    // Plusieurs partenaires sur le même compte de démonstration (entreprise, livreur, numéro du seed pas encore créé).
+    for (const phone of ['+22671000001', '+22673000002', '+22672000003']) {
+      for (let i = 0; i < 12; i++) expect((await requestCode(phone)).statusCode, `${phone} n° ${i + 1}`).toBe(200);
+      expect((await verify(phone, '123456')).statusCode, phone).toBe(200);
+    }
+    // Compte de console du seed : plafond relevé à 30 (chaque code permet 5 essais du code d'accès démo).
+    await t.prisma.user.create({ data: { phone: '+22670000002', role: 'CONTROLLER', name: 'Salif K.' } });
+    for (let i = 0; i < 30; i++) expect((await requestCode('+22670000002')).statusCode, `console n° ${i + 1}`).toBe(200);
+    const staffLimited = await requestCode('+22670000002');
+    expect(staffLimited.statusCode).toBe(429);
+    expect(staffLimited.json<ApiErrorBody>().error.code).toBe('OTP_RATE_LIMITED');
+    expect((await verify('+22670000002', STAFF_CODE)).statusCode).toBe(200);
+    // Un compte de console hors seed, ou n'importe quel autre numéro : 5 par heure.
+    const other = await staffAccount('ADMIN');
+    for (const phone of [other, '+22679000001']) {
+      for (let i = 0; i < 5; i++) expect((await requestCode(phone)).statusCode).toBe(200);
+      expect((await requestCode(phone)).statusCode, phone).toBe(429);
+    }
+  });
+
+  it('hors DEMO_MODE, les numéros du seed gardent la limite de 5 codes par heure', async () => {
+    const dev = await createTestApp({ DEMO_MODE: 'false' });
+    try {
+      for (let i = 0; i < 5; i++) expect((await call(dev.app, 'POST', '/auth/otp/request', null, { phone: '+22671000001' })).statusCode).toBe(200);
+      expect((await call(dev.app, 'POST', '/auth/otp/request', null, { phone: '+22671000001' })).statusCode).toBe(429);
+    } finally {
+      await dev.app.close();
+      await dev.prisma.$disconnect();
+    }
+  });
+
+  it('limite par IP de /auth/* plus large en démonstration (100 / 300 par 10 min), valeur explicite respectée', () => {
+    const env = { ...process.env };
+    delete env.AUTH_RATE_LIMIT_REQUEST;
+    delete env.AUTH_RATE_LIMIT_VERIFY;
+    expect(loadConfig(env)).toMatchObject({ authRateLimitRequest: 20, authRateLimitVerify: 60 });
+    expect(loadConfig({ ...env, DEMO_MODE: 'true' })).toMatchObject({ authRateLimitRequest: 100, authRateLimitVerify: 300 });
+    expect(loadConfig({ ...env, DEMO_MODE: 'true', AUTH_RATE_LIMIT_REQUEST: '7', AUTH_RATE_LIMIT_VERIFY: '0' })).toMatchObject({
+      authRateLimitRequest: 7,
+      authRateLimitVerify: 0,
+    });
+  });
+});
+
 describe('mode démo en développement / test', () => {
   it('sans DEMO_STAFF_CODE : 123456 par défaut, y compris pour les comptes de console', async () => {
     const dev = await createTestApp({ DEMO_MODE: 'true', REALTIME_MODE: 'poll' });
@@ -164,7 +212,7 @@ describe('configuration du mode démo', () => {
       demoStaffCode: STAFF_CODE,
     });
     // Hors démo, la variable est ignorée et le contournement OTP n'existe pas en production.
-    expect(loadConfig({ ...prod, DEMO_STAFF_CODE: STAFF_CODE })).toMatchObject({ demoMode: false, otpDevBypass: false, demoStaffCode: undefined });
+    expect(loadConfig({ ...prod, DEMO_STAFF_CODE: STAFF_CODE, RECIPIENT_NOTIFIER: 'whatsapp' })).toMatchObject({ demoMode: false, otpDevBypass: false, demoStaffCode: undefined });
   });
 
   it('le message d’erreur ne contient jamais la valeur du code', () => {

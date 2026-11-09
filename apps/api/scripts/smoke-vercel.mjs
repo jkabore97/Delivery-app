@@ -4,9 +4,10 @@
  * dans les conditions de Vercel (VERCEL=1, NODE_ENV=production, REALTIME_MODE=poll, STORAGE_DRIVER=db,
  * DEMO_MODE=true avec un DEMO_STAFF_CODE de test), puis vérifie /health, /config, CORS (préflight mis en
  * cache, motif de prévisualisation), la connexion OTP (123456 pour les clients et livreurs, refusé pour
- * un contrôleur qui doit utiliser le code d'accès démo), /me, /driver/offers, une livraison d'entreprise (devis,
- * création, lien de suivi public /track/:token avec CORS de PUBLIC_APP_URL, annulation), les limites d'envoi
- * (413 JSON), /cron/daily, et la réponse CORS quand l'API ne peut pas démarrer.
+ * un contrôleur qui doit utiliser le code d'accès démo ; comptes de démonstration jamais bloqués par la limite de
+ * 5 codes par heure), /me, /driver/offers, une livraison d'entreprise (devis, création, lien de suivi public
+ * /track/:token avec CORS de PUBLIC_APP_URL, jeton trop long → même 404 JSON avec CORS, annulation), les limites
+ * d'envoi (413 JSON), /cron/daily, et la réponse CORS quand l'API ne peut pas démarrer.
  * Itinéraires en ligne droite (ROUTING_PROVIDER=straight) : aucun appel au service OSRM.
  *   npm run build:bundle -w apps/api && npm run smoke:vercel -w apps/api
  * Base : SMOKE_DATABASE_URL, sinon DATABASE_URL (.env), sinon yaar_dev locale (seed de démonstration attendu).
@@ -141,7 +142,11 @@ try {
   const cfg = await req('GET', '/config');
   check(
     'GET /config',
-    cfg.status === 200 && cfg.json?.realtime === 'poll' && cfg.json?.demoMode === true && cfg.json?.otpChannel === 'console',
+    cfg.status === 200 &&
+      cfg.json?.realtime === 'poll' &&
+      cfg.json?.demoMode === true &&
+      cfg.json?.otpChannel === 'console' &&
+      cfg.json?.trackingPollIntervalMs === 8000,
     JSON.stringify(cfg.json),
   );
   check('GET /config ne révèle pas le code d’accès démo', !cfg.text.includes(STAFF_CODE));
@@ -198,6 +203,11 @@ try {
 
   const client = await login('+22672000001', '123456');
   check('Client avec 123456 → connecté', client.status === 200 && client.json?.user?.role === 'CLIENT');
+
+  // Démonstration : plusieurs partenaires sur le même compte du seed, jamais bloqués par la limite de 5 codes par heure.
+  const demoRequests = [];
+  for (let i = 0; i < 7; i++) demoRequests.push((await req('POST', '/auth/otp/request', { body: { phone: '+22671000003' } })).status);
+  check('Compte de démonstration : 7 demandes de code de suite acceptées', demoRequests.every((st) => st === 200), demoRequests.join(','));
 
   const driver = await login('+22673000002', '123456', { role: 'DRIVER' });
   const offers = await req('GET', '/driver/offers', { token: driver.json?.accessToken });
@@ -261,6 +271,15 @@ try {
   );
   const unknown = await req('GET', '/track/AAAAAAAAAAAAAAAAAAAAAAAA');
   check('GET /track/:token inconnu → 404 JSON', unknown.status === 404 && unknown.json?.error?.code === 'NOT_FOUND');
+  const tooLong = await req('GET', `/track/${'a'.repeat(300)}`, { headers: { origin: TRACKING_ORIGIN } });
+  check(
+    'GET /track/:token trop long → la même 404 JSON (CORS, no-store), pas de 414',
+    tooLong.status === 404 &&
+      tooLong.json?.error?.message === unknown.json?.error?.message &&
+      tooLong.headers.get('access-control-allow-origin') === TRACKING_ORIGIN &&
+      tooLong.headers.get('cache-control') === 'no-store',
+    `${tooLong.status} ${tooLong.text.slice(0, 80)}`,
+  );
   if (created.json?.id) {
     const cancelled = await req('POST', `/orders/${created.json.id}/cancel`, { token: bizToken, body: { reason: 'Test de fumée' } });
     check('POST /orders/:id/cancel par l’entreprise', cancelled.status === 200 && cancelled.json?.status === 'CANCELLED');

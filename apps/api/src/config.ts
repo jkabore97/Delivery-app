@@ -18,6 +18,13 @@ const boolString = z
 /** Application web publique (Expo web) : page de suivi des destinataires `/suivi/<jeton>`. */
 export const DEFAULT_PUBLIC_APP_URL = 'https://yaar-livraison.vercel.app';
 
+/** Serveurs OSRM publics FOSSGIS (règles d'usage : au plus 1 requête par seconde, User-Agent identifiant l'application). */
+export const FOSSGIS_ROUTING_HOST = 'routing.openstreetmap.de';
+
+/** Limites par IP de /auth/* (requêtes par 10 min) : valeurs par défaut, et en mode démonstration (partenaires derrière une même IP). */
+export const AUTH_RATE_LIMIT_DEFAULTS = { request: 20, verify: 60 } as const;
+export const AUTH_RATE_LIMIT_DEMO_DEFAULTS = { request: 100, verify: 300 } as const;
+
 /** URL http(s) absolue, sans paramètres ni fragment ; la barre oblique finale est retirée. */
 function httpUrl(name: string) {
   return z
@@ -57,9 +64,12 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('*'),
   /** false (défaut) : X-Forwarded-For ignoré ; true, ou liste d'IP / CIDR des proxys de confiance. */
   TRUST_PROXY: z.string().trim().default('false'),
-  /** Limites par adresse IP sur /auth/* (requêtes par fenêtre de 10 min ; 0 = désactivé). */
-  AUTH_RATE_LIMIT_REQUEST: z.coerce.number().int().min(0).default(20),
-  AUTH_RATE_LIMIT_VERIFY: z.coerce.number().int().min(0).default(60),
+  /**
+   * Limites par adresse IP sur /auth/* (requêtes par fenêtre de 10 min ; 0 = désactivé). Sans valeur : 20 / 60,
+   * ou 100 / 300 en mode démonstration (plusieurs partenaires derrière la même IP).
+   */
+  AUTH_RATE_LIMIT_REQUEST: z.coerce.number().int().min(0).optional(),
+  AUTH_RATE_LIMIT_VERIFY: z.coerce.number().int().min(0).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /** socket : Socket.IO (serveur persistant) ; poll : pas de socket, les clients interrogent le REST (Vercel). */
   REALTIME_MODE: z.enum(['socket', 'poll']).optional(),
@@ -96,12 +106,19 @@ const envSchema = z.object({
   ROUTING_OSRM_URL: httpUrl('ROUTING_OSRM_URL').default('https://routing.openstreetmap.de'),
   /** Délai maximal d'un appel au service d'itinéraire (ms) ; au-delà, ligne droite de secours. */
   ROUTING_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2500),
+  /**
+   * Appels au service d'itinéraire : au plus N par seconde et par instance d'API (seau à jetons ; au-delà, ligne
+   * droite). 1 par défaut (règle des serveurs publics FOSSGIS) ; 0 = sans limite (OSRM auto-hébergé uniquement).
+   */
+  ROUTING_MAX_RPS: z.coerce.number().int().min(0).max(100).default(1),
   /** URL publique de l'application web : lien de suivi envoyé aux destinataires (`${PUBLIC_APP_URL}/suivi/<jeton>`). */
   PUBLIC_APP_URL: httpUrl('PUBLIC_APP_URL').default(DEFAULT_PUBLIC_APP_URL),
   /** Messages aux destinataires des livraisons d'entreprise : console (logs) ou whatsapp (non implémenté). */
   RECIPIENT_NOTIFIER: z.enum(['console', 'whatsapp']).default('console'),
   /** Suivi public GET /track/:token : requêtes par minute et par adresse IP (0 = pas de limite). */
   TRACK_RATE_LIMIT: z.coerce.number().int().min(0).default(120),
+  /** Rafraîchissement conseillé de la page publique de suivi pendant une course (ms, exposé dans GET /config). */
+  TRACKING_POLL_INTERVAL_MS: z.coerce.number().int().min(2000).max(60_000).default(8000),
 });
 
 export interface AppConfig {
@@ -145,11 +162,15 @@ export interface AppConfig {
   routingProvider: 'osrm' | 'straight';
   routingOsrmUrl: string;
   routingTimeoutMs: number;
+  /** Appels au service d'itinéraire par seconde et par instance (0 = illimité). */
+  routingMaxRps: number;
   /** URL publique de l'application (liens de suivi des destinataires), sans barre oblique finale. */
   publicAppUrl: string;
   recipientNotifier: 'console' | 'whatsapp';
   /** GET /track/:token : requêtes par minute et par IP (0 = illimité). */
   trackRateLimit: number;
+  /** Rafraîchissement conseillé de la page publique de suivi pendant une course (ms). */
+  trackingPollIntervalMs: number;
 }
 
 /** Marge du corps JSON autour du fichier encodé (type, date d'expiration, code de livraison…). */
@@ -197,8 +218,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       `DEMO_MODE=true exige RECIPIENT_NOTIFIER=console (actuellement ${e.RECIPIENT_NOTIFIER}) : le mode démonstration ne doit pas écrire à de vrais destinataires`,
     );
   }
+  // Production réelle : le canal « console » n'envoie rien aux destinataires (lien et code seulement dans les logs).
+  if (isProd && !e.DEMO_MODE && e.RECIPIENT_NOTIFIER === 'console') {
+    throw new Error(
+      'RECIPIENT_NOTIFIER=console est interdit en production hors démonstration (DEMO_MODE=true) : les destinataires ne recevraient ni le lien de suivi ni le code. Branchez un vrai canal (RECIPIENT_NOTIFIER=whatsapp, cf. src/providers/recipients.ts)',
+    );
+  }
   if (isProd && !e.PUBLIC_APP_URL.startsWith('https://'))
     throw new Error('PUBLIC_APP_URL doit être en https en production (lien de suivi envoyé aux destinataires)');
+  // Serveurs publics FOSSGIS : 1 requête par seconde au plus (règles d'usage).
+  if (e.ROUTING_PROVIDER === 'osrm' && new URL(e.ROUTING_OSRM_URL).hostname === FOSSGIS_ROUTING_HOST && (e.ROUTING_MAX_RPS === 0 || e.ROUTING_MAX_RPS > 1))
+    throw new Error(
+      `ROUTING_MAX_RPS=${e.ROUTING_MAX_RPS} est interdit avec les serveurs publics FOSSGIS (${FOSSGIS_ROUTING_HOST}) : 1 requête par seconde au plus. Auto-hébergez OSRM pour lever la limite`,
+    );
   const realtimeMode = e.REALTIME_MODE ?? (onVercel ? 'poll' : 'socket');
   const storageDriver = e.STORAGE_DRIVER ?? (onVercel ? 'db' : 'local');
   if (onVercel && realtimeMode === 'socket')
@@ -232,8 +264,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           : e.TRUST_PROXY.split(',')
               .map((x) => x.trim())
               .filter(Boolean),
-    authRateLimitRequest: e.AUTH_RATE_LIMIT_REQUEST,
-    authRateLimitVerify: e.AUTH_RATE_LIMIT_VERIFY,
+    authRateLimitRequest:
+      e.AUTH_RATE_LIMIT_REQUEST ?? (e.DEMO_MODE ? AUTH_RATE_LIMIT_DEMO_DEFAULTS.request : AUTH_RATE_LIMIT_DEFAULTS.request),
+    authRateLimitVerify:
+      e.AUTH_RATE_LIMIT_VERIFY ?? (e.DEMO_MODE ? AUTH_RATE_LIMIT_DEMO_DEFAULTS.verify : AUTH_RATE_LIMIT_DEFAULTS.verify),
     corsOrigins,
     logLevel: e.LOG_LEVEL,
     realtimeMode,
@@ -251,8 +285,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     routingProvider: e.ROUTING_PROVIDER,
     routingOsrmUrl: e.ROUTING_OSRM_URL,
     routingTimeoutMs: e.ROUTING_TIMEOUT_MS,
+    routingMaxRps: e.ROUTING_MAX_RPS,
     publicAppUrl: e.PUBLIC_APP_URL,
     recipientNotifier: e.RECIPIENT_NOTIFIER,
     trackRateLimit: e.TRACK_RATE_LIMIT,
+    trackingPollIntervalMs: e.TRACKING_POLL_INTERVAL_MS,
   };
 }

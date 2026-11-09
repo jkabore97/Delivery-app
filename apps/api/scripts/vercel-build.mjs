@@ -11,6 +11,10 @@
  *      partagent les variables de la base de production : elles ne la migrent jamais ;
  *   4. si SEED_DEMO=true et DEMO_MODE=true : données de démonstration UNIQUEMENT si la base n'a aucun
  *      utilisateur (jamais d'effacement). SEED_DEMO=true sans DEMO_MODE=true : seed ignoré (avertissement).
+ *      Avec en plus DEMO_RESET_ID (texte libre) : réinitialisation explicite de la démo (`seed.ts --demo-reset`) :
+ *      si l'identifiant diffère du dernier appliqué (table AppSetting), la base est VIDÉE puis la démo B2B recréée et
+ *      l'identifiant enregistré ; même identifiant : rien. Refusée (avertissement, aucun effacement) sans DEMO_MODE=true.
+ *      Pour réinitialiser la démo : donner une nouvelle valeur à DEMO_RESET_ID, puis redéployer.
  * Options locales : --skip-db (étapes 1-2 seulement).
  */
 import { execSync } from 'node:child_process';
@@ -78,15 +82,21 @@ if (skipDb) {
   if (!directUrl) throw new Error('DATABASE_URL (ou DATABASE_URL_UNPOOLED) est requis pour appliquer les migrations');
   // Migrations et seed sur la connexion directe (verrous consultatifs, pas de pooler en mode transaction).
   run('npx prisma migrate deploy', { DATABASE_URL: directUrl });
+  const resetId = process.env.DEMO_RESET_ID?.trim() ?? '';
   if (process.env.SEED_DEMO !== 'true') {
     console.info('\nSEED_DEMO≠true : pas de données de démonstration.');
+    if (resetId) console.warn('⚠ DEMO_RESET_ID défini mais SEED_DEMO≠true : réinitialisation de la démo ignorée (aucun effacement).');
   } else if (process.env.DEMO_MODE !== 'true') {
     console.warn(
       '\n' +
         '⚠⚠⚠ SEED_DEMO=true mais DEMO_MODE≠true : seed de démonstration IGNORÉ. ⚠⚠⚠\n' +
         '    Les comptes de démonstration (code 123456) ne doivent jamais exister hors démonstration.\n' +
-        '    Retirez SEED_DEMO, ou activez DEMO_MODE=true (avec DEMO_STAFF_CODE) pour une démo publique.',
+        '    Retirez SEED_DEMO, ou activez DEMO_MODE=true (avec DEMO_STAFF_CODE) pour une démo publique.' +
+        (resetId ? '\n    DEMO_RESET_ID ignoré : la réinitialisation (effacement de la base) est refusée sans DEMO_MODE=true.' : ''),
     );
+  } else if (resetId) {
+    // Réinitialisation explicite : effacement + démo B2B si DEMO_RESET_ID diffère du dernier appliqué, sinon rien.
+    run('npx tsx prisma/seed.ts --demo-reset', { DATABASE_URL: directUrl });
   } else {
     // --if-empty : rien si la base contient déjà un utilisateur ; jamais d'effacement.
     run('npx tsx prisma/seed.ts --if-empty', { DATABASE_URL: directUrl });

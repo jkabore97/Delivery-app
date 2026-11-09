@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  DEMO_ACCOUNT_PHONES,
+  DEMO_RESET_SETTING_KEY,
+  decideDemoReset,
+  isLocalDatabaseUrl,
+  wipeRefusal,
+} from '../src/services/demo';
 import { resetDb } from './helpers';
 
 const run = promisify(execFile);
@@ -19,6 +26,25 @@ async function seedIfEmpty(): Promise<string> {
   });
   return stdout;
 }
+
+/** Lance `prisma/seed.ts` (base de test sauf `env.DATABASE_URL`) ; code de sortie et sorties standard réunies. */
+async function runSeed(args: string[], env: Record<string, string> = {}, drop: string[] = []): Promise<{ code: number; out: string }> {
+  const childEnv: Record<string, string | undefined> = { ...process.env, ROUTING_PROVIDER: 'straight', NODE_ENV: 'test', ...env };
+  for (const k of ['DEMO_RESET_ID', 'SEED_DEMO', 'SEED_FORCE', 'DEMO_MODE', ...drop]) if (!(k in env)) delete childEnv[k];
+  try {
+    const { stdout, stderr } = await run('npx', ['tsx', 'prisma/seed.ts', ...args], { cwd: root, env: childEnv, timeout: 120_000 });
+    return { code: 0, out: stdout + stderr };
+  } catch (e) {
+    const err = e as { code?: unknown; stdout?: string; stderr?: string };
+    return { code: typeof err.code === 'number' ? err.code : 1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+  }
+}
+
+const demoReset = (id: string, over: Record<string, string> = {}) =>
+  runSeed(['--demo-reset'], { DEMO_RESET_ID: id, DEMO_MODE: 'true', SEED_DEMO: 'true', ...over });
+const SENTINEL = '+22679999999';
+const appliedId = async () => (await prisma.appSetting.findUnique({ where: { key: DEMO_RESET_SETTING_KEY } }))?.value ?? null;
+const hasSentinel = async () => (await prisma.user.count({ where: { phone: SENTINEL } })) === 1;
 
 beforeAll(async () => {
   await resetDb(prisma);
@@ -38,6 +64,8 @@ describe('seed de démonstration (modèle B2B)', () => {
     // Comptes de console et livreurs inchangés.
     const users = await prisma.user.findMany({ include: { driverProfile: true } });
     const byPhone = new Map(users.map((u) => [u.phone, u]));
+    // Liste des comptes de démonstration (exemptés du plafond de codes en DEMO_MODE) = exactement les comptes créés.
+    expect(new Set(users.map((u) => u.phone))).toEqual(DEMO_ACCOUNT_PHONES);
     expect(byPhone.get('+22670000001')?.role).toBe('ADMIN');
     expect(byPhone.get('+22670000002')?.role).toBe('CONTROLLER');
     for (let i = 1; i <= 7; i++) expect(byPhone.get(`+2267300000${i}`)?.role).toBe('DRIVER');
@@ -84,4 +112,94 @@ describe('seed de démonstration (modèle B2B)', () => {
     expect(await seedIfEmpty()).toMatch(/Seed de démonstration ignoré/);
     expect(await prisma.user.count()).toBe(count);
   }, 240_000);
+});
+
+describe('réinitialisation de la démo (DEMO_RESET_ID, build Vercel)', () => {
+  it('décision : seulement avec DEMO_MODE=true et SEED_DEMO=true, une fois par identifiant', () => {
+    const base = { resetId: 'nov-9', demoMode: true, seedDemo: true, lastAppliedId: null };
+    expect(decideDemoReset(base)).toMatchObject({ action: 'reset', resetId: 'nov-9', reason: expect.stringContaining('première') });
+    expect(decideDemoReset({ ...base, lastAppliedId: 'nov-1' })).toMatchObject({ action: 'reset', reason: expect.stringContaining('nov-1') });
+    expect(decideDemoReset({ ...base, lastAppliedId: 'nov-9' })).toMatchObject({ action: 'skip' });
+    expect(decideDemoReset({ ...base, resetId: '  nov-9 ', lastAppliedId: 'nov-9' })).toMatchObject({ action: 'skip' });
+    expect(decideDemoReset({ ...base, resetId: undefined })).toMatchObject({ action: 'skip' });
+    expect(decideDemoReset({ ...base, resetId: '   ' })).toMatchObject({ action: 'skip' });
+    expect(decideDemoReset({ ...base, demoMode: false })).toMatchObject({ action: 'refuse', reason: expect.stringContaining('DEMO_MODE') });
+    expect(decideDemoReset({ ...base, seedDemo: false })).toMatchObject({ action: 'refuse', reason: expect.stringContaining('SEED_DEMO') });
+    // Sans DEMO_MODE : refus même si l'identifiant est déjà appliqué ou nouveau.
+    expect(decideDemoReset({ ...base, demoMode: false, lastAppliedId: 'nov-9' }).action).toBe('refuse');
+  });
+
+  it('nouvel identifiant : base vidée puis démo B2B ; même identifiant : rien ; sans DEMO_MODE ou SEED_DEMO : refus', async () => {
+    await resetDb(prisma);
+    await prisma.user.create({ data: { phone: SENTINEL, role: 'CLIENT', name: 'Ancienne donnée' } });
+
+    const first = await demoReset('reset-1');
+    expect(first.code, first.out).toBe(0);
+    expect(first.out).toMatch(/première réinitialisation/);
+    expect(await hasSentinel()).toBe(false);
+    expect(await prisma.store.count({ where: { name: 'Kaya Market' } })).toBe(1);
+    expect(await appliedId()).toBe('reset-1');
+
+    // Même identifiant (redéploiement) : aucune modification.
+    await prisma.user.create({ data: { phone: SENTINEL, role: 'CLIENT' } });
+    const again = await demoReset('reset-1');
+    expect(again.code, again.out).toBe(0);
+    expect(again.out).toMatch(/rien à faire/);
+    expect(await hasSentinel()).toBe(true);
+
+    // Refusée (et rien n'est effacé) sans DEMO_MODE=true ou sans SEED_DEMO=true.
+    const refusedEnvs: Array<Record<string, string>> = [{ DEMO_MODE: 'false' }, { SEED_DEMO: 'false' }];
+    for (const over of refusedEnvs) {
+      const refused = await demoReset('reset-2', over);
+      expect(refused.code, JSON.stringify(over)).not.toBe(0);
+      expect(refused.out).toMatch(/Réinitialisation de la démo refusée/);
+    }
+    expect(await hasSentinel()).toBe(true);
+    expect(await appliedId()).toBe('reset-1');
+
+    // Nouvel identifiant : nouvelle réinitialisation.
+    const second = await demoReset('reset-2');
+    expect(second.code, second.out).toBe(0);
+    expect(second.out).toMatch(/nouvel identifiant « reset-2 » \(précédent : « reset-1 »\)/);
+    expect(await hasSentinel()).toBe(false);
+    expect(await appliedId()).toBe('reset-2');
+    expect(await prisma.order.count()).toBeGreaterThanOrEqual(6);
+
+    // Même identifiant sur une base vide (données effacées à la main) : la démo est recréée, sans autre effacement.
+    await prisma.$executeRawUnsafe('TRUNCATE "User", "PricingRule", "StoredFile", "JobLease" CASCADE');
+    const empty = await demoReset('reset-2');
+    expect(empty.code, empty.out).toBe(0);
+    expect(empty.out).toMatch(/Base vide : création des données de démonstration/);
+    expect(await prisma.user.count()).toBe(DEMO_ACCOUNT_PHONES.size);
+  }, 240_000);
+});
+
+describe('garde-fou du seed qui vide la base', () => {
+  it('base locale seulement, sauf SEED_FORCE=true ; jamais en production sans SEED_FORCE', () => {
+    for (const url of [
+      'postgresql://postgres:postgres@localhost:5433/yaar_dev?schema=public',
+      'postgresql://postgres@127.0.0.1/yaar',
+      'postgresql://postgres@[::1]:5432/yaar',
+      'postgresql://postgres@localhost/yaar?host=/var/run/postgresql', // socket Unix (forme documentée par Prisma)
+      'postgresql:///yaar?host=/var/run/postgresql',
+    ])
+      expect(isLocalDatabaseUrl(url), url).toBe(true);
+    const neon = 'postgresql://neondb_owner:s3cr3t@ep-cool-123.eu-central-1.aws.neon.tech/neondb?sslmode=require';
+    for (const url of [neon, 'postgresql://postgres@db:5432/yaar', 'postgresql://u@10.0.0.5/yaar', 'pas une url'])
+      expect(isLocalDatabaseUrl(url), url).toBe(false);
+    const local = 'postgresql://postgres:postgres@localhost:5433/yaar_dev';
+    expect(wipeRefusal({ nodeEnv: 'development', databaseUrl: local, seedForce: false })).toBeNull();
+    const remote = wipeRefusal({ nodeEnv: 'development', databaseUrl: neon, seedForce: false });
+    expect(remote).toMatch(/base distante \(ep-cool-123\.eu-central-1\.aws\.neon\.tech\)/);
+    expect(remote).not.toContain('s3cr3t');
+    expect(wipeRefusal({ nodeEnv: 'production', databaseUrl: local, seedForce: false })).toMatch(/production/);
+    expect(wipeRefusal({ nodeEnv: 'production', databaseUrl: neon, seedForce: true })).toBeNull();
+  });
+
+  it('npm run db:seed sur une base distante : refusé avant toute connexion', async () => {
+    const r = await runSeed([], { DATABASE_URL: 'postgresql://postgres:postgres@db.example.test:5432/yaar?schema=public' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/Seed interdit sur une base distante \(db\.example\.test\)/);
+    expect(r.out).not.toMatch(/Base de démonstration créée/);
+  }, 120_000);
 });

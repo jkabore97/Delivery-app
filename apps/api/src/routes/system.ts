@@ -16,12 +16,16 @@ function sameSecret(given: string, expected: string): boolean {
 export async function systemRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { config, clock, prisma } = ctx;
 
-  /** Public : les applications le lisent au démarrage (mode temps réel, démo, canal OTP). */
+  /**
+   * Public : les applications le lisent au démarrage (mode temps réel, démo, canal OTP, rythme de la page de suivi
+   * publique : `trackingPollIntervalMs` pendant une course, environ deux fois moins souvent pendant la recherche).
+   */
   app.get('/config', async (): Promise<PublicConfigDto> => ({
     realtime: config.realtimeMode,
     pollIntervalMs: config.pollIntervalMs,
     demoMode: config.demoMode,
     otpChannel: ctx.sms.channel ?? 'console',
+    trackingPollIntervalMs: config.trackingPollIntervalMs,
   }));
 
   /**

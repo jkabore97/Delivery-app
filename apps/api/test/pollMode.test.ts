@@ -37,7 +37,7 @@ describe('mode poll (Vercel)', () => {
     expect(t.io).toBeNull();
     const r = await call(t.app, 'GET', '/config');
     expect(r.statusCode).toBe(200);
-    expect(r.json<PublicConfigDto>()).toEqual({ realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'console' });
+    expect(r.json<PublicConfigDto>()).toEqual({ realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'console', trackingPollIntervalMs: 8000 });
     expect((await call(t.app, 'GET', '/socket.io/?EIO=4&transport=polling')).statusCode).toBe(404);
   });
 
@@ -248,11 +248,12 @@ describe('configuration de production', () => {
     STORAGE_ENCRYPTION_KEY: 'c'.repeat(64),
     CORS_ORIGINS: 'https://console.yaar.test, https://app.yaar.test',
     OTP_DEV_BYPASS: 'true',
+    RECIPIENT_NOTIFIER: 'whatsapp',
   };
 
   it('DEMO_MODE active le code 123456 même en production (avec DEMO_STAFF_CODE) ; sinon jamais', () => {
     expect(loadConfig(prod).otpDevBypass).toBe(false);
-    expect(loadConfig({ ...prod, DEMO_MODE: 'true', DEMO_STAFF_CODE: '482913' })).toMatchObject({ otpDevBypass: true, demoMode: true });
+    expect(loadConfig({ ...prod, DEMO_MODE: 'true', DEMO_STAFF_CODE: '482913', RECIPIENT_NOTIFIER: 'console' })).toMatchObject({ otpDevBypass: true, demoMode: true });
     expect(() => loadConfig({ ...prod, DEMO_MODE: 'true' })).toThrow(/DEMO_STAFF_CODE/);
     expect(loadConfig(prod).corsOrigins).toEqual(['https://console.yaar.test', 'https://app.yaar.test']);
   });

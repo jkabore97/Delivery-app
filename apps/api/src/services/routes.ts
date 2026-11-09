@@ -3,7 +3,8 @@
  *
  * Calcul (fournisseur `RoutingProvider`, OSRM par défaut, ligne droite de secours) :
  * - à l'affectation (ASSIGNED) : vers le point de retrait, depuis la dernière position du livreur (si connue),
- *   et une fois la durée retrait → livraison (`deliveryLegDurationS`) pour l'ETA pendant ASSIGNED ;
+ *   puis (appel suivant, jamais en parallèle) une fois la durée retrait → livraison (`deliveryLegDurationS`) pour
+ *   l'ETA pendant ASSIGNED ;
  * - au retrait (PICKED_UP) : vers le destinataire, depuis la position du livreur si elle a moins de 2 min,
  *   sinon depuis le point de retrait ;
  * - aux positions GPS du livreur (POST /driver/location) quand la cible ne correspond plus au statut, quand le
@@ -247,11 +248,11 @@ export class RouteService {
     }
     if (!origin && target === 'DROPOFF') origin = { lat: o.pickupLat, lng: o.pickupLng };
     const needLeg = target === 'PICKUP' && o.deliveryLegDurationS === null;
-    await Promise.all([
-      // Position du livreur inconnue à l'affectation : la première position reçue déclenchera le calcul.
-      origin ? this.recompute(o, target, origin, now) : Promise.resolve(false),
-      needLeg ? this.computeDeliveryLeg(o) : Promise.resolve(),
-    ]);
+    // L'un après l'autre (débit du service public : 1 requête/s) : d'abord le tracé affiché sur les cartes, puis la
+    // durée retrait → livraison (ETA). Position du livreur inconnue à l'affectation : la première position reçue
+    // déclenchera le calcul du tracé.
+    if (origin) await this.recompute(o, target, origin, now);
+    if (needLeg) await this.computeDeliveryLeg(o);
   }
 
   /** Prend la main (au plus une tentative par 30 s), calcule puis écrit si l'étape n'a pas changé entre-temps. */

@@ -109,6 +109,28 @@ describe('calcul de l’itinéraire aux changements de statut', () => {
     expect(row.deliveryLegDurationS).toBe(straightRoute(pickup, dropoff, 'MOTO').durationS);
   });
 
+  it('affectation : les deux calculs l’un après l’autre (débit du service public), le tracé affiché d’abord', async () => {
+    const client = await login(t.app, 'CLIENT');
+    const driver = await createDriver(t, 'MOTO', near);
+    const o = (await call(t.app, 'POST', '/orders', client.accessToken, parcel)).json<OrderDto>();
+    const offer = await t.prisma.dispatchOffer.findFirstOrThrow({ where: { orderId: o.id } });
+    fake.gate = new Promise<void>((r) => (releaseGate = r));
+    const accepted = await call(t.app, 'POST', `/driver/offers/${offer.id}/accept`, driver.accessToken, {});
+    expect(accepted.statusCode).toBe(200); // après WORK_BUDGET_MS, le calcul continue en arrière-plan
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    // Tant que le tracé vers le retrait n'est pas revenu, la durée retrait → livraison n'est pas demandée.
+    expect(fake.calls).toEqual([{ from: near, to: { lat: pickup.lat, lng: pickup.lng }, vehicleType: 'MOTO' }]);
+    fake.gate = null;
+    releaseGate();
+    await t.ctx.work.settled();
+    expect(fake.calls.map((c) => c.to)).toEqual([
+      { lat: pickup.lat, lng: pickup.lng },
+      { lat: dropoff.lat, lng: dropoff.lng },
+    ]);
+    expect((await dbRoute(o.id)).deliveryLegDurationS).toBe(straightRoute(pickup, dropoff, 'MOTO').durationS);
+  });
+
   it('retrait : vers le destinataire depuis la position récente du livreur, sinon depuis le point de retrait', async () => {
     const a = await assignedOrder();
     fake.calls.length = 0;

@@ -2,11 +2,15 @@
  * Données de démonstration autour de Ouagadougou (modèle B2B : des entreprises font livrer des colis à des
  * destinataires sans compte, qui suivent le livreur par un lien public).
  *   npm run db:seed -w apps/api            ATTENTION : vide toutes les tables de la base visée par DATABASE_URL.
+ *                                          Refusé avec NODE_ENV=production ou sur une base distante (hôte autre que
+ *                                          localhost / 127.0.0.1 / ::1 / socket Unix), sauf SEED_FORCE=true.
  *   npm run db:seed:if-empty -w apps/api   ne fait rien si la base contient déjà un utilisateur ; ne vide jamais
- *                                          (build Vercel avec SEED_DEMO=true).
- * Autorisé avec NODE_ENV=production seulement si DEMO_MODE=true (ou SEED_FORCE=true pour le mode qui vide).
- * Itinéraires des courses en cours : ROUTING_PROVIDER (osrm par défaut, ligne droite si le service ne répond pas ;
- * ROUTING_PROVIDER=straight : aucun appel externe).
+ *                                          (build Vercel avec SEED_DEMO=true). En production : DEMO_MODE=true exigé.
+ *   tsx prisma/seed.ts --demo-reset        build Vercel avec DEMO_RESET_ID, DEMO_MODE=true et SEED_DEMO=true : vide la
+ *                                          base et recrée la démo si DEMO_RESET_ID diffère du dernier identifiant
+ *                                          appliqué (table AppSetting) ; même identifiant : rien (sauf base vide).
+ * Itinéraires des courses en cours : ROUTING_PROVIDER (osrm par défaut, au plus ROUTING_MAX_RPS appels par seconde,
+ * ligne droite si le service ne répond pas ; ROUTING_PROVIDER=straight : aucun appel externe).
  */
 import 'dotenv/config';
 import { PrismaClient, type FeePayer, type OrderStatus, type VehicleType } from '@prisma/client';
@@ -22,11 +26,13 @@ import { bearingDeg } from '../src/lib/geo';
 import { createRoutingProvider } from '../src/providers/routing';
 import { createStorage } from '../src/providers/storage';
 import { newTrackingToken } from '../src/services/deliveries';
+import { DEMO_RESET_SETTING_KEY, decideDemoReset, wipeRefusal } from '../src/services/demo';
 import { normalizeHeading } from '../src/services/heading';
 import { generateDeliveryCode } from '../src/services/orders';
 import { trackingUrlFor } from '../src/services/serializers';
 
 const IF_EMPTY = process.argv.includes('--if-empty');
+const DEMO_RESET = process.argv.includes('--demo-reset');
 
 /** Une seule connexion : le verrou consultatif de session (anti double seed) reste sur la même connexion. */
 function singleConnectionUrl(url: string): string {
@@ -62,6 +68,7 @@ const FAKE_PNG = Buffer.from(
   'base64',
 );
 
+/** Toutes les données (AppSetting, réglage technique, est conservée : identifiant de la dernière réinitialisation). */
 async function wipe(): Promise<void> {
   const tables = [
     'StoredFile', 'JobLease', 'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
@@ -69,32 +76,75 @@ async function wipe(): Promise<void> {
   ];
   await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
   await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Order_number_seq" RESTART WITH 1001`);
+  // Les fichiers des exécutions précédentes (pièces KYC, preuves, photos) ne sont plus référencés.
+  for (const dir of ['kyc', 'proofs', 'products']) await storage.deletePrefix(dir);
+}
+
+/** Deux builds simultanés : un seul seed (verrou consultatif de session, connexion unique). */
+async function withSeedLock(fn: () => Promise<void>): Promise<void> {
+  await prisma.$executeRawUnsafe(`SELECT pg_advisory_lock(${SEED_LOCK_KEY})`);
+  try {
+    await fn();
+  } finally {
+    await prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`);
+  }
+}
+
+/** Données de démonstration seulement si la base n'a aucun utilisateur ; jamais d'effacement. */
+async function seedIfEmptyUnlocked(): Promise<void> {
+  const users = await prisma.user.count();
+  if (users > 0) {
+    console.info(`Seed de démonstration ignoré : la base contient déjà ${users} utilisateur(s).`);
+    return;
+  }
+  console.info('Base vide : création des données de démonstration (sans effacement).');
+  await seed();
+}
+
+/**
+ * Build Vercel avec DEMO_RESET_ID : la base est vidée puis la démo recréée une seule fois par identifiant
+ * (dernier identifiant appliqué dans AppSetting, enregistré après un seed réussi : un échec est retenté au build
+ * suivant). Même identifiant : rien, sauf une base vide (données de démonstration, comme --if-empty).
+ */
+async function demoReset(): Promise<void> {
+  await withSeedLock(async () => {
+    const last = await prisma.appSetting.findUnique({ where: { key: DEMO_RESET_SETTING_KEY } });
+    const decision = decideDemoReset({
+      resetId: process.env.DEMO_RESET_ID,
+      demoMode: config.demoMode,
+      seedDemo: process.env.SEED_DEMO === 'true',
+      lastAppliedId: last?.value ?? null,
+    });
+    if (decision.action === 'refuse') throw new Error(`Réinitialisation de la démo refusée : ${decision.reason}.`);
+    if (decision.action === 'skip') {
+      console.info(`Réinitialisation de la démo : rien à faire (${decision.reason}).`);
+      await seedIfEmptyUnlocked();
+      return;
+    }
+    console.info(`Réinitialisation de la démo : ${decision.reason}. Effacement de toutes les données, puis données B2B.`);
+    await wipe();
+    await seed();
+    await prisma.appSetting.upsert({
+      where: { key: DEMO_RESET_SETTING_KEY },
+      create: { key: DEMO_RESET_SETTING_KEY, value: decision.resetId },
+      update: { value: decision.resetId },
+    });
+    console.info(`Réinitialisation « ${decision.resetId} » appliquée (un redéploiement avec le même DEMO_RESET_ID ne refait rien).`);
+  });
 }
 
 async function main(): Promise<void> {
+  if (DEMO_RESET) return demoReset();
   if (IF_EMPTY) {
     if (config.nodeEnv === 'production' && !config.demoMode)
       throw new Error('Seed de démonstration interdit en production sans DEMO_MODE=true.');
-    // Deux builds simultanés : un seul seed (verrou consultatif de session, connexion unique).
-    await prisma.$executeRawUnsafe(`SELECT pg_advisory_lock(${SEED_LOCK_KEY})`);
-    try {
-      const users = await prisma.user.count();
-      if (users > 0) {
-        console.info(`Seed de démonstration ignoré : la base contient déjà ${users} utilisateur(s).`);
-        return;
-      }
-      console.info('Base vide : création des données de démonstration (sans effacement).');
-      await seed();
-    } finally {
-      await prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`);
-    }
+    await withSeedLock(seedIfEmptyUnlocked);
     return;
   }
-  if (config.nodeEnv === 'production' && process.env.SEED_FORCE !== 'true')
-    throw new Error('Seed interdit en production (il vide la base). Forcer avec SEED_FORCE=true.');
+  // Seed qui vide la base : jamais en production ni sur une base distante sans SEED_FORCE=true.
+  const refusal = wipeRefusal({ nodeEnv: config.nodeEnv, databaseUrl: config.databaseUrl, seedForce: process.env.SEED_FORCE === 'true' });
+  if (refusal) throw new Error(refusal);
   await wipe();
-  // Les fichiers des exécutions précédentes (pièces KYC, preuves, photos) ne sont plus référencés.
-  for (const dir of ['kyc', 'proofs', 'products']) await storage.deletePrefix(dir);
   await seed();
 }
 
@@ -415,8 +465,13 @@ async function seed(): Promise<void> {
   console.info('  Livreurs     +22673000001 (moto, en course), +22673000002 (moto), +22673000003 (vélo), +22673000004 (voiture, en course)');
   console.info('               +22673000005 (au plafond d’espèces), +22673000006 et +22673000007 (dossiers en attente)');
   console.info('  Clients      +22672000001, +22672000002, +22672000003 (ancien parcours de commande, sans commande)');
-  console.info('Liens de suivi des destinataires (sans compte) :');
-  for (const l of tracking) console.info(`  ${l.label} : ${l.url}`);
+  // Liens de suivi (jetons porteurs) : jamais dans les journaux d'une production hors démonstration.
+  if (config.demoMode || config.nodeEnv !== 'production') {
+    console.info('Liens de suivi des destinataires (sans compte) :');
+    for (const l of tracking) console.info(`  ${l.label} : ${l.url}`);
+  } else {
+    console.info(`${tracking.length} liens de suivi créés (non affichés hors DEMO_MODE).`);
+  }
 }
 
 main()

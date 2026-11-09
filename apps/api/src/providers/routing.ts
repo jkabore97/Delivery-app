@@ -6,11 +6,14 @@
  *   « Itinéraires (carte de suivi) »). Seules les deux coordonnées (départ, arrivée) sont transmises : aucun
  *   identifiant, nom, numéro ou adresse. En cas d'échec (délai dépassé, erreur HTTP, JSON invalide, pas
  *   d'itinéraire), ligne droite de secours (`source: 'straight'`) et avertissement dans les logs : jamais d'erreur.
+ *   Courtoisie envers le service public : au plus ROUTING_MAX_RPS appels par seconde et par instance (seau à jetons,
+ *   1 par défaut : règle FOSSGIS ; un appel attend son tour au plus 1 s, sinon ligne droite) et un User-Agent qui
+ *   identifie l'application avec une URL de contact (PUBLIC_APP_URL).
  * - `StraightRoutingProvider` : ligne droite, sans appel externe (ROUTING_PROVIDER=straight ; tests, smoke test).
  */
 import { AVERAGE_SPEED_KMH, ROAD_DISTANCE_FACTOR, haversineKm, type LatLng, type VehicleType } from '@yaar/shared';
 import { z } from 'zod';
-import type { AppConfig } from '../config';
+import { DEFAULT_PUBLIC_APP_URL, type AppConfig } from '../config';
 import { decodePolyline, downsamplePolyline, round5, type LatLngTuple } from '../lib/geo';
 
 export type RouteSource = 'osrm' | 'straight';
@@ -34,8 +37,53 @@ export interface RoutingProvider {
 /** Nombre maximal de points d'un tracé renvoyé aux applications (contrat RouteDto). */
 export const MAX_ROUTE_POINTS = 300;
 
-/** Identification envoyée au service public (règles d'usage FOSSGIS) ; aucune donnée personnelle. */
-export const ROUTING_USER_AGENT = 'YaarLivraison/0.1 (demo)';
+/**
+ * Identification envoyée au service (règles d'usage FOSSGIS : nom de l'application et moyen de contact) : URL publique
+ * de l'application, jamais d'adresse e-mail ni de donnée personnelle.
+ */
+export function routingUserAgent(contactUrl: string = DEFAULT_PUBLIC_APP_URL): string {
+  return `YaarLivraison/0.1 (+${contactUrl})`;
+}
+
+/** Temps maximal d'attente d'un jeton (appel retardé pour respecter le débit), au-delà : ligne droite. */
+export const ROUTING_MAX_QUEUE_WAIT_MS = 1000;
+
+/**
+ * Seau à jetons : `ratePerSecond` jetons par seconde, capacité 1 (jamais de rafale : au plus un appel par intervalle).
+ * Un appel réserve le prochain jeton disponible s'il l'obtient en moins de `maxWaitMs` (les réservations s'enchaînent :
+ * deux appels simultanés partent à une seconde d'intervalle), sinon il est refusé. Horloge et attente injectables (tests).
+ */
+export class TokenBucket {
+  private tokens = 1;
+  private last: number;
+
+  constructor(
+    private readonly ratePerSecond: number,
+    private readonly now: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  ) {
+    this.last = now();
+  }
+
+  /** Réserve un jeton : délai (ms) avant de pouvoir l'utiliser, ou null si l'attente dépasserait `maxWaitMs`. */
+  reserve(maxWaitMs: number): number | null {
+    const t = this.now();
+    this.tokens = Math.min(1, this.tokens + ((t - this.last) / 1000) * this.ratePerSecond);
+    this.last = t;
+    const waitMs = this.tokens >= 1 ? 0 : ((1 - this.tokens) / this.ratePerSecond) * 1000;
+    if (waitMs > maxWaitMs) return null;
+    this.tokens -= 1;
+    return waitMs;
+  }
+
+  /** Attend son tour au plus `maxWaitMs` : true si l'appel peut partir, false s'il faut y renoncer. */
+  async take(maxWaitMs: number): Promise<boolean> {
+    const wait = this.reserve(maxWaitMs);
+    if (wait === null) return false;
+    if (wait > 0) await this.sleep(Math.ceil(wait));
+    return true;
+  }
+}
 
 /** Profil OSRM des serveurs FOSSGIS par type de véhicule (les motos empruntent le réseau routier « voiture »). */
 export const OSRM_PROFILE: Record<VehicleType, string> = {
@@ -109,6 +157,10 @@ export type FetchLike = (url: string, init: { headers: Record<string, string>; s
 export interface OsrmOptions {
   baseUrl: string;
   timeoutMs: number;
+  /** User-Agent (défaut : `routingUserAgent()`, URL de contact de l'application). */
+  userAgent?: string;
+  /** Débit maximal (seau à jetons, par instance) ; absent = sans limite (tests, OSRM auto-hébergé). */
+  rateLimiter?: TokenBucket | null;
   /** Injectable (tests : réponses simulées, aucun accès réseau). */
   fetch?: FetchLike;
   /** Avertissement (repli en ligne droite) ; ne reçoit jamais de coordonnées. */
@@ -122,10 +174,12 @@ export class OsrmRoutingProvider implements RoutingProvider {
   readonly name = 'osrm' as const;
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly userAgent: string;
 
   constructor(private readonly opts: OsrmOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = opts.fetch ?? ((url, init) => fetch(url, init));
+    this.userAgent = opts.userAgent ?? routingUserAgent();
   }
 
   /** URL de la requête : `${base}/${profil}/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=polyline`. */
@@ -137,6 +191,13 @@ export class OsrmRoutingProvider implements RoutingProvider {
   }
 
   async route(from: LatLng, to: LatLng, vehicleType: VehicleType): Promise<RouteResult> {
+    // Débit maximal du service (règle FOSSGIS : 1 requête/s) : au-delà d'une seconde d'attente, ligne droite.
+    if (this.opts.rateLimiter && !(await this.opts.rateLimiter.take(ROUTING_MAX_QUEUE_WAIT_MS))) {
+      this.opts.onWarn?.(
+        `Itinéraire OSRM non demandé (${OSRM_PROFILE[vehicleType]} : débit maximal du service atteint) : ligne droite utilisée à la place`,
+      );
+      return straightRoute(from, to, vehicleType);
+    }
     try {
       return await this.fetchRoute(from, to, vehicleType);
     } catch (err) {
@@ -161,7 +222,7 @@ export class OsrmRoutingProvider implements RoutingProvider {
     try {
       const call = (async () => {
         const res = await this.fetchImpl(this.urlFor(from, to, vehicleType), {
-          headers: { 'User-Agent': ROUTING_USER_AGENT, Accept: 'application/json' },
+          headers: { 'User-Agent': this.userAgent, Accept: 'application/json' },
           signal: controller.signal,
         });
         if (!res.ok) throw new RoutingError(`HTTP ${res.status}`);
@@ -200,8 +261,17 @@ export class OsrmRoutingProvider implements RoutingProvider {
   }
 }
 
-/** Fournisseur choisi par ROUTING_PROVIDER (osrm par défaut ; straight = aucun appel externe). */
+/**
+ * Fournisseur choisi par ROUTING_PROVIDER (osrm par défaut ; straight = aucun appel externe). Un seau à jetons par
+ * fournisseur, donc par instance d'API (ROUTING_MAX_RPS, 0 = sans limite) ; User-Agent avec l'URL de PUBLIC_APP_URL.
+ */
 export function createRoutingProvider(config: AppConfig, onWarn?: (message: string) => void): RoutingProvider {
   if (config.routingProvider === 'straight') return new StraightRoutingProvider();
-  return new OsrmRoutingProvider({ baseUrl: config.routingOsrmUrl, timeoutMs: config.routingTimeoutMs, onWarn });
+  return new OsrmRoutingProvider({
+    baseUrl: config.routingOsrmUrl,
+    timeoutMs: config.routingTimeoutMs,
+    userAgent: routingUserAgent(config.publicAppUrl),
+    rateLimiter: config.routingMaxRps > 0 ? new TokenBucket(config.routingMaxRps) : null,
+    onWarn,
+  });
 }

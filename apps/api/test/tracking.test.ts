@@ -9,7 +9,9 @@ import {
   type TrackingDto,
 } from '@yaar/shared';
 import { loadConfig } from '../src/config';
-import { call, createBusiness, createDriver, createTestApp, P, resetDb, T0, type TestApp } from './helpers';
+import { redactUrl } from '../src/lib/logging';
+import { maskPhone } from '../src/providers/recipients';
+import { call, createBusiness, createDriver, createTestApp, loginStaff, P, resetDb, T0, type TestApp } from './helpers';
 
 let t: TestApp;
 beforeAll(async () => {
@@ -205,7 +207,7 @@ describe('suivi public : limites, mode poll, CORS', () => {
   });
 
   it('configuration : PUBLIC_APP_URL valide (https en production), pas de vrais messages en démo, limite ≥ 0', () => {
-    const prod = { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), STORAGE_ENCRYPTION_KEY: 'c'.repeat(64), CORS_ORIGINS: 'https://c.yaar.test' };
+    const prod = { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), STORAGE_ENCRYPTION_KEY: 'c'.repeat(64), CORS_ORIGINS: 'https://c.yaar.test', RECIPIENT_NOTIFIER: 'whatsapp' };
     expect(loadConfig({ ...process.env }).publicAppUrl).toBe('https://yaar-livraison.vercel.app');
     expect(() => loadConfig({ ...process.env, PUBLIC_APP_URL: 'pas une url' })).toThrow(/PUBLIC_APP_URL/);
     expect(() => loadConfig({ ...process.env, PUBLIC_APP_URL: 'https://app.test/?x=1' })).toThrow(/PUBLIC_APP_URL/);
@@ -215,5 +217,137 @@ describe('suivi public : limites, mode poll, CORS', () => {
     expect(() => loadConfig({ ...process.env, RECIPIENT_NOTIFIER: 'sms' })).toThrow(/RECIPIENT_NOTIFIER/);
     expect(() => loadConfig({ ...process.env, TRACK_RATE_LIMIT: '-1' })).toThrow(/TRACK_RATE_LIMIT/);
     expect(loadConfig({ ...process.env, TRACK_RATE_LIMIT: '0' }).trackRateLimit).toBe(0);
+  });
+});
+
+describe('suivi public : en-têtes, jetons trop longs ou mal formés, expiration absolue', () => {
+  it('429 : mêmes en-têtes no-store et no-referrer que les autres réponses (posés avant la limite)', async () => {
+    const limited = await createTestApp({ TRACK_RATE_LIMIT: '1' });
+    try {
+      const { token } = await newDelivery(limited);
+      const from = () => limited.app.inject({ method: 'GET', url: `/track/${token}`, remoteAddress: '10.0.0.9' });
+      const ok = await from();
+      const over = await from();
+      expect([ok.statusCode, over.statusCode]).toEqual([200, 429]);
+      for (const r of [ok, over]) {
+        expect(r.headers['cache-control']).toBe('no-store');
+        expect(r.headers['referrer-policy']).toBe('no-referrer');
+      }
+    } finally {
+      await limited.app.close();
+      await limited.prisma.$disconnect();
+    }
+  });
+
+  it('jeton trop long (limite du routeur, 100 caractères) ou encodage invalide : la même 404 JSON qu’un jeton inconnu, avec CORS', async () => {
+    const app = await createTestApp({ CORS_ORIGINS: 'https://console.yaar.test', PUBLIC_APP_URL: 'https://suivi.yaar.test' });
+    try {
+      const origin = { origin: 'https://suivi.yaar.test' };
+      const unknown = await track('A'.repeat(24), app, origin);
+      expect(unknown.statusCode).toBe(404);
+      for (const bad of ['a'.repeat(101), 'a'.repeat(129), 'b'.repeat(5000), '%E0%A4%A', 'abc%ZZ', `${'a'.repeat(30)}%2F..`]) {
+        const r = await track(bad, app, origin);
+        expect(r.statusCode, bad.slice(0, 12)).toBe(404);
+        expect(r.json(), bad.slice(0, 12)).toEqual(unknown.json());
+        expect(r.headers).toMatchObject({
+          'access-control-allow-origin': 'https://suivi.yaar.test',
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+          'content-type': expect.stringMatching(/^application\/json/),
+        });
+      }
+      expect((await track('a'.repeat(200), app, { origin: 'https://evil.example.test' })).headers['access-control-allow-origin']).toBeUndefined();
+      // Les autres routes à paramètre : identifiant trop long → 404 JSON (et non 414), encodage invalide → 400 JSON.
+      const staff = await loginStaff(app);
+      const longId = await call(app.app, 'GET', `/orders/${'c'.repeat(150)}`, staff.accessToken);
+      expect([longId.statusCode, longId.json<ApiErrorBody>().error.code]).toEqual([404, 'NOT_FOUND']);
+      const badUrl = await call(app.app, 'GET', '/orders/%E0%A4%A', staff.accessToken);
+      expect([badUrl.statusCode, badUrl.json<ApiErrorBody>().error.code]).toEqual([400, 'VALIDATION_ERROR']);
+    } finally {
+      await app.app.close();
+      await app.prisma.$disconnect();
+    }
+  });
+
+  it('livraison jamais terminée : lien expiré 7 jours après la création ; une livraison terminée n’ajoute pas 24 h au-delà', async () => {
+    const searching = await newDelivery();
+    const driver = await createDriver(t, 'MOTO', near);
+    const late = await newDelivery(t, { recipientPhone: '76 98 76 54' });
+    const offer = (await call(t.app, 'GET', '/driver/offers', driver.accessToken)).json<OfferDto[]>()[0]!;
+    expect(offer.orderId).toBe(late.order.id);
+    await call(t.app, 'POST', `/driver/offers/${offer.id}/accept`, driver.accessToken, {});
+    await call(t.app, 'POST', `/orders/${late.order.id}/pickup`, driver.accessToken, {});
+    t.clock.advance(7 * 24 * 3600_000 - 60_000);
+    await call(t.app, 'POST', `/orders/${late.order.id}/deliver`, driver.accessToken, { code: late.code });
+    t.clock.advance(60_000);
+    expect((await track(searching.token)).statusCode).toBe(200);
+    expect((await track(late.token)).json<TrackingDto>().status).toBe('DELIVERED');
+    t.clock.advance(1_000);
+    for (const tok of [searching.token, late.token]) {
+      const r = await track(tok);
+      expect(r.statusCode).toBe(404);
+      expect(r.json<ApiErrorBody>().error.message).toBe('Lien de suivi introuvable ou expiré');
+    }
+  });
+
+  it('GET /config : rythme conseillé de la page de suivi (TRACKING_POLL_INTERVAL_MS, 8 s par défaut)', async () => {
+    expect((await call(t.app, 'GET', '/config')).json<{ trackingPollIntervalMs: number }>().trackingPollIntervalMs).toBe(8000);
+    expect(loadConfig({ ...process.env, TRACKING_POLL_INTERVAL_MS: '10000' }).trackingPollIntervalMs).toBe(10_000);
+    expect(() => loadConfig({ ...process.env, TRACKING_POLL_INTERVAL_MS: '500' })).toThrow(/TRACKING_POLL_INTERVAL_MS/);
+  });
+});
+
+describe('journaux sans données des destinataires', () => {
+  it('jeton masqué dans les URL journalisées ; numéro masqué', () => {
+    expect(redactUrl('/track/AbCdEfGhIjKlMnOpQrStUvWx')).toBe('/track/[jeton]');
+    expect(redactUrl('/track/abc?x=1')).toBe('/track/[jeton]?x=1');
+    expect(redactUrl('/orders/123')).toBe('/orders/123');
+    expect(maskPhone('+22676123456')).toBe('+226******56');
+    expect(maskPhone('+22625360000')).toBe('+226******00');
+    expect(maskPhone('123')).toBe('***');
+  });
+
+  it('hors DEMO_MODE : requêtes /track/[jeton], message au destinataire sans lien ni code et numéro masqué ; en démo : complet', async () => {
+    const lines: string[] = [];
+    const app = await createTestApp({ LOG_LEVEL: 'info' }, { recipients: null, logStream: { write: (l) => void lines.push(l) } });
+    try {
+      const { token, code } = await newDelivery(app, { recipientPhone: '76 12 34 56' });
+      await app.ctx.work.settled();
+      expect((await track(token, app)).statusCode).toBe(200);
+      const logs = lines.join('');
+      expect(logs).toContain('"url":"/track/[jeton]"');
+      expect(logs).not.toContain(token);
+      expect(logs).toContain('[DESTINATAIRE -> +226******56]');
+      expect(logs).toContain('[lien de suivi et code de livraison masqués]');
+      expect(logs).not.toContain('76123456');
+      expect(logs).not.toContain('/suivi/');
+      expect(logs).not.toContain(`réception : ${code}`);
+    } finally {
+      await app.app.close();
+      await app.prisma.$disconnect();
+    }
+    const demoLines: string[] = [];
+    const demo = await createTestApp({ LOG_LEVEL: 'info', DEMO_MODE: 'true' }, { recipients: null, logStream: { write: (l) => void demoLines.push(l) } });
+    try {
+      const { code } = await newDelivery(demo, { recipientPhone: '76 12 34 57' });
+      await demo.ctx.work.settled();
+      const logs = demoLines.join('');
+      expect(logs).toContain('[DESTINATAIRE -> +22676123457]');
+      expect(logs).toContain(`réception : ${code}`);
+    } finally {
+      await demo.app.close();
+      await demo.prisma.$disconnect();
+    }
+  });
+
+  it('RECIPIENT_NOTIFIER=console refusé en production hors démonstration (vérifié aussi par scripts/check-config.ts)', () => {
+    const prod = { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), STORAGE_ENCRYPTION_KEY: 'c'.repeat(64), CORS_ORIGINS: 'https://c.yaar.test' };
+    expect(() => loadConfig({ ...prod, RECIPIENT_NOTIFIER: 'console' })).toThrow(/RECIPIENT_NOTIFIER=console est interdit en production/);
+    const noNotifier: Record<string, string | undefined> = { ...prod };
+    delete noNotifier.RECIPIENT_NOTIFIER; // défaut : console
+    expect(() => loadConfig(noNotifier)).toThrow(/RECIPIENT_NOTIFIER=console/);
+    expect(loadConfig({ ...prod, RECIPIENT_NOTIFIER: 'whatsapp' }).recipientNotifier).toBe('whatsapp');
+    expect(loadConfig({ ...prod, DEMO_MODE: 'true', DEMO_STAFF_CODE: '482913', RECIPIENT_NOTIFIER: 'console' }).recipientNotifier).toBe('console');
+    expect(loadConfig({ ...process.env, RECIPIENT_NOTIFIER: 'console' }).recipientNotifier).toBe('console'); // développement
   });
 });

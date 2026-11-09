@@ -39,6 +39,8 @@ import { AuditAction, writeAudit } from './audit';
 import type { DispatchService } from './dispatch';
 import { ratingStats } from './ratings';
 import {
+  cashAtDelivery,
+  cashAtPickup,
   incidentInclude,
   isBusinessDelivery,
   orderDetailInclude,
@@ -47,6 +49,8 @@ import {
   toOrderDto,
 } from './serializers';
 import { transitionOrder, type Actor } from './transitions';
+
+export { cashAtDelivery, cashAtPickup };
 
 type QuoteInput = z.output<typeof quoteSchema>;
 type CreateOrderInput = z.output<typeof createOrderSchema>;
@@ -67,16 +71,6 @@ const toActor = (u: AuthUser): Actor => ({ id: u.id, role: u.role });
 
 /** Statuts depuis lesquels l'entreprise annule elle-même une livraison (avant le retrait du colis). */
 export const BUSINESS_CANCELLABLE_STATUSES: readonly OrderStatus[] = ['SEARCHING_DRIVER', 'ASSIGNED'];
-
-/** Espèces encaissées au retrait : frais de livraison payés par l'entreprise (SENDER). */
-export function cashAtPickup(o: Pick<Order, 'feePaidBy' | 'deliveryFee' | 'paymentMethod'>): number {
-  return o.paymentMethod === 'CASH' && o.feePaidBy === 'SENDER' ? o.deliveryFee : 0;
-}
-
-/** Espèces encaissées à la livraison d'une livraison d'entreprise : marchandise + frais si le destinataire paie. */
-export function cashAtDelivery(o: Pick<Order, 'feePaidBy' | 'deliveryFee' | 'cashToCollect'>): number {
-  return (o.cashToCollect ?? 0) + (o.feePaidBy === 'RECIPIENT' ? o.deliveryFee : 0);
-}
 
 export function generateDeliveryCode(): string {
   return randomInt(0, 10_000).toString().padStart(4, '0');
@@ -158,6 +152,8 @@ export interface OrderListScope {
 export class OrderService {
   /** Après un retrait (PICKED_UP) : itinéraire vers le destinataire, message au destinataire (app.ts). */
   onPickedUp: (orderId: string) => Promise<void> = async () => {};
+  /** Après l'annulation d'une livraison d'entreprise : message au destinataire (app.ts). */
+  onCancelled: (orderId: string) => Promise<void> = async () => {};
   private readonly maxUploadBytes: number;
   private readonly publicAppUrl: string | undefined;
 
@@ -358,12 +354,18 @@ export class OrderService {
         where.driverId = viewer.id;
         break;
       default:
+        // Console : numéro de commande, client ou entreprise (nom, téléphone), boutique, destinataire (nom, téléphone).
         if (q.q) {
-          const n = Number.parseInt(q.q.replace(/^#/, ''), 10);
+          const n = /^#?\d+$/.test(q.q) ? Number.parseInt(q.q.replace(/^#/, ''), 10) : Number.NaN;
+          // Téléphones enregistrés en E.164 (+22676123456) : « 76 12 34 56 » est cherché sans espaces ni séparateurs.
+          const phone = q.q.replace(/[\s().-]/g, '');
+          const text = { contains: q.q, mode: 'insensitive' as const };
           where.OR = [
-            ...(Number.isFinite(n) ? [{ number: n }] : []),
-            { client: { phone: { contains: q.q } } },
-            { client: { name: { contains: q.q, mode: 'insensitive' as const } } },
+            ...(Number.isSafeInteger(n) && n <= 2_147_483_647 ? [{ number: n }] : []),
+            ...(phone ? [{ client: { phone: { contains: phone } } }, { recipientPhone: { contains: phone } }] : []),
+            { client: { name: text } },
+            { store: { name: text } },
+            { recipientName: text },
           ];
         }
     }
@@ -498,6 +500,8 @@ export class OrderService {
     await this.dispatch.cancelOpenOffers(id);
     const now = this.clock.now();
     const afterPickup = o.status === 'PICKED_UP';
+    // Frais payés par l'entreprise au retrait (SENDER) : la course n'a pas lieu, ils lui sont rendus avec le colis.
+    const feeToReturn = afterPickup && o.driverId ? cashAtPickup(o) : 0;
     let incident: IncidentDto | null = null;
     await this.prisma.$transaction(async (tx) => {
       await transitionOrder(
@@ -520,9 +524,21 @@ export class OrderService {
           action: AuditAction.ORDER_CANCELLED_BY_CONTROLLER,
           entityType: 'Order',
           entityId: id,
-          metadata: { reason: reason ?? null, previousStatus: o.status },
+          metadata: { reason: reason ?? null, previousStatus: o.status, ...(feeToReturn > 0 ? { feeReturned: feeToReturn } : {}) },
           ip: ip ?? null,
         });
+      // Journal de caisse cohérent avec la commande annulée (rien d'encaissé au final) : écriture d'ajustement qui
+      // annule l'encaissement des frais au retrait ; le livreur rend ces espèces à l'entreprise avec le colis.
+      if (feeToReturn > 0 && o.driverId)
+        await this.collectCash(
+          tx,
+          o,
+          o.driverId,
+          -feeToReturn,
+          now,
+          `Ajustement : livraison #${o.number} annulée après retrait, frais de livraison (${feeToReturn} FCFA) à rendre à l’entreprise avec le colis`,
+          user.id,
+        );
       // Annulation après retrait : la marchandise est chez le livreur, un incident est ouvert pour le suivi.
       if (afterPickup) {
         const inc = await tx.incident.create({
@@ -530,7 +546,10 @@ export class OrderService {
             type: 'OTHER',
             reporterId: user.id,
             orderId: id,
-            description: `Course #${o.number} annulée après retrait par la console : récupérer la marchandise auprès du livreur. Motif : ${reason ?? 'non précisé'}`,
+            description:
+              `Course #${o.number} annulée après retrait par la console : récupérer la marchandise auprès du livreur` +
+              (feeToReturn > 0 ? ` (et les frais de livraison de ${feeToReturn} FCFA payés au retrait, à rendre à l’entreprise)` : '') +
+              `. Motif : ${reason ?? 'non précisé'}`,
             createdAt: now,
           },
           include: incidentInclude,
@@ -540,7 +559,20 @@ export class OrderService {
     });
     await this.notify(id);
     if (incident) this.realtime.incidentUpdated(incident);
-    if (o.driverId) await this.releaseDriver(id, o.driverId);
+    if (o.driverId) {
+      // Le livreur affecté l'apprend tout de suite (en mode poll, il ne le verrait qu'au prochain rafraîchissement).
+      const by = isController ? ' par le support' : isRequester ? ' par l’entreprise' : '';
+      await this.notifier.toUser(o.driverId, {
+        title: 'Course annulée',
+        body: afterPickup
+          ? `La course #${o.number} a été annulée${by} : gardez le colis, le support vous contacte pour le rendre${feeToReturn > 0 ? ' avec les frais encaissés au retrait' : ''}.`
+          : `La course #${o.number} a été annulée${by}. Vous êtes de nouveau disponible.`,
+        data: { orderId: id, type: 'order.cancelled' },
+      });
+      await this.releaseDriver(id, o.driverId);
+    }
+    // Livraison d'entreprise : message au destinataire (app.ts → DeliveryService.notifyCancelled, en arrière-plan).
+    if (isBusinessDelivery(o)) await this.onCancelled(id);
     return this.getDto(id, user);
   }
 
@@ -573,7 +605,11 @@ export class OrderService {
     return this.getDto(id, driver);
   }
 
-  /** Encaissement en espèces par le livreur : solde détenu + écriture COLLECTION du journal de caisse. */
+  /**
+   * Encaissement en espèces par le livreur : solde détenu + écriture COLLECTION du journal de caisse. Montant négatif =
+   * ajustement qui annule un encaissement (annulation après retrait, `recordedById` = le contrôleur) ; le solde peut
+   * alors devenir négatif si le livreur avait déjà tout versé (la plateforme lui doit ce montant).
+   */
   private async collectCash(
     tx: Prisma.TransactionClient,
     o: Order,
@@ -581,10 +617,11 @@ export class OrderService {
     amount: number,
     now: Date,
     note: string,
+    recordedById: string | null = null,
   ): Promise<void> {
     const profile = await tx.driverProfile.update({ where: { userId: driverId }, data: { cashHeld: { increment: amount } } });
     await tx.cashLedgerEntry.create({
-      data: { driverId, type: 'COLLECTION', amount, balanceAfter: profile.cashHeld, orderId: o.id, note, createdAt: now },
+      data: { driverId, type: 'COLLECTION', amount, balanceAfter: profile.cashHeld, orderId: o.id, note, recordedById, createdAt: now },
     });
   }
 
@@ -648,7 +685,7 @@ export class OrderService {
     if (!driverId) throw conflict('Aucun livreur affecté à cette commande');
     const isCash = o.paymentMethod === 'CASH';
     const business = isBusinessDelivery(o);
-    const atDelivery = isCash ? (business ? cashAtDelivery(o) : o.total) : 0;
+    const atDelivery = cashAtDelivery(o);
     await transitionOrder(
       tx,
       o,

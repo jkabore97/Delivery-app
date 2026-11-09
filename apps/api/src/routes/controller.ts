@@ -182,7 +182,7 @@ export async function controllerRoutes(app: FastifyInstance, ctx: AppContext): P
           return r ? toRouteDto(r) : null;
         })(),
       })),
-      stores: stores.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng, isOpen: s.isOpen })),
+      stores: stores.map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng, isOpen: s.isOpen, approvalStatus: s.approvalStatus })),
       openSos: sos.map(toIncidentDto),
     };
   });

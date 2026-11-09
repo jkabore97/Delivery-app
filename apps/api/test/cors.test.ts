@@ -44,7 +44,8 @@ describe('CORS_ORIGINS : origines exactes et motifs', () => {
     expect(() => assertCorsOriginsForProduction('*')).toThrow(/interdit en production/);
     expect(() => assertCorsOriginsForProduction(parseCorsOrigins('https://*.vercel.app'))).toThrow(/trop large/);
     expect(() => assertCorsOriginsForProduction(parseCorsOrigins(ORIGINS))).not.toThrow();
-    const prod = { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), STORAGE_ENCRYPTION_KEY: 'c'.repeat(64) };
+    // Production réelle : un vrai canal pour les destinataires (console interdit hors démonstration).
+    const prod = { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), STORAGE_ENCRYPTION_KEY: 'c'.repeat(64), RECIPIENT_NOTIFIER: 'whatsapp' };
     expect(() => loadConfig({ ...prod, CORS_ORIGINS: '*' })).toThrow(/CORS_ORIGINS=\*/);
     expect(() => loadConfig({ ...prod, CORS_ORIGINS: 'https://*.vercel.app' })).toThrow(/trop large/);
     expect(loadConfig({ ...prod, CORS_ORIGINS: ORIGINS }).corsOrigins).toHaveLength(3);

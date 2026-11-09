@@ -8,9 +8,11 @@ import {
   type BusinessBalanceDto,
   type CashLedgerEntryDto,
   type DriverEarningsDto,
+  type MapDataDto,
   type OfferDto,
   type OrderDto,
   type Paginated,
+  type PendingOrderDto,
   type QuoteResponse,
 } from '@yaar/shared';
 import {
@@ -61,6 +63,9 @@ async function create(token: string, over: Record<string, unknown> = {}) {
   expect(r.statusCode, r.body).toBe(201);
   return r.json<OrderDto>();
 }
+
+const offersOf = async (driverToken: string) => (await call(t.app, 'GET', '/driver/offers', driverToken)).json<OfferDto[]>();
+const cashHeldOf = async (userId: string) => (await t.prisma.driverProfile.findUniqueOrThrow({ where: { userId } })).cashHeld;
 
 async function assign(orderId: string, driverToken: string) {
   const offer = await t.prisma.dispatchOffer.findFirstOrThrow({ where: { orderId, status: 'OFFERED' } });
@@ -372,5 +377,186 @@ describe('espèces : frais (expéditeur ou destinataire) et marchandise encaiss�
     const csv = await call(t.app, 'GET', '/controller/exports/orders.csv', staff.accessToken);
     expect(csv.body.split('\r\n')[0]).toContain('frais_payes_par;marchandise_a_encaisser;du_entreprise');
     expect(csv.body).toContain(';SENDER;12000;12000');
+  });
+});
+
+describe('offres aux livreurs : montants et confidentialité du retrait', () => {
+  it('espèces au retrait (frais payés par l’entreprise) et à la livraison (marchandise + frais du destinataire)', async () => {
+    const { business } = await createBusiness(t);
+    const driver = await createDriver(t, 'MOTO', near);
+    const sender = await create(business.accessToken, { feePaidBy: 'SENDER', cashToCollect: 12_000 });
+    const [a] = await offersOf(driver.accessToken);
+    expect(a).toMatchObject({ orderId: sender.id, cashToCollect: 12_000 + fee(), cashAtPickup: fee(), cashAtDelivery: 12_000 });
+    await call(t.app, 'POST', `/driver/offers/${a!.id}/reject`, driver.accessToken, {});
+    const recipient = await create(business.accessToken, { feePaidBy: 'RECIPIENT', cashToCollect: 5_000 });
+    const [b] = await offersOf(driver.accessToken);
+    expect(b).toMatchObject({ orderId: recipient.id, cashToCollect: 5_000 + fee(), cashAtPickup: 0, cashAtDelivery: 5_000 + fee() });
+  });
+
+  it('retrait à l’adresse de l’entreprise : affiché ; autre point de retrait : zone seulement avant l’acceptation', async () => {
+    const { business } = await createBusiness(t, P.centre, { name: 'Pharmacie du Centre' });
+    const driver = await createDriver(t, 'MOTO', near);
+    const o = await create(business.accessToken, {
+      pickup: { lat: 12.371, lng: -1.524, address: 'Domicile de la gérante, rue 13.45', landmark: 'Portail vert' },
+    });
+    const [offer] = await offersOf(driver.accessToken);
+    expect(offer!.pickup.name).toBe('Pharmacie du Centre');
+    expect(offer!.pickup.address).toMatch(/^Secteur /);
+    expect(offer!.pickup.address).toBe(offer!.pickup.zone);
+    for (const secret of ['rue 13.45', 'Portail vert', 'Domicile', '12.371']) expect(JSON.stringify(offer)).not.toContain(secret);
+    // Après l'acceptation, l'adresse exacte.
+    const accepted = (await call(t.app, 'POST', `/driver/offers/${offer!.id}/accept`, driver.accessToken, {})).json<OrderDto>();
+    expect(accepted.pickup).toMatchObject({ address: 'Domicile de la gérante, rue 13.45', landmark: 'Portail vert' });
+    expect(accepted.id).toBe(o.id);
+  });
+});
+
+describe('plafond d’espèces à l’affectation', () => {
+  it('pas d’offre à un livreur sans marge pour les espèces de la course ; si personne ne convient, la recherche continue', async () => {
+    const { business } = await createBusiness(t);
+    const loaded = await createDriver(t, 'MOTO', near, { cashHeld: 40_000 }); // marge : 10 000
+    const lighter = await createDriver(t, 'MOTO', farther, { cashHeld: 30_000 }); // marge : 20 000
+    const empty = await createDriver(t, 'MOTO', P.zogona); // marge : 50 000 (plafond)
+    // Plus que le plafond lui-même : personne, à aucun cycle (la console peut affecter à la main).
+    const big = await create(business.accessToken, { cashToCollect: 60_000 });
+    await t.ctx.dispatch.tick();
+    expect(await t.prisma.dispatchOffer.count({ where: { orderId: big.id } })).toBe(0);
+    const staff = await loginStaff(t);
+    const pending = (await call(t.app, 'GET', '/controller/orders/pending', staff.accessToken)).json<PendingOrderDto[]>();
+    expect(pending.find((x) => x.id === big.id)).toMatchObject({ currentOffer: null, total: 60_000 + fee() });
+    // 15 000 + frais : trop pour le plus proche (marge 10 000), offerte au suivant.
+    const mid = await create(business.accessToken, { cashToCollect: 15_000 });
+    expect(await offersOf(loaded.accessToken)).toHaveLength(0);
+    expect((await offersOf(lighter.accessToken))[0]).toMatchObject({ orderId: mid.id, cashToCollect: 15_000 + fee() });
+    // Exactement la marge : offerte (le livreur finira au plafond).
+    const exact = await create(business.accessToken, { cashToCollect: 10_000 - fee() });
+    expect((await offersOf(loaded.accessToken))[0]).toMatchObject({ orderId: exact.id, cashToCollect: 10_000 });
+    await t.ctx.dispatch.tick();
+    expect(await offersOf(empty.accessToken)).toHaveLength(0);
+    expect((await call(t.app, 'GET', `/orders/${big.id}`, business.accessToken)).json<OrderDto>().status).toBe('SEARCHING_DRIVER');
+    // Affectation manuelle par la console : possible (contrôle du plafond seulement).
+    expect((await call(t.app, 'POST', `/controller/orders/${big.id}/assign`, staff.accessToken, { driverId: empty.user.id })).statusCode).toBe(200);
+  });
+});
+
+describe('annulation : livreur et destinataire prévenus, caisse cohérente', () => {
+  it('course affectée annulée par l’entreprise ou la console : push « Course annulée » au livreur, message au destinataire', async () => {
+    const { business } = await createBusiness(t, P.centre, { name: 'Kaya Market' });
+    const staff = await loginStaff(t);
+    const driver = await createDriver(t, 'MOTO', near);
+    await call(t.app, 'POST', '/me/push-tokens', driver.accessToken, { token: 'ExponentPushToken[driver-1]' });
+    const driverPushes = () => t.push.sent.filter((x) => x.tokens.includes('ExponentPushToken[driver-1]')).map((x) => x.message);
+    const reset = () => {
+      t.push.sent.length = 0;
+      t.recipients.sent.length = 0;
+    };
+
+    const a = await create(business.accessToken, { recipientPhone: '76 11 11 11' });
+    await assign(a.id, driver.accessToken);
+    await t.ctx.work.settled();
+    reset();
+    expect((await call(t.app, 'POST', `/orders/${a.id}/cancel`, business.accessToken, { reason: 'Client injoignable' })).statusCode).toBe(200);
+    await t.ctx.work.settled();
+    expect(driverPushes()).toEqual([
+      {
+        title: 'Course annulée',
+        body: `La course #${a.number} a été annulée par l’entreprise. Vous êtes de nouveau disponible.`,
+        data: { orderId: a.id, type: 'order.cancelled' },
+      },
+    ]);
+    expect(t.recipients.sent).toHaveLength(1);
+    expect(t.recipients.sent[0]).toMatchObject({ phone: '+22676111111', message: expect.stringMatching(/Kaya Market.*a été annulée/) });
+    // Ni le motif interne, ni lien, ni code.
+    expect(t.recipients.sent[0]!.message).not.toMatch(/injoignable|suivi\/|\b\d{4}\b\./);
+
+    const b = await create(business.accessToken);
+    await assign(b.id, driver.accessToken);
+    await t.ctx.work.settled();
+    reset();
+    await call(t.app, 'POST', `/orders/${b.id}/cancel`, staff.accessToken, { reason: 'Doublon' });
+    await t.ctx.work.settled();
+    expect(driverPushes()).toMatchObject([{ title: 'Course annulée', body: expect.stringContaining('annulée par le support') }]);
+    expect(t.recipients.sent).toHaveLength(1);
+
+    // Encore en recherche : le destinataire est prévenu, aucun livreur n'était affecté.
+    const c = await create(business.accessToken);
+    await t.ctx.work.settled();
+    reset();
+    await call(t.app, 'POST', `/orders/${c.id}/cancel`, business.accessToken, {});
+    await t.ctx.work.settled();
+    expect(driverPushes()).toEqual([]);
+    expect(t.recipients.sent.map((m) => m.phone)).toEqual(['+22676000000']);
+  });
+
+  it('console, annulation après retrait (frais payés au retrait) : écriture d’ajustement, solde et journal cohérents', async () => {
+    const { business } = await createBusiness(t);
+    const driver = await createDriver(t, 'MOTO', near, { cashHeld: 2_000 });
+    const staff = await loginStaff(t);
+    await call(t.app, 'POST', '/me/push-tokens', driver.accessToken, { token: 'ExponentPushToken[driver-2]' });
+    const sender = await create(business.accessToken, { feePaidBy: 'SENDER', cashToCollect: 8_000 });
+    await assign(sender.id, driver.accessToken);
+    await call(t.app, 'POST', `/orders/${sender.id}/pickup`, driver.accessToken, {});
+    expect(await cashHeldOf(driver.user.id)).toBe(2_000 + fee());
+    const r = await call(t.app, 'POST', `/orders/${sender.id}/cancel`, staff.accessToken, { reason: 'Destinataire absent' });
+    expect(r.json<OrderDto>()).toMatchObject({ status: 'CANCELLED', paymentStatus: 'CANCELLED', cashCollected: null });
+    const entries = await t.prisma.cashLedgerEntry.findMany({ where: { orderId: sender.id }, orderBy: { amount: 'desc' } });
+    expect(entries.map((e) => [e.type, e.amount, e.balanceAfter, e.recordedById])).toEqual([
+      ['COLLECTION', fee(), 2_000 + fee(), null],
+      ['COLLECTION', -fee(), 2_000, staff.user.id],
+    ]);
+    expect(entries[1]!.note).toMatch(/Ajustement.*annulée après retrait.*à rendre à l’entreprise/);
+    expect(entries.reduce((sum, e) => sum + e.amount, 0)).toBe(0);
+    expect(await cashHeldOf(driver.user.id)).toBe(2_000);
+    // Visible dans le journal de la console (enregistré par le contrôleur), incident et audit.
+    const ledger = (await call(t.app, 'GET', `/controller/cash/ledger?driverId=${driver.user.id}`, staff.accessToken)).json<Paginated<CashLedgerEntryDto>>();
+    expect(ledger.items.find((e) => e.amount < 0)).toMatchObject({ orderNumber: sender.number, recordedBy: { id: staff.user.id } });
+    expect((await t.prisma.incident.findFirstOrThrow({ where: { orderId: sender.id } })).description).toContain(`frais de livraison de ${fee()} FCFA`);
+    const audit = await t.prisma.auditLog.findFirstOrThrow({ where: { action: 'ORDER_CANCELLED_BY_CONTROLLER', entityId: sender.id } });
+    expect(audit.metadata).toMatchObject({ previousStatus: 'PICKED_UP', feeReturned: fee() });
+    expect(t.push.sent.filter((x) => x.tokens.includes('ExponentPushToken[driver-2]')).at(-1)?.message.body).toMatch(/gardez le colis.*frais encaissés au retrait/);
+
+    // Frais payés par le destinataire : rien n'a été encaissé au retrait, aucune écriture.
+    const recipientPays = await create(business.accessToken, { feePaidBy: 'RECIPIENT', cashToCollect: 3_000 });
+    await assign(recipientPays.id, driver.accessToken);
+    await call(t.app, 'POST', `/orders/${recipientPays.id}/pickup`, driver.accessToken, {});
+    await call(t.app, 'POST', `/orders/${recipientPays.id}/cancel`, staff.accessToken, { reason: 'Test' });
+    expect(await t.prisma.cashLedgerEntry.count({ where: { orderId: recipientPays.id } })).toBe(0);
+    expect(await cashHeldOf(driver.user.id)).toBe(2_000);
+  });
+});
+
+describe('espace entreprise et console', () => {
+  it('GET /business/deliveries : 200 avec sa propre liste, même en attente de validation ou suspendue', async () => {
+    const pending = await createBusiness(t, P.centre, { approval: 'PENDING' });
+    const empty = await call(t.app, 'GET', '/business/deliveries', pending.business.accessToken);
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<Paginated<OrderDto>>()).toMatchObject({ items: [], total: 0 });
+    // Entreprise suspendue après des livraisons : elle les voit toujours, mais n'en demande plus.
+    const { business, storeId } = await createBusiness(t);
+    const o = await create(business.accessToken);
+    await t.prisma.store.update({ where: { id: storeId }, data: { approvalStatus: 'SUSPENDED' } });
+    const list = (await call(t.app, 'GET', '/business/deliveries', business.accessToken)).json<Paginated<OrderDto>>();
+    expect(list.items.map((x) => x.id)).toEqual([o.id]);
+    expect((await call(t.app, 'POST', '/business/deliveries', business.accessToken, delivery())).statusCode).toBe(403);
+  });
+
+  it('console : recherche par entreprise, destinataire (nom, téléphone) ; carte : statut de validation des entreprises', async () => {
+    const staff = await loginStaff(t);
+    const { business } = await createBusiness(t, P.centre, { name: 'Librairie Jeunesse' });
+    await createBusiness(t, P.zogona, { name: 'Grillades de Pissy', approval: 'PENDING' });
+    const o = await create(business.accessToken, { recipientName: 'Bintou Zongo', recipientPhone: '76 55 44 33' });
+    const other = await create(business.accessToken, { recipientName: 'Ali Sawadogo', recipientPhone: '70 00 00 01' });
+    const search = async (q: string) =>
+      (await call(t.app, 'GET', `/orders?q=${encodeURIComponent(q)}`, staff.accessToken)).json<Paginated<OrderDto>>().items.map((x) => x.id).sort();
+    expect(await search('librairie')).toEqual([o.id, other.id].sort());
+    expect(await search('BINTOU')).toEqual([o.id]);
+    expect(await search('76 55 44 33')).toEqual([o.id]);
+    expect(await search('+22676554433')).toEqual([o.id]);
+    expect(await search(`#${o.number}`)).toEqual([o.id]);
+    expect(await search('99999999999')).toEqual([]);
+    expect(await search('introuvable')).toEqual([]);
+    const map = (await call(t.app, 'GET', '/controller/map', staff.accessToken)).json<MapDataDto>();
+    expect(map.stores.find((x) => x.name === 'Grillades de Pissy')?.approvalStatus).toBe('PENDING');
+    expect(map.stores.find((x) => x.name === 'Librairie Jeunesse')?.approvalStatus).toBe('APPROVED');
   });
 });

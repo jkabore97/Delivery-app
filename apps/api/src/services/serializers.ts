@@ -172,6 +172,27 @@ export function amountDueFromRecipient(o: { cashToCollect: number | null; feePai
   return (o.cashToCollect ?? 0) + (o.feePaidBy === 'RECIPIENT' ? o.deliveryFee : 0);
 }
 
+type CashFields = { feePaidBy: string | null; deliveryFee: number; cashToCollect: number | null; paymentMethod: string; total: number };
+
+/** Espèces encaissées au retrait : frais de livraison payés par l'entreprise (SENDER), 0 sinon. */
+export function cashAtPickup(o: Pick<CashFields, 'feePaidBy' | 'deliveryFee' | 'paymentMethod'>): number {
+  return o.paymentMethod === 'CASH' && o.feePaidBy === 'SENDER' ? o.deliveryFee : 0;
+}
+
+/**
+ * Espèces encaissées à la livraison : livraison d'entreprise = marchandise + frais si le destinataire les paie ;
+ * ancienne commande de client = tout le montant. 0 hors espèces.
+ */
+export function cashAtDelivery(o: CashFields): number {
+  if (o.paymentMethod !== 'CASH') return 0;
+  return isBusinessDelivery(o) ? amountDueFromRecipient(o) : o.total;
+}
+
+/** Toutes les espèces de la course (retrait + livraison) : comparées à la marge du livreur sous le plafond. */
+export function cashForJob(o: CashFields): number {
+  return cashAtPickup(o) + cashAtDelivery(o);
+}
+
 export interface OrderDtoOptions {
   driverRatingAvg?: number | null;
   /** URL publique de l'application (lien de suivi `trackingUrl`). */
@@ -439,16 +460,27 @@ export function toDriverProfileDto(
 
 export type OfferWithOrder = DispatchOffer & { order: Prisma.OrderGetPayload<{ include: { store: true } }> };
 
+/** Le point de retrait est l'adresse de la boutique (lieu professionnel), et non une adresse saisie pour la course. */
+function pickupIsStoreAddress(o: OfferWithOrder['order']): boolean {
+  const s = o.store;
+  return s !== null && o.pickupLat === s.lat && o.pickupLng === s.lng && o.pickupAddress === s.address;
+}
+
 /**
  * Offre envoyée à un livreur AVANT acceptation : aucune adresse ni coordonnée du client.
- * FOOD : nom et adresse de la boutique (lieu public) ; colis : zone approximative du retrait.
- * Livraison : zone approximative seulement (« Secteur Zogona »).
+ * Repas, ou livraison d'entreprise retirée à l'adresse de l'entreprise : nom et adresse de la boutique (lieu
+ * professionnel) ; autre point de retrait (colis d'un client, entrepôt ou domicile saisi pour la course) : zone
+ * approximative seulement. Livraison : zone approximative seulement (« Secteur Zogona »).
+ * Espèces : `cashAtPickup` (frais payés par l'entreprise au retrait), `cashAtDelivery` (auprès du destinataire),
+ * `cashToCollect` = total des deux.
  */
 export function toOfferDto(o: OfferWithOrder): OfferDto {
   const pickupZone = approximateZone({ lat: o.order.pickupLat, lng: o.order.pickupLng });
   const dropoffZone = approximateZone({ lat: o.order.dropoffLat, lng: o.order.dropoffLng });
-  // Repas, ou livraison d'entreprise : le retrait est un lieu professionnel (nom et adresse affichables).
-  const isFood = (o.order.type === 'FOOD' || isBusinessDelivery(o.order)) && o.order.store !== null;
+  // Repas, ou livraison d'entreprise retirée chez elle : le retrait est un lieu professionnel (adresse affichable).
+  const isFood = o.order.store !== null && (o.order.type === 'FOOD' || (isBusinessDelivery(o.order) && pickupIsStoreAddress(o.order)));
+  const atPickup = cashAtPickup(o.order);
+  const atDelivery = cashAtDelivery(o.order);
   return {
     id: o.id,
     orderId: o.orderId,
@@ -466,7 +498,9 @@ export function toOfferDto(o: OfferWithOrder): OfferDto {
     },
     dropoff: { address: dropoffZone, zone: dropoffZone },
     distanceKm: o.order.distanceKm,
-    cashToCollect: o.order.paymentMethod === 'CASH' ? o.order.total : 0,
+    cashToCollect: atPickup + atDelivery,
+    cashAtPickup: atPickup,
+    cashAtDelivery: atDelivery,
     driverEarning: o.order.driverEarning,
   };
 }

@@ -5,7 +5,7 @@ import { AppError, conflict, notFound } from '../lib/errors';
 import type { Notifier } from '../providers/push';
 import type { RealtimeHub } from '../realtime/hub';
 import { AuditAction, writeAudit } from './audit';
-import { toOfferDto } from './serializers';
+import { cashForJob, toOfferDto } from './serializers';
 import { transitionOrder, type Actor } from './transitions';
 
 export interface DispatchConfig {
@@ -32,8 +32,9 @@ export interface TickResult {
 
 /**
  * Affectation des courses : propose la commande au livreur APPROUVÉ, en ligne, libre,
- * sous le plafond d'espèces, avec le bon type de véhicule, le plus proche du point de retrait
- * (dans le rayon). Une offre expire après `offerTimeoutSeconds`, puis le livreur suivant est sollicité.
+ * sous le plafond d'espèces avec assez de marge pour les espèces de la course, avec le bon type de véhicule, le plus
+ * proche du point de retrait (dans le rayon). Une offre expire après `offerTimeoutSeconds`, puis le livreur suivant
+ * est sollicité.
  * L'horloge est injectée pour les tests ; `tick()` est appelé périodiquement par le serveur.
  */
 export class DispatchService {
@@ -63,9 +64,13 @@ export class DispatchService {
     return new Date(now.getTime() - this.cfg.staleMinutes * 60_000);
   }
 
-  /** Livreurs éligibles pour une commande, triés par distance croissante. */
+  /**
+   * Livreurs éligibles pour une commande, triés par distance croissante. Plafond d'espèces : le livreur doit être sous
+   * le plafond ET pouvoir encaisser toutes les espèces de la course sans le dépasser (`cashHeld + espèces ≤ plafond`) ;
+   * si personne ne convient, la commande reste en recherche (relancée à chaque cycle, affectation manuelle possible).
+   */
   async findCandidates(
-    order: { id: string; vehicleType: VehicleType; pickupLat: number; pickupLng: number },
+    order: { id: string; vehicleType: VehicleType; pickupLat: number; pickupLng: number } & Parameters<typeof cashForJob>[0],
     excludeDriverIds: string[] = [],
   ): Promise<Candidate[]> {
     const now = this.clock.now();
@@ -80,7 +85,7 @@ export class DispatchService {
         isOnline: true,
         isBusy: false,
         vehicleType: order.vehicleType,
-        cashHeld: { lt: this.cfg.cashLimit },
+        cashHeld: { lt: this.cfg.cashLimit, lte: this.cfg.cashLimit - cashForJob(order) },
         lastLat: { not: null },
         lastLng: { not: null },
         lastLocationAt: { gte: this.staleCutoff(now) },

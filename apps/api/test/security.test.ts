@@ -207,6 +207,8 @@ describe('confidentialité des adresses', () => {
     const [offer] = (await call(t.app, 'GET', '/driver/offers', driver.accessToken)).json<OfferDto[]>();
     expect(offer!.pickup).toMatchObject({ address: 'Avenue Kwame Nkrumah', name: 'Le Verdoyant' });
     expect(offer!.dropoff.address).toBe('Secteur Patte d’Oie');
+    // Ancienne commande payée à la livraison : tout est encaissé auprès du client.
+    expect(offer).toMatchObject({ cashToCollect: o.total, cashAtPickup: 0, cashAtDelivery: o.total });
     expect(JSON.stringify(offer)).not.toContain('Maison bleue');
   });
 

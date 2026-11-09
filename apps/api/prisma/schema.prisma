@@ -539,3 +539,11 @@ model JobLease {
   lastStartedAt DateTime
   lockedUntil   DateTime
 }
+
+/// Réglage technique persistant (clé → valeur), jamais effacé par le seed. `demoResetId` : identifiant de la
+/// dernière réinitialisation de la démo appliquée par le build (DEMO_RESET_ID, cf. services/demo.ts).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

@@ -44,25 +44,29 @@ Environment variables (names only; values in the Vercel dashboard, never in git)
 
 - API: `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Neon integration), `JWT_SECRET`, `STORAGE_ENCRYPTION_KEY`,
   `CRON_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY`, `REALTIME_MODE`, `STORAGE_DRIVER`, `DEMO_MODE`, `DEMO_STAFF_CODE`,
-  `SEED_DEMO`, `OTP_PROVIDER`; optional `POLL_INTERVAL_MS`, `WORK_THROTTLE_MS`, `WORK_BUDGET_MS`, `LOG_LEVEL`,
-  `ROUTING_PROVIDER`, `ROUTING_OSRM_URL`, `ROUTING_TIMEOUT_MS`, `PUBLIC_APP_URL`, `RECIPIENT_NOTIFIER`,
-  `TRACK_RATE_LIMIT`, `ALLOW_PREVIEW_DB_MIGRATIONS` (leave unset).
+  `SEED_DEMO`, `OTP_PROVIDER`; optional `DEMO_RESET_ID`, `POLL_INTERVAL_MS`, `WORK_THROTTLE_MS`, `WORK_BUDGET_MS`,
+  `LOG_LEVEL`, `AUTH_RATE_LIMIT_REQUEST`, `AUTH_RATE_LIMIT_VERIFY`, `ROUTING_PROVIDER`, `ROUTING_OSRM_URL`,
+  `ROUTING_TIMEOUT_MS`, `ROUTING_MAX_RPS`, `PUBLIC_APP_URL`, `RECIPIENT_NOTIFIER`, `TRACK_RATE_LIMIT`,
+  `TRACKING_POLL_INTERVAL_MS`, `ALLOW_PREVIEW_DB_MIGRATIONS` (leave unset).
 - Console: `VITE_API_URL`. Mobile web: `EXPO_PUBLIC_API_URL`.
 
 Only production deployments of the API migrate (and, for the demo, seed) the database; preview deployments never
 touch it. The current deployment is a **public demo** (`DEMO_MODE=true`): code `123456` in the mobile app, a
-separate demo access code (`DEMO_STAFF_CODE`) for the console accounts, fictitious data only.
+separate demo access code (`DEMO_STAFF_CODE`) for the console accounts, fictitious data only. **To reset the demo data
+(e.g. to replace the former client/food demo by the B2B one): set `DEMO_RESET_ID` to a new value on the API project and
+redeploy production** (wipes and reseeds once per value; see "Réinitialiser la démo" in [apps/api/README.md](apps/api/README.md)).
 
 ### Avant le lancement réel
 
-- [ ] `DEMO_MODE=false` and `SEED_DEMO=false` on the API project (then remove `DEMO_STAFF_CODE`).
+- [ ] `DEMO_MODE=false` and `SEED_DEMO=false` on the API project (then remove `DEMO_STAFF_CODE` and `DEMO_RESET_ID`).
 - [ ] Remove the demo data (demo accounts, orders, KYC files) from the Neon database, or start from a new one.
 - [ ] Configure the WhatsApp OTP provider (`OTP_PROVIDER=whatsapp` + a real provider in
       `apps/api/src/providers/whatsapp.ts`; the provider is not chosen yet).
 - [ ] Set `CORS_ORIGINS` to the final console and web-app domains only, and `PUBLIC_APP_URL` to the final tracking-page domain.
-- [ ] Routing: self-host OSRM/Valhalla or sign a paid routing API (`ROUTING_OSRM_URL`), or `ROUTING_PROVIDER=straight`; the
-      public FOSSGIS servers are for the demo / pilot only.
-- [ ] Plug a real recipient channel (`RECIPIENT_NOTIFIER=whatsapp` placeholder in `apps/api/src/providers/recipients.ts`).
+- [ ] Routing: self-host OSRM/Valhalla or sign a paid routing API (`ROUTING_OSRM_URL`, then `ROUTING_MAX_RPS` to its quota),
+      or `ROUTING_PROVIDER=straight`; the public FOSSGIS servers are for the demo / pilot only (1 request/s at most).
+- [ ] Plug a real recipient channel (`RECIPIENT_NOTIFIER=whatsapp` placeholder in `apps/api/src/providers/recipients.ts`):
+      `RECIPIENT_NOTIFIER=console` is refused in production without `DEMO_MODE`.
 - [ ] CIL formalities (Burkina Faso, law n° 001-2021/AN): declaration or authorisation, including the transfer of
       personal data hosted in Frankfurt (Vercel `fra1` + Neon `aws-eu-central-1`), outside Burkina Faso, and the routing
       service (default: FOSSGIS servers in Germany, which receive driver/pickup/recipient coordinates).

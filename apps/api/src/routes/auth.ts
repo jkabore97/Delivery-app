@@ -7,9 +7,9 @@ import { AppError } from '../lib/errors';
 import { FixedWindowLimiter } from '../lib/rateLimit';
 import { parse } from '../lib/validation';
 import { OtpProviderNotConfiguredError } from '../providers/sms';
+import { DEMO_ACCOUNT_PHONES, otpRequestsPerHour } from '../services/demo';
 import { toUserDto } from '../services/serializers';
 
-const MAX_OTP_PER_HOUR = 5;
 const MAX_OTP_ATTEMPTS = 5;
 /** Code universel (développement avec OTP_DEV_BYPASS, ou démonstration hors comptes de console). */
 export const DEV_BYPASS_CODE = DEMO_OTP_CODE;
@@ -36,11 +36,21 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     requestLimiter.hit(req.ip);
     const { phone } = parse(requestOtpSchema, req.body);
     const now = clock.now();
-    const recent = await prisma.otpCode.count({
-      where: { phone, createdAt: { gte: new Date(now.getTime() - 3600_000) } },
-    });
-    if (recent >= MAX_OTP_PER_HOUR)
-      throw new AppError(429, 'OTP_RATE_LIMITED', 'Trop de demandes de code. Réessayez dans une heure.');
+    // 5 codes par heure et par numéro ; démonstration : sans plafond pour les comptes du seed qui se connectent avec
+    // 123456, 30 pour ses comptes de console (services/demo.ts).
+    let backOffice = false;
+    if (config.demoMode && DEMO_ACCOUNT_PHONES.has(phone)) {
+      const existing = await prisma.user.findUnique({ where: { phone }, select: { role: true } });
+      backOffice = existing !== null && isBackOffice(existing.role);
+    }
+    const perHour = otpRequestsPerHour({ demoMode: config.demoMode, phone, backOffice });
+    if (Number.isFinite(perHour)) {
+      const recent = await prisma.otpCode.count({
+        where: { phone, createdAt: { gte: new Date(now.getTime() - 3600_000) } },
+      });
+      if (recent >= perHour)
+        throw new AppError(429, 'OTP_RATE_LIMITED', 'Trop de demandes de code. Réessayez dans une heure.');
+    }
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     await prisma.otpCode.create({
       data: {

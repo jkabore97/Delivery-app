@@ -34,7 +34,7 @@ import type { Clock } from '../lib/clock';
 import { AppError, notFound } from '../lib/errors';
 import { isoOrNull } from '../lib/time';
 import type { PaymentRegistry } from '../providers/payment';
-import type { RecipientNotifier } from '../providers/recipients';
+import type { RecipientMessage, RecipientNotifier } from '../providers/recipients';
 import type { DispatchService } from './dispatch';
 import { generateDeliveryCode, quoteOptions, type OrderService } from './orders';
 import { ratingStats } from './ratings';
@@ -56,8 +56,10 @@ type DeliveryQuoteInput = z.output<typeof deliveryQuoteSchema>;
 export const TRACKING_TOKEN_BYTES = 18;
 /** Forme acceptée par GET /track/:token (sinon 404 sans requête en base). */
 export const TRACKING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
-/** Le lien expire 24 h après la livraison ou l'annulation. */
+/** Le lien expire 24 h après la livraison ou l'annulation… */
 export const TRACKING_LINK_TTL_MS = 24 * 3600_000;
+/** … et dans tous les cas 7 jours après la création (livraison jamais terminée : recherche ou course bloquée). */
+export const TRACKING_LINK_MAX_AGE_MS = 7 * 24 * 3600_000;
 export const TRACKING_NOT_FOUND = 'Lien de suivi introuvable ou expiré';
 
 export function newTrackingToken(): string {
@@ -181,11 +183,13 @@ export class DeliveryService {
 
     const url = trackingUrlFor(this.opts.publicAppUrl, token);
     const amount = amountDueFromRecipient(created);
-    const message =
-      `Yaar Livraison : ${store.name} vous envoie un colis (${input.packageDescription}). ` +
-      `Suivez la livraison en direct : ${url} . Code à donner au livreur à la réception : ${deliveryCode}. ` +
-      (amount > 0 ? `À payer au livreur à la réception : ${formatFcfa(amount)} en espèces.` : 'Rien à payer à la réception.');
-    await this.sendToRecipient(input.recipientPhone, message);
+    const intro = `Yaar Livraison : ${store.name} vous envoie un colis (${input.packageDescription}). `;
+    const toPay =
+      amount > 0 ? `À payer au livreur à la réception : ${formatFcfa(amount)} en espèces.` : 'Rien à payer à la réception.';
+    await this.sendToRecipient(input.recipientPhone, {
+      text: `${intro}Suivez la livraison en direct : ${url} . Code à donner au livreur à la réception : ${deliveryCode}. ${toPay}`,
+      logText: `${intro}[lien de suivi et code de livraison masqués] ${toPay}`,
+    });
     return this.orders.getDto(created.id, user);
   }
 
@@ -194,14 +198,28 @@ export class DeliveryService {
     const o = await this.prisma.order.findUnique({ where: { id: orderId }, include: { store: true, driver: true } });
     if (!o || !isBusinessDelivery(o) || !o.recipientPhone || !o.trackingToken) return;
     const driver = firstName(o.driver?.name ?? null);
-    const message =
-      `Yaar Livraison : votre colis de ${o.store?.name ?? 'votre expéditeur'} est en route${driver ? ` avec ${driver}` : ''}. ` +
-      `Suivi en direct : ${trackingUrlFor(this.opts.publicAppUrl, o.trackingToken)}`;
-    await this.sendToRecipient(o.recipientPhone, message);
+    const intro = `Yaar Livraison : votre colis de ${o.store?.name ?? 'votre expéditeur'} est en route${driver ? ` avec ${driver}` : ''}. `;
+    await this.sendToRecipient(o.recipientPhone, {
+      text: `${intro}Suivi en direct : ${trackingUrlFor(this.opts.publicAppUrl, o.trackingToken)}`,
+      logText: `${intro}[lien de suivi masqué]`,
+    });
+  }
+
+  /**
+   * Message au destinataire quand la livraison est annulée (par l'entreprise ou par la console) : il attendait le
+   * colis depuis le premier message. Sans le motif (remarque interne de l'entreprise ou du support).
+   */
+  async notifyCancelled(orderId: string): Promise<void> {
+    const o = await this.prisma.order.findUnique({ where: { id: orderId }, include: { store: true } });
+    if (!o || !isBusinessDelivery(o) || !o.recipientPhone || o.status !== 'CANCELLED') return;
+    const text =
+      `Yaar Livraison : la livraison de votre colis de ${o.store?.name ?? 'votre expéditeur'} (n° ${o.number}) a été annulée. ` +
+      'Rien à payer. Pour toute question, contactez l’expéditeur.';
+    await this.sendToRecipient(o.recipientPhone, { text, logText: text });
   }
 
   /** Envoi en arrière-plan (keepAlive / waitUntil) : un échec est journalisé, jamais remonté à la requête. */
-  private sendToRecipient(phone: string, message: string): Promise<void> {
+  private sendToRecipient(phone: string, message: RecipientMessage): Promise<void> {
     return this.work.defer(() => this.recipients.send(phone, message), 0, (err) =>
       this.warn(err, `Message au destinataire non envoyé (${this.recipients.channel})`),
     );
@@ -211,14 +229,20 @@ export class DeliveryService {
     return this.orders.list(user, q, { requesterId: user.id });
   }
 
-  /** Suivi public : 404 pour un jeton inconnu et 24 h après la livraison ou l'annulation. */
+  /**
+   * Suivi public : 404 (même réponse) pour un jeton mal formé ou inconnu, 24 h après la livraison ou l'annulation, et
+   * 7 jours après la création quel que soit le statut (une livraison jamais terminée n'expose pas indéfiniment le code,
+   * l'adresse et la position du livreur).
+   */
   async tracking(token: string): Promise<TrackingDto> {
     if (!TRACKING_TOKEN_PATTERN.test(token)) throw notFound(TRACKING_NOT_FOUND);
     const o = await this.prisma.order.findUnique({ where: { trackingToken: token }, include: trackingInclude });
     if (!o || !isBusinessDelivery(o)) throw notFound(TRACKING_NOT_FOUND);
+    const now = this.clock.now().getTime();
+    if (now - o.createdAt.getTime() > TRACKING_LINK_MAX_AGE_MS) throw notFound(TRACKING_NOT_FOUND);
     if (isTerminal(o.status)) {
       const endedAt = o.deliveredAt ?? o.cancelledAt ?? o.updatedAt;
-      if (this.clock.now().getTime() - endedAt.getTime() > TRACKING_LINK_TTL_MS) throw notFound(TRACKING_NOT_FOUND);
+      if (now - endedAt.getTime() > TRACKING_LINK_TTL_MS) throw notFound(TRACKING_NOT_FOUND);
     }
     const showDriver = (o.status === 'ASSIGNED' || o.status === 'PICKED_UP') && o.driverId !== null;
     const stats = showDriver ? await ratingStats(this.prisma, [o.driverId!]) : null;

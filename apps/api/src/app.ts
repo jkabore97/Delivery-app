@@ -1,4 +1,4 @@
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { InvalidTransitionError, type ApiErrorBody } from '@yaar/shared';
@@ -6,9 +6,10 @@ import { ZodError } from 'zod';
 import { loadConfig, type AppConfig } from './config';
 import type { AppContext } from './context';
 import { systemClock, type Clock } from './lib/clock';
-import { corsOriginOption, originOf, withOrigin } from './lib/cors';
+import { corsOriginOption, isOriginAllowed, originOf, withOrigin } from './lib/cors';
 import { AppError } from './lib/errors';
 import { formatMegabytes } from './lib/files';
+import { requestLogSerializer } from './lib/logging';
 import { CashPaymentProvider, MobileMoneyProvider, PaymentRegistry } from './providers/payment';
 import { ConsolePushProvider, Notifier, type PushProvider } from './providers/push';
 import { createRecipientNotifier, type RecipientNotifier } from './providers/recipients';
@@ -26,8 +27,8 @@ import { meRoutes } from './routes/me';
 import { orderRoutes } from './routes/orders';
 import { storeRoutes } from './routes/stores';
 import { systemRoutes } from './routes/system';
-import { trackingRoutes } from './routes/tracking';
-import { DeliveryService } from './services/deliveries';
+import { TRACKING_HEADERS, trackingRoutes } from './routes/tracking';
+import { DeliveryService, TRACKING_NOT_FOUND } from './services/deliveries';
 import { DispatchService } from './services/dispatch';
 import { OrderService } from './services/orders';
 import { RouteService } from './services/routes';
@@ -47,6 +48,8 @@ export interface BuildOptions {
   /** Maintien en vie des tâches de fond (`waitUntil` sur Vercel). */
   keepAlive?: KeepAlive;
   logger?: boolean;
+  /** Destination des journaux (tests : capture des lignes JSON) ; défaut : sortie standard. */
+  logStream?: { write(line: string): void };
 }
 
 export interface BuiltApp {
@@ -88,12 +91,42 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
   const config = opts.config ?? loadConfig();
   const prisma = opts.prisma ?? new PrismaClient({ datasources: { db: { url: config.databaseUrl } } });
   const clock = opts.clock ?? systemClock;
+  // L'origine de PUBLIC_APP_URL (page de suivi publique des destinataires) est toujours autorisée.
+  const allowedOrigins = withOrigin(config.corsOrigins, originOf(config.publicAppUrl));
   const app = Fastify({
-    logger: opts.logger === false ? false : { level: config.logLevel },
+    logger:
+      opts.logger === false
+        ? false
+        : {
+            level: config.logLevel,
+            // URL journalisée sans le jeton des liens de suivi (`/track/[jeton]`).
+            serializers: { req: requestLogSerializer },
+            ...(opts.logStream ? { stream: opts.logStream } : {}),
+          },
     // Un fichier de maxUploadBytes encodé en base64 + marge (Vercel : 4,25 Mo, sous sa limite de 4,5 Mo).
     bodyLimit: config.bodyLimitBytes,
     // Désactivé par défaut : sinon X-Forwarded-For (IP journalisées dans l'audit) serait falsifiable.
     trustProxy: config.trustProxy,
+    /**
+     * Erreurs du routeur, avant toute route et tout hook (donc sans les en-têtes CORS de @fastify/cors) : paramètre de
+     * plus de 100 caractères (FST_ERR_MAX_PARAM_LENGTH, 414 par défaut) ou encodage d'URL invalide (FST_ERR_BAD_URL).
+     * Réponse au format JSON de l'API avec CORS : sous /track/, la même 404 qu'un jeton inconnu (en-têtes du suivi
+     * public compris) ; ailleurs, 404 (identifiant trop long : inexistant) ou 400.
+     */
+    frameworkErrors: (err, req, rawReply) => {
+      const reply = rawReply as unknown as FastifyReply;
+      const origin = req.headers.origin;
+      if (typeof origin === 'string' && isOriginAllowed(origin, allowedOrigins))
+        reply.header('Access-Control-Allow-Origin', origin).header('Vary', 'Origin');
+      if (req.url.startsWith('/track/')) {
+        for (const [name, value] of Object.entries(TRACKING_HEADERS)) reply.header(name, value);
+        void reply.status(404).send(errorBody('NOT_FOUND', TRACKING_NOT_FOUND));
+      } else if (err.code === 'FST_ERR_MAX_PARAM_LENGTH') {
+        void reply.status(404).send(errorBody('NOT_FOUND', 'Ressource introuvable'));
+      } else {
+        void reply.status(400).send(errorBody('VALIDATION_ERROR', 'Adresse (URL) invalide'));
+      }
+    },
   });
 
   const realtime = new RealtimeHub();
@@ -155,6 +188,8 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
     await routes.afterTransition(orderId);
     await deliveries.notifyPickedUp(orderId);
   };
+  // Annulation d'une livraison d'entreprise (par elle ou par la console) : message au destinataire.
+  orders.onCancelled = (orderId) => deliveries.notifyCancelled(orderId);
   // Nouvel itinéraire en cache : `order.updated` (mode socket) pour que les écrans de suivi rechargent la commande.
   routes.onRouteStored = (orderId) => orders.emitUpdated(orderId);
 
@@ -199,7 +234,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<BuiltApp> {
 
   await app.register(cors, {
     // L'origine de PUBLIC_APP_URL (page de suivi publique des destinataires) est toujours autorisée.
-    origin: corsOriginOption(withOrigin(config.corsOrigins, originOf(config.publicAppUrl))),
+    origin: corsOriginOption(allowedOrigins),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: CORS_MAX_AGE_SECONDS,
   });

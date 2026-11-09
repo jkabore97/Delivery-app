@@ -461,6 +461,8 @@ export interface MapStoreDto {
   lat: number;
   lng: number;
   isOpen: boolean;
+  /** Validation par la console : la carte peut masquer ou estomper les entreprises PENDING / SUSPENDED. */
+  approvalStatus?: StoreApprovalStatus;
 }
 
 export interface MapDataDto {

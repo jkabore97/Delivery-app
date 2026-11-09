@@ -6,9 +6,11 @@ import {
   MAX_ROUTE_POINTS,
   OSRM_DURATION_FACTOR,
   OsrmRoutingProvider,
-  ROUTING_USER_AGENT,
+  ROUTING_MAX_QUEUE_WAIT_MS,
   StraightRoutingProvider,
+  TokenBucket,
   createRoutingProvider,
+  routingUserAgent,
   type FetchLike,
 } from '../src/providers/routing';
 import { createTestApp, P } from './helpers';
@@ -46,8 +48,10 @@ describe('OsrmRoutingProvider', () => {
       'https://osrm.example.test/routed-bike/route/v1/driving/-1.52750,12.36860;-1.51700,12.33950?overview=full&geometries=polyline',
       'https://osrm.example.test/routed-car/route/v1/driving/-1.52750,12.36860;-1.51700,12.33950?overview=full&geometries=polyline',
     ]);
-    expect(seen[0]!.headers['User-Agent']).toBe(ROUTING_USER_AGENT);
-    expect(ROUTING_USER_AGENT).toBe('YaarLivraison/0.1 (demo)');
+    // Application identifiée avec une URL de contact (règles FOSSGIS), jamais d'adresse e-mail.
+    expect(seen[0]!.headers['User-Agent']).toBe(routingUserAgent());
+    expect(routingUserAgent()).toBe('YaarLivraison/0.1 (+https://yaar-livraison.vercel.app)');
+    expect(routingUserAgent('https://suivi.example.test')).toBe('YaarLivraison/0.1 (+https://suivi.example.test)');
     expect(Object.keys(seen[0]!.headers).sort()).toEqual(['Accept', 'User-Agent']);
     expect(moto).toEqual({ points: pts, distanceM: 4322, durationS: Math.round(600.4 * OSRM_DURATION_FACTOR.MOTO), source: 'osrm' });
     expect(warnings).toEqual([]);
@@ -103,6 +107,96 @@ describe('OsrmRoutingProvider', () => {
       // Jamais de coordonnées dans les journaux.
       expect(warnings[0], name).not.toMatch(/12\.36|1\.52/);
     }
+  });
+});
+
+describe('débit maximal du service (1 requête/s par instance, règle FOSSGIS)', () => {
+  /**
+   * Horloge manuelle : une attente se termine au tour suivant de la boucle d'événements (comme un vrai minuteur, après
+   * le code synchrone) et avance alors l'horloge jusqu'à son échéance, sans dormir.
+   */
+  function fakeTime() {
+    let now = 0;
+    const sleeps: number[] = [];
+    return {
+      now: () => now,
+      advance: (ms: number) => {
+        now += ms;
+      },
+      sleep: (ms: number) => {
+        const until = now + ms;
+        sleeps.push(ms);
+        return new Promise<void>((resolve) =>
+          setTimeout(() => {
+            now = Math.max(now, until);
+            resolve();
+          }, 0),
+        );
+      },
+      sleeps,
+    };
+  }
+
+  it('seau à jetons : un appel par seconde, sans rafale ; attente d’une seconde au plus, sinon refus', () => {
+    const time = fakeTime();
+    const bucket = new TokenBucket(1, time.now, time.sleep);
+    expect(bucket.reserve(1000)).toBe(0);
+    expect(bucket.reserve(1000)).toBe(1000); // réservé : part dans 1 s
+    expect(bucket.reserve(1000)).toBeNull(); // il faudrait attendre 2 s
+    expect(bucket.reserve(0)).toBeNull();
+    time.advance(1000);
+    expect(bucket.reserve(1000)).toBe(1000); // le jeton de cette seconde est déjà réservé
+    time.advance(5000);
+    expect(bucket.reserve(0)).toBe(0); // jamais plus d'un jeton d'avance (pas de rafale après une pause)
+    expect(bucket.reserve(0)).toBeNull();
+    const fast = new TokenBucket(4, time.now, time.sleep);
+    expect([fast.reserve(1000), fast.reserve(1000), fast.reserve(1000)]).toEqual([0, 250, 500]);
+  });
+
+  it('appels simultanés : un par seconde vers OSRM, au-delà d’une seconde d’attente ligne droite (avertissement)', async () => {
+    const time = fakeTime();
+    const at: number[] = [];
+    const warnings: string[] = [];
+    const p = new OsrmRoutingProvider({
+      baseUrl: 'https://osrm.example.test',
+      timeoutMs: 2500,
+      rateLimiter: new TokenBucket(1, time.now, time.sleep),
+      fetch: async () => {
+        at.push(time.now());
+        return new Response(osrmBody([[12.3686, -1.5275], [12.3395, -1.517]]), { status: 200 });
+      },
+      onWarn: (m) => warnings.push(m),
+    });
+    const results = await Promise.all([p.route(from, to, 'MOTO'), p.route(from, to, 'MOTO'), p.route(from, to, 'MOTO')]);
+    expect(results.map((r) => r.source)).toEqual(['osrm', 'osrm', 'straight']);
+    expect(at).toEqual([0, 1000]);
+    expect(time.sleeps).toEqual([ROUTING_MAX_QUEUE_WAIT_MS]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/débit maximal du service atteint/);
+    expect(warnings[0]).not.toMatch(/12\.36|1\.52/);
+    // Une seconde plus tard, un nouvel appel part.
+    time.advance(1000);
+    expect((await p.route(from, to, 'BIKE')).source).toBe('osrm');
+  });
+
+  it('ROUTING_MAX_RPS : 1 par défaut, jamais plus (ni 0) avec les serveurs publics FOSSGIS ; libre avec un OSRM auto-hébergé', () => {
+    const base = { ...process.env };
+    delete base.ROUTING_PROVIDER;
+    const c = loadConfig(base);
+    expect(c.routingMaxRps).toBe(1);
+    const p = createRoutingProvider(c) as OsrmRoutingProvider;
+    const opts = (p as unknown as { opts: { rateLimiter: unknown; userAgent: string } }).opts;
+    expect(opts.rateLimiter).toBeInstanceOf(TokenBucket);
+    expect(opts.userAgent).toBe(routingUserAgent(c.publicAppUrl));
+    expect(() => loadConfig({ ...base, ROUTING_MAX_RPS: '0' })).toThrow(/FOSSGIS/);
+    expect(() => loadConfig({ ...base, ROUTING_MAX_RPS: '5' })).toThrow(/1 requête par seconde/);
+    expect(() => loadConfig({ ...base, ROUTING_MAX_RPS: '-1' })).toThrow(/ROUTING_MAX_RPS/);
+    const selfHosted = loadConfig({ ...base, ROUTING_OSRM_URL: 'https://osrm.yaar.test', ROUTING_MAX_RPS: '0' });
+    const unlimited = createRoutingProvider(selfHosted) as unknown as { opts: { rateLimiter: unknown } };
+    expect(unlimited.opts.rateLimiter).toBeNull();
+    expect(loadConfig({ ...base, ROUTING_OSRM_URL: 'https://osrm.yaar.test', ROUTING_MAX_RPS: '20' }).routingMaxRps).toBe(20);
+    // Ligne droite : la limite ne s'applique pas (aucun appel).
+    expect(loadConfig({ ...base, ROUTING_PROVIDER: 'straight', ROUTING_MAX_RPS: '0' }).routingMaxRps).toBe(0);
   });
 });
 

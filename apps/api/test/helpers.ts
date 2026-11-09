@@ -68,6 +68,8 @@ export async function createTestApp(
     /** null : celui de la configuration (RECIPIENT_NOTIFIER) ; défaut : MemoryRecipientNotifier. */
     recipients?: RecipientNotifier | null;
     keepAlive?: KeepAlive;
+    /** Journaux capturés (lignes JSON de pino, niveau LOG_LEVEL) ; sans : aucun journal. */
+    logStream?: { write(line: string): void };
   } = {},
 ): Promise<TestApp> {
   const clock = opts.clock ?? new ManualClock(T0);
@@ -82,7 +84,8 @@ export async function createTestApp(
     routing: opts.routing,
     ...(opts.recipients === null ? {} : { recipients: opts.recipients ?? recipients }),
     keepAlive: opts.keepAlive,
-    logger: false,
+    logger: opts.logStream !== undefined,
+    logStream: opts.logStream,
   });
   built.ctx.realtime.record(true);
   await built.app.ready();
@@ -91,7 +94,7 @@ export async function createTestApp(
 
 export async function resetDb(prisma: PrismaClient): Promise<void> {
   const tables = [
-    'StoredFile', 'JobLease', 'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
+    'AppSetting', 'StoredFile', 'JobLease', 'OrderMessage', 'PushToken', 'AuditLog', 'Rating', 'Incident', 'CashLedgerEntry', 'DispatchOffer', 'OrderEvent', 'OrderItem', 'Order',
     'SavedAddress', 'Product', 'Store', 'LocationPing', 'DriverDocument', 'DriverProfile', 'OtpCode', 'PricingRule', 'User',
   ];
   await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t}"`).join(', ')} CASCADE`);
