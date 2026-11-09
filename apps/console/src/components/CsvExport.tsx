@@ -2,6 +2,8 @@ import { useId, useState } from 'react';
 import type { CsvExportKind } from '../api/client';
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
+import { Icon } from './Icon';
+import { ErrorBanner } from './ui';
 
 const FILENAMES: Record<CsvExportKind, string> = {
   orders: 'yaar-livraisons',
@@ -64,12 +66,13 @@ export function CsvExport({ kind, label }: { kind: CsvExportKind; label: string 
         <input id={toId} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
       </label>
       <button type="button" className="btn btn-ghost" disabled={busy || invalid} onClick={() => void run()}>
-        {busy ? 'Export…' : `⬇ ${label}`}
+        <Icon name="download" size={18} />
+        {busy ? 'Export…' : label}
       </button>
-      <span className="muted small">Sans adresses ni numéros de téléphone · export enregistré dans le journal d’audit</span>
+      <span className="export-note">Sans adresses ni numéros de téléphone · export enregistré dans le journal d’audit</span>
       {error && (
-        <div className="alert alert-error" role="alert">
-          {error}
+        <div className="filters-error">
+          <ErrorBanner message={error} />
         </div>
       )}
     </div>

@@ -11,7 +11,7 @@
  * l'entreprise (`owedToBusiness`, reversement non encore géré).
  */
 import { randomBytes } from 'node:crypto';
-import type { PrismaClient, Store } from '@prisma/client';
+import type { Prisma, PrismaClient, Store } from '@prisma/client';
 import {
   computeDeliveryPrice,
   computeOrderTotals,
@@ -20,6 +20,7 @@ import {
   roadDistanceKm,
   type AddressDto,
   type BusinessBalanceDto,
+  type BusinessSummaryDto,
   type OrderDto,
   type OrderListQuery,
   type Paginated,
@@ -227,6 +228,48 @@ export class DeliveryService {
 
   list(user: AuthUser, q: OrderListQuery): Promise<Paginated<OrderDto>> {
     return this.orders.list(user, q, { requesterId: user.id });
+  }
+
+  /**
+   * Tableau de bord de l'entreprise (GET /business/summary) : livraisons en cours et chiffres du jour UTC
+   * (Ouagadougou = UTC+0), sur les mêmes livraisons que GET /business/deliveries (demandées par ce compte, tous ses
+   * établissements). Espèces : même modèle que les sérialiseurs et l'application (`amountsToCollect`) : marchandise
+   * = `cashToCollect` (encaissée pour l'entreprise, que Yaar lui reverse), frais = `deliveryFee`.
+   */
+  async summary(user: AuthUser): Promise<BusinessSummaryDto> {
+    const now = this.clock.now();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const end = new Date(start.getTime() + 24 * 3600_000);
+    const today = { gte: start, lt: end };
+    // Même portée qu'OrderService.list pour un SELLER avec `requesterId` (GET /business/deliveries).
+    const mine: Prisma.OrderWhereInput = { clientId: user.id, feePaidBy: { not: null }, store: { ownerId: user.id } };
+    const [active, cancelled, delivered] = await Promise.all([
+      this.prisma.order.count({ where: { ...mine, status: { notIn: ['DELIVERED', 'CANCELLED'] } } }),
+      this.prisma.order.count({ where: { ...mine, status: 'CANCELLED', cancelledAt: today } }),
+      this.prisma.order.findMany({
+        where: { ...mine, status: 'DELIVERED', deliveredAt: today },
+        select: { createdAt: true, deliveredAt: true, cashToCollect: true, deliveryFee: true },
+      }),
+    ]);
+    let durationMs = 0;
+    let goodsCollected = 0;
+    let deliveryFees = 0;
+    for (const o of delivered) {
+      durationMs += Math.max(0, (o.deliveredAt ?? o.createdAt).getTime() - o.createdAt.getTime());
+      goodsCollected += Math.max(0, o.cashToCollect ?? 0);
+      deliveryFees += o.deliveryFee;
+    }
+    return {
+      date: start.toISOString().slice(0, 10),
+      active,
+      today: {
+        delivered: delivered.length,
+        cancelled,
+        avgDeliveryMinutes: delivered.length > 0 ? Math.round(durationMs / delivered.length / 60_000) : null,
+        goodsCollected,
+        deliveryFees,
+      },
+    };
   }
 
   /**

@@ -109,8 +109,14 @@ describe('Accueil du livreur', () => {
     expect(r.getByText('En attente de courses…')).toBeTruthy();
     await waitFor(() => expect(r.getByTestId('today-earnings')).toHaveTextContent('7 400 FCFA'));
     expect(r.getByText('6 courses')).toBeTruthy();
-    expect(r.getByTestId('cash-held')).toHaveTextContent(/18 500 FCFA.*50 000 FCFA/);
+    expect(r.getByTestId('cash-held')).toHaveTextContent('18 500 FCFA');
+    expect(r.getByTestId('cash-held-limit')).toHaveTextContent(/^Plafond 50 000 FCFA · à déposer auprès de Yaar$/);
+    // Gains du jour en grand chiffre cobalt ; jauge des espèces en soleil (37 % du plafond).
+    expect(StyleSheet.flatten(r.getByTestId('today-earnings').props.style)).toMatchObject({ color: '#2448FF', fontVariant: ['tabular-nums'] });
+    const gauge = r.getAllByRole('progressbar').find((p) => p.props['aria-valuenow'] === 37);
+    expect(gauge).toBeTruthy();
     expect(r.getByTestId('live-map').props.children).toBe('driver');
+    // « Passer hors ligne » : pilule blanche posée sur la carte, au-dessus de la feuille (pas dans la partie qui défile).
     expect(r.getByTestId('online-switch')).toHaveTextContent('Passer hors ligne');
     await act(async () => fireEvent.press(r.getByTestId('online-switch')));
     expect(mockDriver.setOnline).toHaveBeenCalledWith(false);
@@ -139,12 +145,15 @@ describe('Accueil du livreur', () => {
     await act(async () => fireEvent.press(sw));
     expect(mockDriver.setOnline).not.toHaveBeenCalled();
     expect(r.getByTestId('cash-blocked')).toHaveTextContent(
-      /Plafond d’espèces atteint \(52 000 FCFA\)\. Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré\./,
+      /^Plafond d’espèces atteint \(52 000 FCFA\)\.Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré\.$/,
     );
     expect(r.queryByText(/Passez en ligne pour recevoir des courses/)).toBeNull();
-    // Montant et plafond : sur la même ligne que le libellé, ou entiers sur la ligne suivante (jamais coupés).
-    expect(r.getByTestId('cash-held')).toHaveTextContent(/52 000 FCFA \/ 50 000 FCFA/);
+    // Montant détenu sur la ligne du libellé, ou entier sur la ligne suivante (jamais coupé) ; plafond dessous.
+    expect(r.getByTestId('cash-held')).toHaveTextContent('52 000 FCFA');
     expect(StyleSheet.flatten(r.getByTestId('cash-held').parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
+    expect(r.getByTestId('cash-held-limit')).toHaveTextContent(/^Plafond 50 000 FCFA · atteint : dépôt nécessaire$/);
+    // Plafond atteint : texte et jauge en rouge (problème), pas en soleil.
+    expect(StyleSheet.flatten(r.getByTestId('cash-held').props.style)).toMatchObject({ color: '#B42318' });
   });
 
   it('cibles tactiles et contrastes : SOS de 48 px étendu à 56, erreur GPS sur fond rouge opaque', async () => {

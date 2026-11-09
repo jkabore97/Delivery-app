@@ -1,13 +1,12 @@
 import { StyleSheet } from 'react-native';
 import { Text } from '../Text';
-import { LABELS, type OrderDto, type OrderStatus } from '@yaar/shared';
+import type { OrderDto, OrderStatus } from '@yaar/shared';
 import { PackageCard } from '../design/PackageCard';
 import type { ChipTone } from '../design/Pill';
 import { avatarInitials } from '../map/markerArt';
 import { amountsToCollect, businessStatusLabel, historyFeeText } from '../../lib/delivery';
 import { formatDateTime, formatFcfa, formatOrderNumber, timeAgo } from '../../lib/format';
 import { arrivalSummary } from '../../lib/liveScene';
-import { recipientWhatsappText } from '../../lib/share';
 import { palette } from '../../theme';
 
 /**
@@ -47,55 +46,6 @@ export function deliverySummaryLabel(name: string, status: OrderStatus, line: st
   const parts = [name, businessStatusLabel(status).label.toLowerCase()];
   if (line) parts.push(`${line.charAt(0).toLowerCase()}${line.slice(1)}`.replace(/ · /g, ', '));
   return parts.join(', ');
-}
-
-/**
- * Livraison en cours (accueil de l'entreprise), carte dense : numéro et état, destinataire (pastille à ses initiales,
- * comme son épingle sur la carte), heure d'arrivée juste dessous, adresse et repère, livreur ; colonne de boutons
- * ronds WhatsApp (message prérempli avec le lien de suivi) et Appeler pour le destinataire, À CÔTÉ de la partie qui
- * ouvre le suivi de la livraison (lue « Awa Kaboré, en livraison, arrivée vers 14:29… »).
- */
-export function ActiveDeliveryCard({
-  order: o,
-  businessName,
-  now,
-  onPress,
-}: {
-  order: OrderDto;
-  businessName: string | null;
-  now: number;
-  onPress: () => void;
-}) {
-  const driver = o.driver;
-  const name = o.recipientName ?? 'Destinataire';
-  const eta = deliveryEtaText(o, now);
-  const driverName = driver?.name?.trim().split(/\s+/)[0] || 'Livreur';
-  return (
-    <PackageCard
-      compact
-      kicker={formatOrderNumber(o.number)}
-      status={deliveryChip(o.status)}
-      name={name}
-      initials={avatarInitials(o.recipientName)}
-      description={eta}
-      descriptionIcon="clock"
-      address={o.dropoff?.address ?? null}
-      landmark={o.dropoff?.landmark ?? null}
-      meta={driver ? `Livreur : ${driverName} · ${LABELS.vehicleType[driver.vehicleType]}${driver.plate ? ` ${driver.plate}` : ''}` : null}
-      phone={o.recipientPhone ?? null}
-      contactName={o.recipientName}
-      whatsappText={recipientWhatsappText({
-        url: o.trackingUrl,
-        recipientName: o.recipientName,
-        recipientIsBusiness: o.recipientIsBusiness,
-        businessName,
-        orderNumber: o.number,
-      })}
-      onPress={onPress}
-      accessibilityLabel={deliverySummaryLabel(name, o.status, eta)}
-      testID={`delivery-${o.id}`}
-    />
-  );
 }
 
 /**

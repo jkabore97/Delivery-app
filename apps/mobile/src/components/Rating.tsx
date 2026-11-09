@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { errorMessage } from '../lib/api';
+import { touchTarget } from '../lib/touchTarget';
 import { palette, spacing } from '../theme';
 import { TrackingIcon } from './tracking/TrackingIcon';
-import { Button, Card, Field, Subtitle } from './ui';
+import { Button, Card, Field } from './ui';
 import { Text } from './Text';
 
 /** Étoile vide : contour gris (la forme, pleine ou vide, dit la note sans dépendre de la couleur). */
@@ -25,10 +26,21 @@ export function Stars({
   /** Couleur du contour des étoiles non choisies. */
   emptyColor?: string;
 }) {
+  // Chaque étoile choisissable est un bouton d'au moins 48 px (hitSlop en natif, marge compensée sur le web).
+  const touch = onChange ? touchTarget(size, 48) : {};
   return (
-    <View style={styles.row} accessibilityRole="adjustable" accessibilityValue={{ min: 1, max: 5, now: value }}>
+    <View style={[styles.row, onChange && styles.rowEditable]} accessibilityRole="adjustable" accessibilityValue={{ min: 1, max: 5, now: value }}>
       {[1, 2, 3, 4, 5].map((n) => (
-        <Pressable key={n} onPress={onChange ? () => onChange(n) : undefined} accessibilityLabel={`${n} étoile(s)`} hitSlop={6} disabled={!onChange}>
+        <Pressable
+          key={n}
+          onPress={onChange ? () => onChange(n) : undefined}
+          accessibilityRole={onChange ? 'button' : undefined}
+          accessibilityState={onChange ? { selected: n <= value } : undefined}
+          accessibilityLabel={`${n} étoile${n > 1 ? 's' : ''}`}
+          hitSlop={touch.hitSlop}
+          style={touch.style}
+          disabled={!onChange}
+        >
           <TrackingIcon name={n <= value ? 'star' : 'starOutline'} size={size} color={n <= value ? palette.sun : emptyColor} strokeWidth={1.8} />
         </Pressable>
       ))}
@@ -70,8 +82,10 @@ export function RatingCard({
 
   return (
     <Card style={styles.card}>
-      <Subtitle>{title}</Subtitle>
-      <Stars value={score} onChange={setScore} size={36} />
+      <Text style={styles.title} accessibilityRole="header">
+        {title}
+      </Text>
+      <Stars value={score} onChange={setScore} size={40} />
       <Field label="Commentaire (facultatif)" value={comment} onChangeText={setComment} maxLength={300} />
       {error ? (
         <Text style={styles.error} accessibilityRole="alert">
@@ -85,6 +99,8 @@ export function RatingCard({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: spacing.sm },
+  rowEditable: { gap: spacing.md, justifyContent: 'center', paddingVertical: 4 },
   card: { gap: spacing.md },
+  title: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
   error: { color: palette.coralText, fontSize: 13, lineHeight: 18, fontWeight: '600' },
 });

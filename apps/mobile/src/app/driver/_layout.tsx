@@ -4,42 +4,26 @@ import { OfferModal } from '../../components/OfferModal';
 import { RoleGuard } from '../../components/RoleGuard';
 import { TrackingConsentModal } from '../../components/TrackingConsentModal';
 import { DriverProvider } from '../../state/driver';
-import { typeface } from '../../fonts';
 import { palette } from '../../theme';
 import { hideWebSplash } from '../../lib/webShell';
 
-/** En-tête Cobalt sur fond canvas (écrans du livreur qui gardent la barre de navigation). Nom d'origine gardé. */
-function darkHeader() {
-  return {
-    headerStyle: { backgroundColor: palette.canvas },
-    headerTintColor: palette.ink,
-    headerTitleStyle: { color: palette.ink, fontWeight: '800' as const, ...typeface(800) },
-    headerShadowVisible: false,
-    contentStyle: { backgroundColor: palette.canvas },
-  };
-}
-
+/**
+ * Espace livreur (Cobalt) : chaque écran dessine sa propre barre du haut (bouton retour en disque blanc, titre 20/800)
+ * sur le fond canvas ; la pile n'affiche aucun en-tête. L'offre plein écran et la fenêtre de consentement au suivi GPS
+ * sont posées par-dessus tous les écrans.
+ */
 export default function DriverLayout() {
   useEffect(() => hideWebSplash(), []);
   return (
     <RoleGuard role="DRIVER">
       <DriverProvider>
-        <Stack
-          screenOptions={{
-            headerTintColor: palette.cobalt,
-            headerTitleStyle: { color: palette.ink, fontWeight: '700', ...typeface(700) },
-            headerStyle: { backgroundColor: palette.canvas },
-            headerShadowVisible: false,
-            contentStyle: { backgroundColor: palette.canvas },
-            headerBackButtonDisplayMode: 'minimal',
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.canvas } }}>
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="onboarding" options={{ title: 'Devenir livreur' }} />
-          <Stack.Screen name="ready" options={{ title: 'Vous êtes prêt !', headerShown: false, animation: 'fade' }} />
-          <Stack.Screen name="order" options={{ title: 'Course en cours', headerShown: false }} />
-          <Stack.Screen name="deliver" options={{ title: 'Confirmer la livraison', headerShown: false }} />
-          <Stack.Screen name="history" options={{ title: 'Mes courses', ...darkHeader() }} />
+          <Stack.Screen name="ready" options={{ title: 'Vous êtes prêt !', animation: 'fade' }} />
+          <Stack.Screen name="order" options={{ title: 'Course en cours' }} />
+          <Stack.Screen name="deliver" options={{ title: 'Confirmer la livraison' }} />
+          <Stack.Screen name="history" options={{ title: 'Mes courses' }} />
         </Stack>
         <OfferModal />
         <TrackingConsentModal />

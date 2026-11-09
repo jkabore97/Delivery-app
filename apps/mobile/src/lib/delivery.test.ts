@@ -206,8 +206,16 @@ describe('liste et actions de l’entreprise', () => {
   });
 
   it('un seul nom pour la recherche d’un livreur (puce des cartes)', () => {
-    expect(businessStatusLabel('SEARCHING_DRIVER').label).toBe('RECHERCHE D’UN LIVREUR');
-    expect(businessStatusLabel('PENDING').label).toBe('RECHERCHE D’UN LIVREUR');
+    expect(businessStatusLabel('SEARCHING_DRIVER').label).toBe('Recherche d’un livreur');
+    expect(businessStatusLabel('PENDING').label).toBe('Recherche d’un livreur');
+  });
+
+  it('états en minuscules (Cobalt) et couleurs de puce de la spec', () => {
+    const all = (['SEARCHING_DRIVER', 'ASSIGNED', 'PICKED_UP', 'DELIVERED', 'CANCELLED'] as const).map((s) => businessStatusLabel(s));
+    expect(all.map((b) => b.label)).toEqual(['Recherche d’un livreur', 'Livreur en route', 'En livraison', 'Livrée', 'Annulée']);
+    expect(all.map((b) => b.tone)).toEqual(['grey', 'amber', 'blue', 'green', 'red']);
+    // Aucune capitale après la première lettre (pas de libellé en CAPITALES).
+    for (const b of all) expect(b.label.slice(1)).toBe(b.label.slice(1).toLowerCase());
   });
 });
 

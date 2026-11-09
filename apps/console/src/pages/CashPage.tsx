@@ -4,10 +4,26 @@ import { cashDepositSchema, type BusinessBalanceDto, type CashOverviewDto } from
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 import { CsvExport } from '../components/CsvExport';
-import { Badge, Card, Empty, ErrorBanner, Loading, Modal, Pagination, Vehicle } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { KpiTile } from '../components/KpiCards';
+import { PageTitle } from '../components/PageTitle';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  BizMark,
+  Card,
+  DateTimeCell,
+  Empty,
+  ErrorBanner,
+  Loading,
+  Modal,
+  Pagination,
+  Vehicle,
+} from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
-import { formatDateTime, formatFcfa, formatPhone, formatTime } from '../lib/format';
+import { formatFcfa, formatPhone, formatTime, splitFcfaCompact } from '../lib/format';
 import { POLL_MS } from '../config';
 import { usePolling, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
@@ -54,9 +70,14 @@ function DepositDialog({ driver, onClose, onDone }: { driver: CashDriver; onClos
   return (
     <Modal title={`Versement de ${driver.name ?? formatPhone(driver.phone)}`} onClose={onClose}>
       <form className="form" onSubmit={submit}>
-        <p className="muted">Cash détenu : {formatFcfa(driver.cashHeld)}</p>
+        <p className="hint">
+          Cash détenu : <strong className="money">{formatFcfa(driver.cashHeld)}</strong>
+        </p>
         <label htmlFor="deposit-amount">Montant versé (FCFA)</label>
-        <input id="deposit-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+        <span className="input-suffix">
+          <input id="deposit-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+          <span>FCFA</span>
+        </span>
         <label htmlFor="deposit-note">Note</label>
         <input
           id="deposit-note"
@@ -110,31 +131,36 @@ export function BusinessBalances({
       title="À reverser aux entreprises"
       aside={
         <span className="inline-badges">
-          {fetchedAt !== null && <span className="muted small">Mis à jour à {formatTime(new Date(fetchedAt).toISOString())}</span>}
+          {fetchedAt !== null && (
+            <span className="tnum">Mis à jour à {formatTime(new Date(fetchedAt).toISOString())}</span>
+          )}
           <button type="button" className="btn btn-small btn-ghost" onClick={onReload} disabled={loading}>
+            <Icon name="refresh" size={16} />
             Actualiser
           </button>
         </span>
       }
     >
-      <div className="alert alert-info" role="note">
-        <span>
-          Lecture seule. Marchandise encaissée par les livreurs pour le compte des entreprises (livraisons livrées). Le
-          reversement aux entreprises n’est pas encore géré par la console : les montants sont cumulés depuis le début et
-          rien n’est marqué comme payé. Pour la comptabilité, utilisez l’export des livraisons (colonne « du_entreprise »).
-        </span>
-      </div>
+      <Banner tone="info" role="note">
+        Lecture seule. Marchandise encaissée par les livreurs pour le compte des entreprises (livraisons livrées). Le
+        reversement aux entreprises n’est pas encore géré par la console : les montants sont cumulés depuis le début et
+        rien n’est marqué comme payé. Pour la comptabilité, utilisez l’export des livraisons (colonne « du_entreprise »).
+      </Banner>
       <ErrorBanner message={error} onRetry={onReload} />
       {loading && !rows ? (
         <Loading />
       ) : !rows || rows.length === 0 ? (
-        <Empty>Aucun montant dû aux entreprises.</Empty>
+        <Empty icon="check">Aucun montant dû aux entreprises.</Empty>
       ) : (
         <>
           <div className="kpis kpis-3 kpis-inline">
-            <article className="kpi" aria-label="Total à reverser">
+            <article className="kpi kpi-sun" aria-label="Total à reverser">
               <div className="kpi-label">Total à reverser</div>
-              <div className="kpi-value">{formatFcfa(totals.owed)}</div>
+              <div className="kpi-value">
+                <span className="kpi-number">
+                  {splitFcfaCompact(totals.owed, false).value} <span className="kpi-unit">FCFA</span>
+                </span>
+              </div>
             </article>
             <article className="kpi" aria-label="Entreprises concernées">
               <div className="kpi-label">Entreprises concernées</div>
@@ -160,13 +186,30 @@ export function BusinessBalances({
                 {rows.map((r) => (
                   <tr key={r.storeId}>
                     <td>
-                      <div className="strong">{r.storeName}</div>
-                      {r.ownerName && <div className="muted small">{r.ownerName}</div>}
+                      <span className="person">
+                        <BizMark name={r.storeName} />
+                        <span className="person-text">
+                          <span className="person-name">{r.storeName}</span>
+                          {r.ownerName && <span className="muted small">{r.ownerName}</span>}
+                        </span>
+                      </span>
                     </td>
-                    <td>{r.phone ? <a href={`tel:${r.phone}`}>{formatPhone(r.phone)}</a> : '-'}</td>
+                    <td>
+                      {r.phone ? (
+                        <a href={`tel:${r.phone}`} className="phone">
+                          {formatPhone(r.phone)}
+                        </a>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td className="num">{r.deliveries}</td>
-                    <td>{formatDateTime(r.lastDeliveredAt)}</td>
-                    <td className="num strong">{formatFcfa(r.owedTotal)}</td>
+                    <td>
+                      <DateTimeCell iso={r.lastDeliveredAt} />
+                    </td>
+                    <td className="num">
+                      <span className="sunpill sunpill-sm">{formatFcfa(r.owedTotal)}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -229,28 +272,46 @@ export function CashPage() {
   const blockedCount = (overview.data?.drivers ?? []).filter((d) => d.cashBlocked).length;
   const selected = overview.data?.drivers.find((d) => d.driverId === driverId);
 
+  const total = overview.data ? splitFcfaCompact(overview.data.totalHeld, false) : null;
+  const limit = overview.data ? splitFcfaCompact(overview.data.cashLimit, false) : null;
+
   return (
     <div className="page">
-      <h1>Caisse</h1>
+      <PageTitle>Caisse</PageTitle>
       <ErrorBanner message={overview.error} onRetry={() => overview.reload()} />
-      {overview.data && (
+      {overview.data && total && limit && (
         <div className="kpis kpis-3">
-          <article className="kpi">
-            <div className="kpi-label">Cash détenu au total</div>
-            <div className="kpi-value">{formatFcfa(overview.data.totalHeld)}</div>
-          </article>
-          <article className="kpi">
-            <div className="kpi-label">Plafond par livreur</div>
-            <div className="kpi-value">{formatFcfa(overview.data.cashLimit)}</div>
-            <div className="kpi-sub muted">au-delà : plus d’offres ni de mise en ligne</div>
-          </article>
-          <article className="kpi">
-            <div className="kpi-label">Livreurs au plafond</div>
-            <div className="kpi-value">{blockedCount}</div>
-            <div className={`kpi-sub ${blockedCount ? 'tone-red' : 'tone-green'}`}>
-              {blockedCount ? 'versement requis' : 'aucun blocage'}
-            </div>
-          </article>
+          <KpiTile
+            k={{
+              label: 'Cash détenu au total',
+              icon: 'wallet',
+              value: total.value,
+              unit: total.unit,
+              sub: `${overview.data.drivers.filter((d) => d.cashHeld > 0).length} livreurs avec des espèces`,
+              tone: 'muted',
+              look: 'sun',
+            }}
+          />
+          <KpiTile
+            k={{
+              label: 'Plafond par livreur',
+              icon: 'shield',
+              value: limit.value,
+              unit: limit.unit,
+              sub: 'au-delà : plus d’offres ni de mise en ligne',
+              tone: 'muted',
+            }}
+          />
+          <KpiTile
+            k={{
+              label: 'Livreurs au plafond',
+              icon: blockedCount ? 'alert' : 'check',
+              value: String(blockedCount),
+              sub: blockedCount ? 'versement requis' : 'aucun blocage',
+              tone: blockedCount ? 'red' : 'green',
+              look: blockedCount ? 'alert' : 'mint',
+            }}
+          />
         </div>
       )}
       <Card
@@ -265,7 +326,7 @@ export function CashPage() {
         {overview.loading && !overview.data ? (
           <Loading />
         ) : drivers.length === 0 ? (
-          <Empty>Aucun livreur.</Empty>
+          <Empty icon="check">Aucun livreur.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -274,54 +335,77 @@ export function CashPage() {
                   <th>Livreur</th>
                   <th>Véhicule</th>
                   <th className="num">Cash détenu</th>
+                  <th>Plafond</th>
                   <th>Dernier versement</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
-                {drivers.map((d) => (
-                  <tr key={d.driverId} className={d.cashBlocked ? 'row-alert' : ''}>
-                    <td>
-                      <Link to={`/livreurs/${d.driverId}`}>{d.name ?? 'Sans nom'}</Link>
-                      <div className="muted small">{formatPhone(d.phone)}</div>
-                    </td>
-                    <td>
-                      <Vehicle type={d.vehicleType} />
-                    </td>
-                    <td className="num">
-                      <span className={d.cashBlocked ? 'tone-red strong' : ''}>{formatFcfa(d.cashHeld)}</span>
-                      {d.cashBlocked && (
-                        <>
-                          {' '}
-                          <Badge tone="red">Plafond</Badge>
-                        </>
-                      )}
-                    </td>
-                    <td>{formatDateTime(d.lastDepositAt)}</td>
-                    <td className="cell-action">
-                      <span className="inline-badges">
-                        <button
-                          type="button"
-                          className="btn btn-small btn-ghost"
-                          onClick={() => {
-                            setPage(1);
-                            setParams({ driverId: d.driverId });
-                          }}
+                {drivers.map((d) => {
+                  const ratio = overview.data ? Math.min(1, d.cashHeld / Math.max(1, overview.data.cashLimit)) : 0;
+                  return (
+                    <tr key={d.driverId} className={d.cashBlocked ? 'row-alert' : ''}>
+                      <td>
+                        <span className="person">
+                          <Avatar name={d.name} size="sm" tone="sun" />
+                          <span className="person-text">
+                            <Link to={`/livreurs/${d.driverId}`} className="person-name">
+                              {d.name ?? 'Sans nom'}
+                            </Link>
+                            <span className="muted small phone">{formatPhone(d.phone)}</span>
+                          </span>
+                        </span>
+                      </td>
+                      <td>
+                        <Vehicle type={d.vehicleType} />
+                      </td>
+                      <td className="num">
+                        <span className={d.cashBlocked ? 'tone-red' : ''}>{formatFcfa(d.cashHeld)}</span>
+                        {d.cashBlocked && (
+                          <>
+                            {' '}
+                            <Badge tone="red">Plafond</Badge>
+                          </>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={`cash-meter${d.cashBlocked ? ' is-over' : ''}`}
+                          role="img"
+                          aria-label={`${Math.round(ratio * 100)} % du plafond`}
+                          title={`${Math.round(ratio * 100)} % du plafond`}
                         >
-                          Historique
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-small btn-primary"
-                          disabled={d.cashHeld <= 0}
-                          onClick={() => setDepositFor(d)}
-                        >
-                          Versement
-                        </button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                          <i style={{ width: `${Math.max(4, Math.round(ratio * 100))}%` }} />
+                        </span>
+                      </td>
+                      <td>
+                        <DateTimeCell iso={d.lastDepositAt} />
+                      </td>
+                      <td className="cell-action">
+                        <span className="inline-badges">
+                          <button
+                            type="button"
+                            className="btn btn-small btn-ghost"
+                            onClick={() => {
+                              setPage(1);
+                              setParams({ driverId: d.driverId });
+                            }}
+                          >
+                            Historique
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-small btn-primary"
+                            disabled={d.cashHeld <= 0}
+                            onClick={() => setDepositFor(d)}
+                          >
+                            Versement
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -346,6 +430,7 @@ export function CashPage() {
                 setParams({});
               }}
             >
+              <Icon name="close" size={16} />
               Tous les livreurs
             </button>
           ) : null
@@ -355,7 +440,7 @@ export function CashPage() {
         {ledger.loading && !ledger.data ? (
           <Loading />
         ) : !ledger.data || ledger.data.items.length === 0 ? (
-          <Empty>Aucun mouvement.</Empty>
+          <Empty icon="history">Aucun mouvement.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="table table-compact">
@@ -372,20 +457,27 @@ export function CashPage() {
               <tbody>
                 {ledger.data.items.map((e) => (
                   <tr key={e.id}>
-                    <td>{formatDateTime(e.createdAt)}</td>
-                    <td>{e.driverName ?? '-'}</td>
                     <td>
-                      {e.type === 'COLLECTION' ? <Badge tone="orange">Encaissement</Badge> : <Badge tone="green">Versement</Badge>}
+                      <DateTimeCell iso={e.createdAt} />
+                    </td>
+                    <td className="strong">{e.driverName ?? '-'}</td>
+                    <td>
+                      {e.type === 'COLLECTION' ? <Badge tone="sun">Encaissement</Badge> : <Badge tone="green">Versement</Badge>}
                     </td>
                     <td>
-                      {e.orderId ? <Link to={`/courses/${e.orderId}`}>#{e.orderNumber}</Link> : null} {e.note ?? ''}
+                      {e.orderId ? (
+                        <Link to={`/courses/${e.orderId}`} className="tnum">
+                          #{e.orderNumber}
+                        </Link>
+                      ) : null}{' '}
+                      {e.note ?? ''}
                       {e.recordedBy && <div className="muted small">par {e.recordedBy.name ?? 'contrôleur'}</div>}
                     </td>
                     <td className={`num ${e.amount < 0 ? 'tone-green' : ''}`}>
                       {e.amount > 0 ? '+' : ''}
                       {formatFcfa(e.amount)}
                     </td>
-                    <td className="num">{formatFcfa(e.balanceAfter)}</td>
+                    <td className="num muted">{formatFcfa(e.balanceAfter)}</td>
                   </tr>
                 ))}
               </tbody>

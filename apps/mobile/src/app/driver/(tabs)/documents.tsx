@@ -1,26 +1,31 @@
 import { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
-import { DEMO_DATA_WARNING, LABELS } from '@yaar/shared';
+import { DEMO_DATA_WARNING, LABELS, type DocumentType } from '@yaar/shared';
+import { Text } from '../../../components/Text';
 import { GalleryIcon } from '../../../components/design/GalleryIcon';
-import { Icon } from '../../../components/design/Icon';
-import { Badge, Banner, Button, Card, Field, KeyValue, Loading, Muted, ProgressBar, Row, Screen, Subtitle, Title } from '../../../components/ui';
+import { Icon, type IconName } from '../../../components/design/Icon';
+import { IconDisc, Meter, ScreenTitle, TagChip, WhiteCard, type KitTone } from '../../../components/driver/DriverKit';
+import { Banner, Button, Field, Loading, Screen } from '../../../components/ui';
 import { errorMessage } from '../../../lib/api';
-import { formatDateTime } from '../../../lib/format';
-import { documentChecklist, kycProgress, parseExpiryDate, type DocumentChecklistItem } from '../../../lib/kyc';
+import { documentChecklist, kycProgress, parseExpiryDate, type DocumentChecklistItem, type DocumentState } from '../../../lib/kyc';
 import { capturePhoto, type PhotoSource } from '../../../lib/photo';
 import { useApi } from '../../../state/auth';
 import { useAppConfig } from '../../../state/config';
 import { useDriver } from '../../../state/driver';
-import { colors, radius } from '../../../theme';
+import { palette, radii, spacing } from '../../../theme';
 
-const STATE_BADGE = {
-  missing: { label: 'MANQUANTE', tone: 'orange' },
-  expired: { label: 'EXPIRÉE', tone: 'red' },
-  ok: { label: 'REÇUE ✓', tone: 'green' },
-} as const;
+/**
+ * État d'une pièce, en minuscules et avec un pictogramme (la police n'a pas de « ✓ ») : manquante (gris), expirée
+ * (rouge), reçue (vert, coche).
+ */
+const DOCUMENT_STATE_CHIP: Record<DocumentState, { label: string; tone: KitTone; icon: IconName }> = {
+  missing: { label: 'Manquante', tone: 'raised', icon: 'clock' },
+  expired: { label: 'Expirée', tone: 'coral', icon: 'alert' },
+  ok: { label: 'Reçue', tone: 'mint', icon: 'check' },
+};
 
-const HINTS: Partial<Record<DocumentChecklistItem['type'], string>> = {
+const HINTS: Partial<Record<DocumentType, string>> = {
   CNIB: 'Photo nette du recto de votre CNIB.',
   PERMIS: 'Permis de conduire valable pour votre véhicule.',
   CARTE_GRISE: 'Carte grise du véhicule déclaré.',
@@ -28,7 +33,9 @@ const HINTS: Partial<Record<DocumentChecklistItem['type'], string>> = {
   SELFIE: 'Selfie de face, visage bien visible, sans lunettes de soleil.',
 };
 
-/** Pièces justificatives du livreur (KYC). Les fichiers sont chiffrés et vus uniquement par les contrôleurs. */
+const DOC_ICON: Partial<Record<DocumentType, IconName>> = { SELFIE: 'user', CARTE_GRISE: 'car', ASSURANCE: 'shield' };
+
+/** Pièces justificatives du livreur (KYC), au dessin Cobalt. Les fichiers sont chiffrés et vus uniquement par les contrôleurs. */
 export default function DriverDocuments() {
   const { profile } = useDriver();
   const { config } = useAppConfig();
@@ -41,30 +48,41 @@ export default function DriverDocuments() {
 
   return (
     <Screen>
-      <Title style={styles.title}>Mes documents</Title>
+      <ScreenTitle title="Mes documents" />
       {/* Démo publique : aucune vraie pièce d'identité ne doit être déposée. */}
       {config?.demoMode ? (
         <Banner message={DEMO_DATA_WARNING} tone="orange" icon={(c) => <Icon name="alert" size={18} color={c} testID="demo-warning-icon" />} />
       ) : null}
-      <Card>
-        <KeyValue label={`Dossier : ${LABELS.driverStatus[profile.status]}`} value={`${done} / ${total}`} strong />
-        <ProgressBar value={total ? done / total : 0} color={colors.green} />
-        <Muted>
-          {LABELS.vehicleType[profile.vehicleType]}
-          {profile.plate ? ` · ${profile.plate}` : ''} · Vos documents sont chiffrés et consultés uniquement par les contrôleurs
-          Yaar.
-        </Muted>
-      </Card>
+      <WhiteCard testID="kyc-summary">
+        <View style={styles.summaryTop}>
+          <View style={styles.flex}>
+            <Text style={styles.summaryLabel}>Dossier</Text>
+            <Text style={styles.summaryStatus}>{LABELS.driverStatus[profile.status]}</Text>
+          </View>
+          <Text style={styles.summaryCount} accessibilityLabel={`${done} pièces reçues sur ${total}`}>
+            {done}
+            <Text style={styles.summaryTotal}>{` / ${total}`}</Text>
+          </Text>
+        </View>
+        <Meter value={total ? done / total : 0} color={palette.cobalt} label="Pièces reçues" />
+        <View style={styles.privacy}>
+          <Icon name="shield" size={16} color={palette.inkMuted} strokeWidth={2.3} />
+          <Text style={styles.privacyText}>
+            {LABELS.vehicleType[profile.vehicleType]}
+            {profile.plate ? ` · ${profile.plate}` : ''} · Vos documents sont chiffrés et consultés uniquement par les contrôleurs Yaar.
+          </Text>
+        </View>
+      </WhiteCard>
       {locked ? <Banner message="Compte livreur suspendu : contactez Yaar." /> : null}
       {items.map((item) => (
         <DocumentCard key={item.type} item={item} disabled={locked || profile.isOnline} />
       ))}
-      {profile.isOnline ? <Muted>Passez hors ligne pour modifier vos documents.</Muted> : null}
+      {profile.isOnline ? <Banner message="Passez hors ligne pour modifier vos documents." tone="blue" /> : null}
       {!locked ? (
         <Button
           title="Changer de véhicule"
           variant="ghost"
-          color={colors.green}
+          icon={(c) => <Icon name="moto" size={20} color={c} />}
           onPress={() => router.push('/driver/onboarding')}
           disabled={profile.isOnline}
         />
@@ -80,8 +98,12 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const badge = STATE_BADGE[item.state];
+  const chip = DOCUMENT_STATE_CHIP[item.state];
   const uploadedAt = profile?.documents.find((d) => d.type === item.type)?.uploadedAt;
+  const dates = [
+    uploadedAt ? `Envoyée le ${uploadedAt.slice(0, 10).split('-').reverse().join('/')}` : null,
+    item.expiresAt ? `Expire le ${item.expiresAt.slice(0, 10).split('-').reverse().join('/')}` : null,
+  ].filter(Boolean);
 
   const upload = async (source: PhotoSource) => {
     setError(null);
@@ -109,14 +131,16 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
   };
 
   return (
-    <Card highlight={item.state === 'ok' ? undefined : item.state === 'expired' ? colors.red : colors.orange}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Subtitle style={{ fontSize: 16, flex: 1, fontWeight: '800' }}>{item.label}</Subtitle>
-        <Badge label={badge.label} tone={badge.tone} />
-      </Row>
-      <Muted>{HINTS[item.type]}</Muted>
-      {uploadedAt ? <Muted>Envoyée le {formatDateTime(uploadedAt)}</Muted> : null}
-      {item.expiresAt ? <Muted>Expire le {item.expiresAt.slice(0, 10).split('-').reverse().join('/')}</Muted> : null}
+    <WhiteCard testID={`document-${item.type}`}>
+      <View style={styles.docHead}>
+        <IconDisc icon={DOC_ICON[item.type] ?? 'document'} tone={item.state === 'ok' ? 'mint' : item.state === 'expired' ? 'coral' : 'cobalt'} size={44} />
+        <View style={styles.flex}>
+          <Text style={styles.docTitle}>{item.label}</Text>
+          {dates.length ? <Text style={styles.docMeta}>{dates.join(' · ')}</Text> : null}
+        </View>
+        <TagChip label={chip.label} tone={chip.tone} icon={chip.icon} testID={`document-${item.type}-state`} />
+      </View>
+      <Text style={styles.hint}>{HINTS[item.type]}</Text>
       {preview ? (
         <View style={styles.previewWrap}>
           <Image source={{ uri: preview }} style={styles.preview} resizeMode="cover" />
@@ -133,13 +157,14 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
         />
       ) : null}
       {error ? <Banner message={error} /> : null}
-      <Row>
+      <View style={styles.actions}>
+        {/* Pièce à fournir : action principale (cobalt) ; pièce reçue : simple remplacement (secondaire). */}
         <Button
-          title={item.type === 'SELFIE' ? 'Prendre le selfie' : 'Photographier'}
+          title={item.type === 'SELFIE' ? (item.state === 'ok' ? 'Refaire le selfie' : 'Prendre le selfie') : item.state === 'ok' ? 'Remplacer' : 'Photographier'}
           icon={(c) => <Icon name="camera" size={18} color={c} />}
-          color={colors.green}
+          variant={item.state === 'ok' ? 'outline' : 'solid'}
           small
-          style={{ flex: 1 }}
+          style={styles.flex}
           onPress={() => void upload('camera')}
           loading={busy}
           disabled={disabled}
@@ -154,13 +179,25 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
             disabled={disabled || busy}
           />
         ) : null}
-      </Row>
-    </Card>
+      </View>
+    </WhiteCard>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontWeight: '900', letterSpacing: -0.4 },
-  previewWrap: { borderRadius: radius.md, overflow: 'hidden' },
+  flex: { flex: 1 },
+  summaryTop: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md },
+  summaryLabel: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.inkMuted },
+  summaryStatus: { fontSize: 20, lineHeight: 26, fontWeight: '800', letterSpacing: -0.3, color: palette.ink },
+  summaryCount: { fontSize: 32, lineHeight: 36, fontWeight: '800', letterSpacing: -1, color: palette.ink, fontVariant: ['tabular-nums'] },
+  summaryTotal: { fontSize: 18, fontWeight: '800', color: palette.inkMuted, letterSpacing: 0 },
+  privacy: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  privacyText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted },
+  docHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  docTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: palette.ink },
+  docMeta: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
+  hint: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted },
+  previewWrap: { borderRadius: radii.input, overflow: 'hidden' },
   preview: { width: '100%', height: 140 },
+  actions: { flexDirection: 'row', gap: spacing.sm },
 });

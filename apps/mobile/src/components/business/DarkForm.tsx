@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type TextInputProps } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type TextInputProps, type TextStyle } from 'react-native';
 import { Text, TextInput } from '../Text';
 import { MIN_TOUCH, palette, radii, spacing } from '../../theme';
 import { Pill } from '../design/Pill';
@@ -45,6 +45,9 @@ export function DarkField({ label, hint, error, style, ...input }: TextInputProp
   );
 }
 
+/** Web : sans contour natif (Chrome dessine sinon son anneau « auto », quelle que soit la largeur). */
+const NO_WEB_OUTLINE: TextStyle = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : {};
+
 const BANNER: Record<'red' | 'amber' | 'green', { bg: string; fg: string; icon: IconName }> = {
   red: { bg: palette.coralTint, fg: palette.coralText, icon: 'alert' },
   amber: { bg: palette.sunTint, fg: palette.sunText, icon: 'alert' },
@@ -80,7 +83,7 @@ export function DarkBanner({
   );
 }
 
-/** Petit titre de section (« Véhicule », « Qui paie la livraison ? ») : 12/700 en capitales, encre secondaire. */
+/** Titre de section (« Véhicule », « Qui paie la livraison ? ») : 15/800 encre, en minuscules (Cobalt). */
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <Text style={styles.section} accessibilityRole="header">
@@ -171,7 +174,8 @@ const styles = StyleSheet.create({
   },
   inputMultiline: { paddingTop: 14, paddingBottom: 14, minHeight: 96, textAlignVertical: 'top' },
   // Anneau de focus : la bordure cobalt de 2 px (6,1:1 sur blanc) remplace le contour du navigateur.
-  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0 },
+  // `outlineStyle: 'none'` : sans lui, Chrome garde son anneau de focus natif (style « auto », largeur ignorée) par-dessus.
+  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0, ...NO_WEB_OUTLINE },
   inputError: { borderColor: palette.coralText },
   error: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.coralText },
   hint: { fontSize: 12.5, lineHeight: 17, fontWeight: '500', color: palette.inkMuted },
@@ -179,12 +183,11 @@ const styles = StyleSheet.create({
   bannerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, alignSelf: 'stretch' },
   bannerText: { flex: 1, fontWeight: '600', fontSize: 14, lineHeight: 20 },
   section: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    color: palette.inkMuted,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+    letterSpacing: -0.15,
+    color: palette.ink,
     marginTop: spacing.sm,
   },
   choice: {

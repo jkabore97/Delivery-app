@@ -379,12 +379,12 @@ describe('Console en mode poll', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
-    expect(screen.queryByText('🆘 SOS · Karim D.')).not.toBeInTheDocument();
+    expect(screen.queryByText('SOS · Karim D.')).not.toBeInTheDocument();
     incidents = [sos];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_000);
     });
-    expect(screen.getByText('🆘 SOS · Karim D.')).toBeInTheDocument();
+    expect(screen.getByText('SOS · Karim D.')).toBeInTheDocument();
     const paths = calls.filter((c) => c.path.startsWith('/controller/incidents')).map((c) => c.path);
     expect(paths).toHaveLength(2);
     expect(paths.every((p) => new URL(p, 'http://x').searchParams.get('status') === 'OPEN,IN_PROGRESS')).toBe(true);
@@ -402,7 +402,7 @@ describe('Console en mode poll', () => {
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(screen.getByText('Actualisation automatique toutes les 10 s')).toBeInTheDocument();
-    expect(screen.getByText('DÉMO')).toBeInTheDocument();
+    expect(screen.getByText('Démo')).toBeInTheDocument();
     expect(screen.queryByText('Temps réel')).not.toBeInTheDocument();
   });
 });

@@ -51,7 +51,7 @@ describe('Suivi d’une livraison par l’entreprise', () => {
     const r = await render(wrap(<BusinessDeliveryScreen />));
     await waitFor(() => expect(r.getByText('Le livreur arrive pour le retrait')).toBeTruthy());
     expect(mockApi.getOrder).toHaveBeenCalledWith('del-1');
-    expect(r.getByTestId('live-map').props.children).toBe('pickup,dropoff,driver|route,dashed');
+    expect(r.getByTestId('live-map').props.children).toBe('pickup,dropoff,driver|route,pending');
     expect(r.getByTestId('driver-card')).toHaveTextContent(/Issouf Sawadogo/);
     expect(r.getByTestId('recipient-card')).toHaveTextContent(/Awa Kaboré.*70 11 22 33/);
     expect(r.queryByText('1234')).toBeNull();

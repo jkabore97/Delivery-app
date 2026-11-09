@@ -73,24 +73,24 @@ export function isDriverTracked(status: OrderStatus): boolean {
   return status === OrderStatus.ASSIGNED || status === OrderStatus.PICKED_UP;
 }
 
-/** Statut affiché en pastille côté vendeur (maquette « Commandes du jour »). */
+/** Statut affiché en pastille côté vendeur (maquette « Commandes du jour »), en minuscules (Cobalt : pas de capitales). */
 export function sellerBadge(status: OrderStatus): { label: string; tone: 'orange' | 'blue' | 'green' | 'grey' | 'red' } {
   switch (status) {
     case OrderStatus.PENDING:
-      return { label: 'NOUVELLE', tone: 'orange' };
+      return { label: 'Nouvelle', tone: 'orange' };
     case OrderStatus.ACCEPTED:
-      return { label: 'EN PRÉPARATION', tone: 'blue' };
+      return { label: 'En préparation', tone: 'blue' };
     case OrderStatus.READY:
     case OrderStatus.SEARCHING_DRIVER:
-      return { label: 'ATTENTE LIVREUR', tone: 'orange' };
+      return { label: 'Attente d’un livreur', tone: 'orange' };
     case OrderStatus.ASSIGNED:
-      return { label: 'LIVREUR EN ROUTE', tone: 'blue' };
+      return { label: 'Livreur en route', tone: 'blue' };
     case OrderStatus.PICKED_UP:
-      return { label: 'EN LIVRAISON', tone: 'green' };
+      return { label: 'En livraison', tone: 'green' };
     case OrderStatus.DELIVERED:
-      return { label: 'LIVRÉE', tone: 'grey' };
+      return { label: 'Livrée', tone: 'grey' };
     case OrderStatus.CANCELLED:
-      return { label: 'ANNULÉE', tone: 'red' };
+      return { label: 'Annulée', tone: 'red' };
   }
 }
 

@@ -67,6 +67,18 @@ export function formatFcfaCompact(amount: number): string {
   return formatFcfa(amount).replace(' FCFA', ' F');
 }
 
+/**
+ * Montant d'une tuile d'indicateur, nombre et unité séparés (l'unité s'affiche plus petite) :
+ * 1 840 000 -> { value: « 1,84 M », unit: « FCFA » } ; 90 500 -> { value: « 90 500 », unit: « FCFA » }.
+ */
+export function splitFcfaCompact(amount: number, compact = true): { value: string; unit: string } {
+  if (compact && Math.abs(amount) >= 1_000_000) {
+    const v = (amount / 1_000_000).toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
+    return { value: `${v} M`, unit: 'FCFA' };
+  }
+  return { value: formatFcfa(amount).replace(/\s*FCFA$/, ''), unit: 'FCFA' };
+}
+
 /** Initiales pour les avatars (« Ousmane B. » -> « OB »). */
 export function initials(name: string | null | undefined): string {
   if (!name) return '?';

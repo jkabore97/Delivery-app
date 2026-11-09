@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Tabs } from 'expo-router/tabs';
+import { useIsDesktop } from '../../../components/business/desktop/layout';
 import { Icon } from '../../../components/design/Icon';
 import { FloatingTabBar, TabBarInsetProvider, tabIcon } from '../../../components/design/TabBar';
 import { notify } from '../../../lib/dialog';
@@ -23,43 +24,44 @@ function NewTabIcon({ enabled }: { enabled: boolean }) {
 /**
  * Onglets de l'entreprise : barre Cobalt flottante (pilule blanche, onglet actif en capsule cobalt), « Nouvelle » en
  * disque cobalt (grisé si l'entreprise ne peut pas encore demander de livraison : son appui montre alors pourquoi, ou
- * ouvre le profil à créer).
+ * ouvre le profil à créer). Ordinateur : pas de barre d'onglets (la barre latérale du cadre la remplace), ni de place
+ * réservée pour elle en bas des écrans.
  */
 export default function BusinessTabs() {
   const { stores, store } = useBusiness();
+  const desktop = useIsDesktop();
   const access = newDeliveryAccess(stores, store);
   const enabled = access.kind === 'open';
-  return (
-    <TabBarInsetProvider>
-      <Tabs
-        tabBar={(props) => <FloatingTabBar {...props} />}
-        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: palette.canvas } }}
-      >
-        <Tabs.Screen name="index" options={{ title: 'Livraisons', tabBarIcon: tabIcon('package') }} />
-        <Tabs.Screen
-          name="new"
-          options={{
-            title: 'Nouvelle',
-            tabBarIcon: () => <NewTabIcon enabled={enabled} />,
-            tabBarAccessibilityLabel: enabled ? 'Nouvelle livraison' : 'Nouvelle livraison, indisponible pour le moment',
-            tabBarButtonTestID: 'tab-new-delivery',
-          }}
-          listeners={{
-            // Le parcours « nouvelle livraison » s'ouvre en plein écran (carte), hors des onglets ; entreprise pas
-            // encore validée ou suspendue : le bandeau de validation à la place.
-            tabPress: (e) => {
-              e.preventDefault();
-              if (access.kind === 'open') router.push('/business/nouvelle');
-              else if (access.kind === 'profile') router.navigate('/business/profile');
-              else notify(access.notice.title, access.notice.message);
-            },
-          }}
-        />
-        <Tabs.Screen name="history" options={{ title: 'Historique', tabBarIcon: tabIcon('history') }} />
-        <Tabs.Screen name="profile" options={{ title: 'Profil', tabBarIcon: tabIcon('store') }} />
-      </Tabs>
-    </TabBarInsetProvider>
+  const tabs = (
+    <Tabs
+      tabBar={(props) => (desktop ? null : <FloatingTabBar {...props} />)}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: palette.canvas } }}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Livraisons', tabBarIcon: tabIcon('package') }} />
+      <Tabs.Screen
+        name="new"
+        options={{
+          title: 'Nouvelle',
+          tabBarIcon: () => <NewTabIcon enabled={enabled} />,
+          tabBarAccessibilityLabel: enabled ? 'Nouvelle livraison' : 'Nouvelle livraison, indisponible pour le moment',
+          tabBarButtonTestID: 'tab-new-delivery',
+        }}
+        listeners={{
+          // Le parcours « nouvelle livraison » s'ouvre en plein écran (carte), hors des onglets ; entreprise pas
+          // encore validée ou suspendue : le bandeau de validation à la place.
+          tabPress: (e) => {
+            e.preventDefault();
+            if (access.kind === 'open') router.push('/business/nouvelle');
+            else if (access.kind === 'profile') router.navigate('/business/profile');
+            else notify(access.notice.title, access.notice.message);
+          },
+        }}
+      />
+      <Tabs.Screen name="history" options={{ title: 'Historique', tabBarIcon: tabIcon('history') }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profil', tabBarIcon: tabIcon('store') }} />
+    </Tabs>
   );
+  return desktop ? tabs : <TabBarInsetProvider>{tabs}</TabBarInsetProvider>;
 }
 
 const styles = StyleSheet.create({

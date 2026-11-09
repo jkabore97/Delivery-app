@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
 import { Layout } from './components/Layout';
+import { PageTitle } from './components/PageTitle';
+import { Card, Empty } from './components/ui';
 import { DashboardProvider } from './hooks/DashboardContext';
 import { IncidentsProvider } from './hooks/IncidentsContext';
 import { RealtimeProvider, type RealtimeBus } from './realtime/RealtimeContext';
@@ -43,8 +45,12 @@ function Protected({ children, socketUrl, busOverride }: { children: ReactNode; 
 function NotFound() {
   return (
     <div className="page">
-      <h1>Page introuvable</h1>
-      <Link to="/">Retour à la carte en direct</Link>
+      <PageTitle>Page introuvable</PageTitle>
+      <Card>
+        <Empty icon="map">
+          Cette adresse ne correspond à aucun écran de la console. <Link to="/">Retour à la carte en direct</Link>
+        </Empty>
+      </Card>
     </div>
   );
 }

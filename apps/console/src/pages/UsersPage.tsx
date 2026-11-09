@@ -9,7 +9,22 @@ import {
 } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { useApi, useAuth } from '../auth/AuthContext';
-import { Badge, Card, Empty, ErrorBanner, Loading, Pagination, ReasonDialog, type Tone } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  BizMark,
+  Card,
+  Empty,
+  ErrorBanner,
+  FilterSelect,
+  Loading,
+  Pagination,
+  ReasonDialog,
+  type Tone,
+} from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync } from '../hooks/useAsync';
 import { roleLabel } from '../lib/delivery';
@@ -66,26 +81,25 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
   return (
     <Card title={title}>
       <div className="filters">
-        <label>
-          État
-          <select
-            value={suspended}
-            onChange={(e) => {
-              setPage(1);
-              setSuspended(e.target.value as '' | 'true' | 'false');
-            }}
-          >
-            <option value="">Tous</option>
-            <option value="false">Actifs</option>
-            <option value="true">Suspendus</option>
-          </select>
-        </label>
+        <FilterSelect
+          label="État"
+          value={suspended}
+          onChange={(v) => {
+            setPage(1);
+            setSuspended(v as '' | 'true' | 'false');
+          }}
+        >
+          <option value="">Tous</option>
+          <option value="false">Actifs</option>
+          <option value="true">Suspendus</option>
+        </FilterSelect>
         <form className="filter-search" onSubmit={onSearch}>
           <label>
             Recherche
             <input type="search" placeholder="Nom ou téléphone" value={qInput} onChange={(e) => setQInput(e.target.value)} />
           </label>
           <button type="submit" className="btn btn-primary">
+            <Icon name="search" size={18} />
             Rechercher
           </button>
         </form>
@@ -94,7 +108,7 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
       {users.loading && !users.data ? (
         <Loading />
       ) : !users.data || users.data.items.length === 0 ? (
-        <Empty>Aucun compte.</Empty>
+        <Empty icon="users">Aucun compte.</Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -111,19 +125,28 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
             <tbody>
               {users.data.items.map((u) => (
                 <tr key={u.id}>
-                  <td>{u.name ?? 'Sans nom'}</td>
                   <td>
-                    <a href={`tel:${u.phone}`}>{formatPhone(u.phone)}</a>
+                    <span className="person">
+                      <Avatar name={u.name} size="sm" />
+                      <span className="person-name">{u.name ?? 'Sans nom'}</span>
+                    </span>
+                  </td>
+                  <td>
+                    <a href={`tel:${u.phone}`} className="phone">
+                      {formatPhone(u.phone)}
+                    </a>
                   </td>
                   <td>{roleLabel(u.role)}</td>
-                  <td>{formatDate(u.createdAt)}</td>
+                  <td className="tnum nowrap">{formatDate(u.createdAt)}</td>
                   <td>
                     {u.isSuspended ? (
                       <Badge tone="red" title={u.suspensionReason ?? undefined}>
                         Suspendu{u.suspensionReason ? ` · ${u.suspensionReason}` : ''}
                       </Badge>
                     ) : (
-                      <Badge tone="green">Actif</Badge>
+                      <Badge tone="green" dot>
+                        Actif
+                      </Badge>
                     )}
                   </td>
                   <td className="cell-action">
@@ -167,8 +190,8 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
 export function ClientsPage() {
   return (
     <div className="page">
-      <h1>Anciens comptes clients</h1>
-      <p className="muted">
+      <PageTitle>Anciens comptes clients</PageTitle>
+      <p className="page-lead">
         Comptes créés par l’ancien parcours de commande (repas, colis client), qui n’est plus proposé. Les destinataires
         des livraisons d’entreprise n’ont pas de compte : ils suivent leur livraison par un lien.
       </p>
@@ -250,30 +273,33 @@ export function StoresTable() {
         ) : undefined
       }
     >
-      <div className="filters" role="group" aria-label="Filtrer par statut de validation">
-        {STORE_FILTERS.map((f) => (
-          <button
-            key={f.value || 'all'}
-            type="button"
-            className={`btn btn-small ${approval === f.value ? 'btn-primary' : 'btn-ghost'}`}
-            aria-pressed={approval === f.value}
-            onClick={() => changeFilter(f.value)}
-          >
-            {f.label}
-            {f.value === 'PENDING' && pendingStores ? ` (${pendingStores})` : ''}
-          </button>
-        ))}
+      <div className="filters">
+        <div className="segmented" role="group" aria-label="Filtrer par statut de validation">
+          {STORE_FILTERS.map((f) => (
+            <button
+              key={f.value || 'all'}
+              type="button"
+              aria-pressed={approval === f.value}
+              onClick={() => changeFilter(f.value)}
+            >
+              {f.label}
+              {f.value === 'PENDING' && pendingStores ? ` (${pendingStores})` : ''}
+            </button>
+          ))}
+        </div>
       </div>
       {notice && (
-        <div className="alert alert-success" role="status">
+        <Banner tone="success" role="status">
           {notice}
-        </div>
+        </Banner>
       )}
       <ErrorBanner message={error ?? stores.error} />
       {stores.loading && !stores.data ? (
         <Loading />
       ) : !stores.data || stores.data.items.length === 0 ? (
-        <Empty>{approval === 'PENDING' ? 'Aucune entreprise en attente de validation.' : 'Aucune entreprise.'}</Empty>
+        <Empty icon={approval === 'PENDING' ? 'check' : 'store'}>
+          {approval === 'PENDING' ? 'Aucune entreprise en attente de validation.' : 'Aucune entreprise.'}
+        </Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -292,15 +318,28 @@ export function StoresTable() {
                 return (
                   <tr key={s.id}>
                     <td>
-                      <div className="strong">{s.name}</div>
-                      {s.description && <div className="muted small">{s.description}</div>}
-                      <div className="muted small">Inscrite le {formatDate(s.createdAt)}</div>
+                      <span className="person person-top">
+                        <BizMark name={s.name} large />
+                        <span className="person-text">
+                          <span className="person-name">{s.name}</span>
+                          {s.description && <div className="muted small">{s.description}</div>}
+                          <div className="muted small tnum">Inscrite le {formatDate(s.createdAt)}</div>
+                        </span>
+                      </span>
                     </td>
                     <td>
                       {s.address}
                       {s.landmark && <div className="muted small">Repère : {s.landmark}</div>}
                     </td>
-                    <td>{s.phone ? <a href={`tel:${s.phone}`}>{formatPhone(s.phone)}</a> : '-'}</td>
+                    <td>
+                      {s.phone ? (
+                        <a href={`tel:${s.phone}`} className="phone">
+                          {formatPhone(s.phone)}
+                        </a>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td>
                       <Badge tone={STORE_APPROVAL_TONE[status]}>{LABELS.storeApprovalStatus[status]}</Badge>
                       {s.approvalNote && <div className="muted small">Motif : {s.approvalNote}</div>}
@@ -320,7 +359,7 @@ export function StoresTable() {
                         {status !== 'SUSPENDED' && (
                           <button
                             type="button"
-                            className="btn btn-small btn-danger-soft"
+                            className={`btn btn-small ${status === 'PENDING' ? 'btn-danger' : 'btn-danger-soft'}`}
                             disabled={busyId === s.id}
                             onClick={() => {
                               setNotice(null);
@@ -366,8 +405,8 @@ export function StoresTable() {
 export function BusinessesPage() {
   return (
     <div className="page">
-      <h1>Entreprises</h1>
-      <p className="muted">
+      <PageTitle>Entreprises</PageTitle>
+      <p className="page-lead">
         Les entreprises demandent des livraisons depuis l’application Yaar. Chaque nouvelle entreprise doit être validée
         par Yaar avant sa première demande ; tant qu’elle ne l’est pas (ou si elle est suspendue), l’application lui répond
         « Votre entreprise doit être validée par Yaar avant de demander une livraison ».
@@ -393,7 +432,7 @@ export function StaffPage() {
   if (user?.role !== 'ADMIN') {
     return (
       <div className="page">
-        <h1>Équipe</h1>
+        <PageTitle>Équipe</PageTitle>
         <ErrorBanner message="Réservé aux administrateurs." />
       </div>
     );
@@ -424,7 +463,7 @@ export function StaffPage() {
 
   return (
     <div className="page">
-      <h1>Équipe</h1>
+      <PageTitle>Équipe</PageTitle>
       <Card title="Ajouter un membre">
         <form className="form form-inline" onSubmit={submit}>
           <label>
@@ -435,19 +474,17 @@ export function StaffPage() {
             Téléphone
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="70 99 88 77" />
           </label>
-          <label>
-            Rôle
-            <select value={role} onChange={(e) => setRole(e.target.value as 'CONTROLLER' | 'ADMIN')}>
-              <option value="CONTROLLER">{LABELS.role.CONTROLLER}</option>
-              <option value="ADMIN">{LABELS.role.ADMIN}</option>
-            </select>
-          </label>
+          <FilterSelect label="Rôle" value={role} onChange={(v) => setRole(v as 'CONTROLLER' | 'ADMIN')}>
+            <option value="CONTROLLER">{LABELS.role.CONTROLLER}</option>
+            <option value="ADMIN">{LABELS.role.ADMIN}</option>
+          </FilterSelect>
           <button type="submit" className="btn btn-primary" disabled={busy}>
+            <Icon name="plus" size={18} />
             Créer le compte
           </button>
         </form>
         <ErrorBanner message={error} />
-        {notice && <div className="alert alert-success">{notice}</div>}
+        {notice && <Banner tone="success">{notice}</Banner>}
       </Card>
       <UsersTable key={`c${version}`} role="CONTROLLER" title="Contrôleurs" />
       <UsersTable key={`a${version}`} role="ADMIN" title="Administrateurs" />

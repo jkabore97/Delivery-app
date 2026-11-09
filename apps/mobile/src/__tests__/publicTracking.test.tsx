@@ -8,6 +8,7 @@ import type { TrackingDto } from '@yaar/shared';
 import { ApiError, NETWORK_ERROR_CODE } from '../lib/api';
 import type { VisibilitySource } from '../lib/pollScheduler';
 import { usePublicTracking } from '../hooks/usePublicTracking';
+import { prefetchPublicTracking } from '../lib/webShell';
 import PublicTrackingScreen from '../app/suivi/[token]';
 import { route, tracking } from './fixtures';
 
@@ -73,6 +74,21 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(mockTrack).toHaveBeenCalledTimes(2);
   });
 
+  it('reprend la requête lancée au démarrage de l’application (lib/webShell) au lieu d’en lancer une seconde', async () => {
+    const early = jest.fn(async () => tracking());
+    expect(prefetchPublicTracking('/suivi/tok-abc', early)).toBe(true);
+    mockTrack.mockResolvedValue(tracking());
+    const r = await render(wrap(<PublicTrackingScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(early).toHaveBeenCalledWith('tok-abc');
+    expect(mockTrack).not.toHaveBeenCalled();
+    expect(r.getByText('Votre colis est en route')).toBeTruthy();
+    // Rafraîchissement suivant : requête ordinaire.
+    await act(async () => jest.advanceTimersByTimeAsync(8000));
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    expect(early).toHaveBeenCalledTimes(1);
+  });
+
   it('livreur en route vers l’expéditeur : heure d’arrivée, étape, livreur avec appel', async () => {
     const r = await show(
       tracking({ status: 'ASSIGNED', pickedUpAt: null, etaMinutes: 12, route: route({ target: 'PICKUP', points: [[12.3627, -1.521], [12.3686, -1.5275]] }) }),
@@ -81,7 +97,7 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(r.getByText('Le livreur récupère votre colis')).toBeTruthy();
     expect(r.getByText('Issouf est en route vers Pharmacie du Centre.')).toBeTruthy();
     expect(r.getByText('Moto · 11 JJ 4521')).toBeTruthy();
-    expect(r.getByTestId('live-map').props.children).toMatch(/^pickup,dropoff\*,driver\|route,dashed\|/);
+    expect(r.getByTestId('live-map').props.children).toMatch(/^pickup,dropoff\*,driver\|route,pending\|/);
     // Le destinataire garde son épingle dans le cadre pendant le retrait : livreur + entreprise + reste de
     // l'itinéraire (2 points) + destinataire.
     expect(r.getByTestId('live-map').props.children).toMatch(/\|5$/);
@@ -95,7 +111,10 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     const r = await show(tracking());
     expect(r.getByText('Votre colis est en route')).toBeTruthy();
     expect(r.getByLabelText('Code de livraison 4 8 2 1')).toBeTruthy();
-    expect(r.getByTestId('amount-to-pay')).toHaveTextContent(/À payer au livreur à la réception.*16 500 FCFA/);
+    expect(r.getByTestId('amount-to-pay')).toHaveTextContent(/À payer à la réception.*En espèces, au livreur\..*16 500 FCFA/);
+    // Tuile soleil, texte encre (jamais de texte jaune), montant exact sous `-value`.
+    expect(StyleSheet.flatten(r.getByTestId('amount-to-pay').props.style)).toMatchObject({ backgroundColor: '#FFC93C' });
+    expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16\u202f500\u202fFCFA', { normalizer: (t: string) => t });
     expect(r.getByTestId('live-map').props.children).toMatch(/^dropoff\*,driver\|route\|/);
     expect(mockTrack).toHaveBeenCalledTimes(1);
     // /config sans trackingPollIntervalMs (pollIntervalMs = 4 s) : 8 s par défaut, pas 4 s.
@@ -212,18 +231,30 @@ describe('page publique sur un petit téléphone (360 × 640) et sur une page cl
     jest.restoreAllMocks();
   });
 
-  it('écran court : feuille à 0,6 de l’écran, code compact (44 px), heure d’arrivée réduite avec son libellé et sa pastille sur sa ligne', async () => {
+  it('écran court : feuille à 0,62 de l’écran, code compact (44 px), heure en chiffres héros réduits (48 px) avec sa pastille sur sa ligne, montant sur une ligne', async () => {
     const r = await show(tracking());
-    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(640 * 0.6));
+    expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(640 * 0.62));
+    // La phrase « Issouf arrive chez vous. » cède sa place (le prénom est sur la carte du livreur).
+    expect(r.queryByText('Issouf arrive chez vous.')).toBeNull();
     const digits = r.getByText('4  8  2  1');
     expect(StyleSheet.flatten(digits.props.style)).toMatchObject({ fontSize: 44 });
-    // « Arrivée vers 14:29 [dans 9 min] » sur une ligne : libellé, heure en grand (chiffres tabulaires), pastille.
+    // « 14:29 [dans 9 min] » : heure en grand (chiffres tabulaires) et pastille dans la même rangée, libellé au-dessus.
     const clock = r.getByText('14:29');
-    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 34, fontVariant: ['tabular-nums'] });
-    expect(r.getByText('Arrivée vers').parent).toBe(clock.parent);
-    // La pastille « dans 9 min » est dans la même rangée que l'heure.
-    expect(clock.parent?.parent).toBe(r.getByText('dans 9 min').parent?.parent?.parent);
+    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 48, fontWeight: '800', fontVariant: ['tabular-nums'] });
+    expect(clock.parent).toBe(r.getByText('dans 9 min').parent?.parent);
+    expect(r.getByLabelText('Arrivée vers 14:29 · dans 9 min')).toBeTruthy();
+    // Montant sur une ligne, tuile plus basse.
+    expect(r.getByTestId('amount-to-pay-value').props.numberOfLines).toBe(1);
+    expect(StyleSheet.flatten(r.getByTestId('amount-to-pay').props.style)).toMatchObject({ minHeight: 60 });
     expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16 500 FCFA');
+  });
+
+  it('téléphone ordinaire : heure en chiffres héros (64 px), état de la livraison en cobalt dessous', async () => {
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 390, height: 844, scale: 2, fontScale: 1 });
+    const r = await show(tracking());
+    const clock = r.getByText('14:29');
+    expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 64, fontVariant: ['tabular-nums'] });
+    expect(StyleSheet.flatten(r.getByText('Votre colis est en route').props.style)).toMatchObject({ color: '#2448FF' });
   });
 
   it('taille de l’heure : tient avec sa pastille, de 30 (24 sur une feuille claire) à 20 px', () => {

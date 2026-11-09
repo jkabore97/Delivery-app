@@ -10,10 +10,13 @@ import {
 } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
 import {
   Card,
   Empty,
   ErrorBanner,
+  FilterSelect,
   IncidentStatusBadge,
   IncidentTypeBadge,
   Loading,
@@ -66,104 +69,122 @@ export function IncidentsPage() {
 
   return (
     <div className="page">
-      <h1>Litiges & SOS</h1>
+      <PageTitle>Litiges & SOS</PageTitle>
       <Card>
         <div className="filters">
-          <label>
-            Statut
-            <select
-              value={status}
-              onChange={(e) => {
-                setPage(1);
-                setStatus(e.target.value as IncidentStatus | '');
-              }}
-            >
-              <option value="">Tous</option>
-              {INCIDENT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {LABELS.incidentStatus[s]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Type
-            <select
-              value={type}
-              onChange={(e) => {
-                setPage(1);
-                setType(e.target.value as IncidentType | '');
-              }}
-            >
-              <option value="">Tous</option>
-              {INCIDENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {LABELS.incidentType[t]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterSelect
+            label="Statut"
+            value={status}
+            onChange={(v) => {
+              setPage(1);
+              setStatus(v as IncidentStatus | '');
+            }}
+          >
+            <option value="">Tous</option>
+            {INCIDENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {LABELS.incidentStatus[s]}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect
+            label="Type"
+            value={type}
+            onChange={(v) => {
+              setPage(1);
+              setType(v as IncidentType | '');
+            }}
+          >
+            <option value="">Tous</option>
+            {INCIDENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {LABELS.incidentType[t]}
+              </option>
+            ))}
+          </FilterSelect>
+          {incidents.data && (
+            <span className="filters-note tnum">
+              {incidents.data.total} incident{incidents.data.total > 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         <ErrorBanner message={error ?? incidents.error} />
         {incidents.loading && !incidents.data ? (
           <Loading />
         ) : !incidents.data || incidents.data.items.length === 0 ? (
-          <Empty>Aucun incident.</Empty>
+          <Empty icon="check">Aucun incident.</Empty>
         ) : (
           <ul className="incident-list">
             {incidents.data.items.map((i) => (
-              <li key={i.id} className={`incident ${i.id === focus ? 'incident-focus' : ''} ${i.type === 'SOS' && i.status !== 'RESOLVED' ? 'incident-sos' : ''}`}>
-                <div className="incident-head">
-                  <IncidentTypeBadge type={i.type} />
-                  <IncidentStatusBadge status={i.status} />
-                  <span className="muted small" title={formatDateTime(i.createdAt)}>
-                    {formatRelative(i.createdAt)}
-                  </span>
-                  {i.orderId && (
-                    <Link to={`/courses/${i.orderId}`} className="small">
-                      Livraison #{i.orderNumber}
-                    </Link>
-                  )}
-                </div>
-                <p className="incident-desc">{i.description || <span className="muted">Sans description</span>}</p>
-                <div className="incident-meta small">
-                  {roleLabel(i.reporter.role)} : {i.reporter.name ?? 'Sans nom'} ·{' '}
-                  <a href={`tel:${i.reporter.phone}`}>{formatPhone(i.reporter.phone)}</a>
-                  {i.lat !== null && i.lng !== null && (
-                    <>
-                      {' · '}
-                      <a
-                        href={`https://www.openstreetmap.org/?mlat=${i.lat}&mlon=${i.lng}#map=17/${i.lat}/${i.lng}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Position
-                      </a>
-                    </>
-                  )}
-                </div>
-                {i.status === 'RESOLVED' ? (
-                  <div className="incident-resolution small">
-                    Résolu {i.resolvedBy ? `par ${i.resolvedBy.name ?? 'un contrôleur'} ` : ''}le {formatDateTime(i.resolvedAt)}
-                    {i.resolutionNote ? ` · ${i.resolutionNote}` : ''}
-                  </div>
-                ) : (
-                  <div className="incident-actions">
-                    {i.type === 'SOS' && (
-                      <a className="btn btn-small btn-danger-soft" href={`tel:${i.reporter.phone}`}>
-                        Appeler
-                      </a>
+              <li
+                key={i.id}
+                className={`incident ${i.id === focus ? 'incident-focus' : ''} ${i.type === 'SOS' && i.status !== 'RESOLVED' ? 'incident-sos' : ''}`}
+              >
+                <span className={`alert-disc${i.type === 'SOS' ? ' is-sos' : ''}`} aria-hidden="true">
+                  <Icon name={i.type === 'SOS' ? 'alert' : i.type === 'DISPUTE' ? 'flag' : 'info'} size={18} />
+                </span>
+                <div className="incident-main">
+                  <div className="incident-head">
+                    <IncidentTypeBadge type={i.type} />
+                    <IncidentStatusBadge status={i.status} />
+                    <span className="muted small strong" title={formatDateTime(i.createdAt)}>
+                      {formatRelative(i.createdAt)}
+                    </span>
+                    {i.orderId && (
+                      <Link to={`/courses/${i.orderId}`} className="small tnum">
+                        Livraison #{i.orderNumber}
+                      </Link>
                     )}
-                    {i.status === 'OPEN' && (
-                      <button type="button" className="btn btn-small btn-ghost" onClick={() => void take(i)}>
-                        Prendre en charge
+                  </div>
+                  <p className="incident-desc">{i.description || <span className="muted">Sans description</span>}</p>
+                  <div className="incident-meta small">
+                    {roleLabel(i.reporter.role)} : {i.reporter.name ?? 'Sans nom'} ·{' '}
+                    <a href={`tel:${i.reporter.phone}`} className="phone">
+                      {formatPhone(i.reporter.phone)}
+                    </a>
+                    {i.lat !== null && i.lng !== null && (
+                      <>
+                        {' · '}
+                        <a
+                          href={`https://www.openstreetmap.org/?mlat=${i.lat}&mlon=${i.lng}#map=17/${i.lat}/${i.lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="osm-link"
+                        >
+                          Position
+                          <Icon name="external" size={13} />
+                        </a>
+                      </>
+                    )}
+                  </div>
+                  {i.status === 'RESOLVED' ? (
+                    <div className="incident-resolution small">
+                      <Icon name="checkCircle" size={16} />
+                      <span>
+                        Résolu {i.resolvedBy ? `par ${i.resolvedBy.name ?? 'un contrôleur'} ` : ''}le {formatDateTime(i.resolvedAt)}
+                        {i.resolutionNote ? ` · ${i.resolutionNote}` : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="incident-actions">
+                      {i.type === 'SOS' && (
+                        <a className="btn btn-small btn-danger" href={`tel:${i.reporter.phone}`}>
+                          <Icon name="phone" size={16} />
+                          Appeler
+                        </a>
+                      )}
+                      {i.status === 'OPEN' && (
+                        <button type="button" className="btn btn-small btn-ghost" onClick={() => void take(i)}>
+                          Prendre en charge
+                        </button>
+                      )}
+                      <button type="button" className="btn btn-small btn-primary" onClick={() => setResolving(i)}>
+                        <Icon name="check" size={16} />
+                        Marquer résolu
                       </button>
-                    )}
-                    <button type="button" className="btn btn-small btn-primary" onClick={() => setResolving(i)}>
-                      Marquer résolu
-                    </button>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

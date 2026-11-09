@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Linking } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OrderDto } from '@yaar/shared';
@@ -73,14 +73,14 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     mockDriver.position = { lat: 12.3729, lng: -1.4985, at: 0, heading: 265 };
     const r = await render(wrap(<DriverOrderScreen />));
     // Étape, entreprise, puis distance et durée restantes de l'itinéraire.
-    expect(r.getByTestId('next-step')).toHaveTextContent(/1 · RÉCUPÉRER.*Pharmacie du Centre.*Avenue Kwame Nkrumah.*\d,\d km · \d+ min/);
+    expect(r.getByTestId('next-step')).toHaveTextContent(/^Étape 1 sur 2 · \d,\d km · \d+ minRécupérerPharmacie du CentreAvenue Kwame NkrumahRepère : En face de la BCEAO$/);
     // Espèces de l'étape (au retrait), puis ce qui sera à encaisser à la livraison.
     expect(r.getByTestId('collect-at-pickup')).toHaveTextContent(/À encaisser au retrait.*1 700 FCFA/);
     expect(r.getByTestId('collect-detail')).toHaveTextContent('1 700 FCFA : frais de livraison payés au retrait, en espèces.');
     expect(r.getByTestId('collect-at-dropoff')).toHaveTextContent(/Ensuite, à encaisser auprès du destinataire.*8 000 FCFA/);
     // Étape vue par le livreur (pas « Livreur en route », le statut de l'entreprise).
     expect(r.getByTestId('driver-order-chip')).toHaveTextContent('Course #1052 · Retrait');
-    expect(r.getByTestId('live-map').props.children).toBe('pickup,dropoff,driver|route,dashed|rotation');
+    expect(r.getByTestId('live-map').props.children).toBe('pickup,dropoff,driver|route,pending|rotation');
     // Carte claire ; entreprise et destinataire en épingles « avatar » à leurs initiales.
     expect(r.getByTestId('live-map-avatars').props.children).toBe('pickup:PC,dropoff:AK,driver:-|light');
     expect(r.getByTestId('pickup-button')).toBeTruthy();
@@ -104,7 +104,7 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     mockDriver.currentOrder = delivery();
     mockDriver.position = { lat: 12.3536, lng: -1.5191, at: 0, heading: null };
     const r = await render(wrap(<DriverOrderScreen />));
-    expect(r.getByTestId('next-step')).toHaveTextContent(/2 · LIVRER.*Colis pour Awa Kaboré.*Patte d’Oie, rue 15\.23 · Repère : Station Total.*\d,\d km · \d+ min/);
+    expect(r.getByTestId('next-step')).toHaveTextContent(/^Étape 2 sur 2 · \d,\d km · \d+ minLivrerColis pour Awa KaboréPatte d’Oie, rue 15\.23Repère : Station Total$/);
     expect(r.getByTestId('collect-at-dropoff')).toHaveTextContent(/À encaisser.*16 500 FCFA/);
     expect(r.getByTestId('collect-detail')).toHaveTextContent('16 500 FCFA : marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces.');
     expect(r.queryByTestId('collect-at-pickup')).toBeNull();
@@ -112,9 +112,14 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     expect(r.getByTestId('driver-order-chip')).toHaveTextContent('Course #1052 · Livraison');
     // Plus de ligne « Contact : … · numéro » : les boutons WhatsApp et Appeler portent le numéro.
     expect(r.queryByText(/^Contact :/)).toBeNull();
-    expect(r.getByLabelText('Appeler (+22670112233)')).toBeTruthy();
+    // Le nom du destinataire est lu avec le numéro (plusieurs contacts possibles d'une course à l'autre).
+    expect(r.getByLabelText('Appeler Awa Kaboré (+22670112233)')).toBeTruthy();
+    expect(r.getByLabelText('Écrire à Awa Kaboré sur WhatsApp (+22670112233)')).toBeTruthy();
     expect(r.getByText('2 boîtes de médicaments')).toBeTruthy();
     expect(r.getByTestId('go-deliver')).toBeTruthy();
+    // « Itinéraire » : bouton rond de la rangée fixée (toujours à portée, même sur un petit téléphone).
+    expect(insideScroll(r.getByTestId('directions-button'))).toBe(false);
+    expect(r.getByLabelText('Itinéraire vers Awa Kaboré')).toBeTruthy();
   });
 
   it('règle : les espèces de l’étape en cours sont fixées au-dessus des boutons ronds, jamais dans la partie qui défile', async () => {
@@ -143,6 +148,21 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
       expect((r.getByTestId(`${c.id}-value`).props.children as string).replace(/\D/g, '')).toBe(c.amount);
       await r.unmount();
     }
+  });
+
+  it('pied fixé : le contenu qui défile s’efface sous un fondu (rien n’est coupé net), sa fin remonte au-dessus', async () => {
+    mockDriver.currentOrder = delivery({ notes: 'Sonner deux fois, 2e étage, porte de gauche.' });
+    const r = await render(wrap(<DriverOrderScreen />));
+    const fade = r.getByTestId('sheet-fade');
+    // Dans le pied fixé (hors du ScrollView), posé par-dessus le bas du contenu, sans capter les touchers.
+    expect(insideScroll(fade)).toBe(false);
+    expect(fade.props.pointerEvents).toBe('none');
+    const style = StyleSheet.flatten(fade.props.style);
+    expect(style).toMatchObject({ position: 'absolute', top: -28, height: 28 });
+    expect(String(style.backgroundImage)).toMatch(/^linear-gradient\(to bottom, rgba\(255, 255, 255, 0\), #FFFFFF\)$/);
+    // Instructions entre guillemets français, sans italique (la police n'en a pas).
+    const notes = r.getByText('« Sonner deux fois, 2e étage, porte de gauche. »');
+    expect(StyleSheet.flatten(notes.props.style).fontStyle).toBeUndefined();
   });
 
   it('règle : rien à encaisser à l’étape en cours → pas de montant fixé, « Rien à encaisser » dans le détail', async () => {

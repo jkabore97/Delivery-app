@@ -92,7 +92,8 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     expect(r.getByText('2. Demandez le code au destinataire')).toBeTruthy();
     // Solde après la course : 10 000 détenus + 16 500 encaissés (même libellé que l'accueil : « Espèces détenues »).
     expect(r.getByText('Espèces détenues après cette course')).toBeTruthy();
-    expect(r.getByText('26\u202f500 FCFA')).toBeTruthy();
+    expect(r.getByTestId('cash-after')).toHaveTextContent('26\u202f500\u202fFCFA', { normalizer: (t: string) => t });
+    expect(r.getByTestId('cash-after-limit')).toHaveTextContent(/^Plafond 50 000 FCFA · au-delà, vous ne recevez plus de courses avant dépôt\.$/);
   });
 
   it('frais payés par l’entreprise et rien à encaisser : le livreur le sait avant le code', async () => {

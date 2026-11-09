@@ -715,6 +715,7 @@ profile) sends a parcel to a **recipient**, a person or another business, who ha
 | `POST /business/deliveries/quote` | SELLER | `DeliveryQuoteInput` `{ "pickup"?: AddressInput, "dropoff": AddressInput }` | `200 QuoteResponse` (`type: "PARCEL"`, `itemsTotal: 0`, one option per vehicle as in §6.2) |
 | `POST /business/deliveries` | SELLER | `CreateDeliveryInput` | `201 OrderDto` (status `SEARCHING_DRIVER`) ⚙ |
 | `GET /business/deliveries` | SELLER | `status`, `updatedSince`, `page`, `pageSize` (same semantics as `GET /orders`, §6.5) | `200 Paginated<OrderDto>`: the deliveries requested by this business only (not the former food orders of its store), whatever its approval status ⚙ |
+| `GET /business/summary` | SELLER | | `200 BusinessSummaryDto`: the business dashboard figures (deliveries in progress, today's deliveries and cash), over the same deliveries as `GET /business/deliveries`, whatever its approval status (see below) |
 | `GET /orders/:id` | SELLER (requesting business) | | `200 OrderDto` with `events` |
 | `POST /orders/:id/cancel` | SELLER (requesting business) | `{ "reason"?: string }` | `200 OrderDto` in `SEARCHING_DRIVER` or `ASSIGNED` (the driver on the way is freed); `409 INVALID_TRANSITION` after pickup |
 | `GET /orders/:id/proof-photo` | SELLER (requesting business) | | binary proof-of-delivery photo |
@@ -725,6 +726,31 @@ validée par Yaar avant de demander une livraison"). With several stores, the ol
 `GET /business/deliveries` does **not** need the approval: any `SELLER` gets `200` with its own list (empty for a
 business waiting for approval; a suspended business still sees its past deliveries), so the app can show the list screen
 with a "en attente de validation" banner instead of an error.
+
+`GET /business/summary` → `BusinessSummaryDto` (exported by `@yaar/shared`), the figures of the business dashboard
+(app: KPI chips of the phone home, KPI tiles of the desktop dashboard). Same scope and rules as
+`GET /business/deliveries`: the deliveries requested by this account, **all its establishments** (no store filter: the
+list has none either), any approval status; other roles get `403 FORBIDDEN`. "Today" is the current **UTC** day
+(Ouagadougou is UTC+0), `[00:00, 24:00[`:
+```json
+{
+  "date": "2026-11-09",
+  "active": 3,
+  "today": { "delivered": 14, "cancelled": 1, "avgDeliveryMinutes": 24, "goodsCollected": 87500, "deliveryFees": 21400 }
+}
+```
+- `active`: deliveries in progress (`PENDING`, `SEARCHING_DRIVER`, `ASSIGNED`, `PICKED_UP`), whatever their day.
+- `today.delivered` / `today.cancelled`: deliveries with `deliveredAt` / `cancelledAt` in the day (a delivery requested
+  yesterday at 23:40 and delivered at 00:15 counts today).
+- `today.avgDeliveryMinutes`: average of `deliveredAt − createdAt` over today's delivered deliveries, rounded to the
+  minute; `null` when none.
+- `today.goodsCollected`: the goods (`cashToCollect`) collected for the business on today's delivered deliveries, i.e.
+  what Yaar pays back to it ("À reverser · encaissé pour vous"; the same money model as the cash table below and as
+  `owedToBusiness`).
+- `today.deliveryFees`: the `deliveryFee` of today's delivered deliveries, whoever paid them.
+
+The app reads it when the dashboard gets the focus and, in poll mode (§ Mode polling), every 30 s while it is shown (the
+figures change only at a delivery or a cancellation; the deliveries list keeps its 10 s rhythm).
 
 `CreateDeliveryInput`:
 ```json

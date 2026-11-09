@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { OUAGADOUGOU_CENTER, type OrderDto } from '@yaar/shared';
 import { buildDeliveryScene } from '../lib/map/scene';
+import { Icon } from './Icon';
 import { MapFrame, useSceneMap } from './map/SceneMap';
 
 /** Marges du cadrage : bouton « Recentrer » en haut, mention des données (et du fond de secours) en bas. */
@@ -8,7 +9,7 @@ const PADDING = { top: 52, right: 40, bottom: 64, left: 40 };
 
 /**
  * Petite carte de la fiche de livraison : retrait (entreprise), destinataire, livreur animé entre deux
- * rafraîchissements et itinéraire de l'étape en cours (vert, rogné à sa position ; pointillés sans itinéraire).
+ * rafraîchissements et itinéraire de l'étape en cours (cobalt, rogné à sa position ; tirets sans itinéraire).
  * Cadrée au premier affichage et à chaque changement d'étape, pas à chaque rafraîchissement.
  */
 export function DeliveryMap({ order }: { order: OrderDto }) {
@@ -34,6 +35,7 @@ export function DeliveryMap({ order }: { order: OrderDto }) {
     >
       {status === 'ready' && scene.fitPoints.length > 0 && (
         <button type="button" className="map-recenter" onClick={() => fit(scene.fitPoints, PADDING, 16, true)}>
+          <Icon name="recenter" size={18} />
           Recentrer
         </button>
       )}

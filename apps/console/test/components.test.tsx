@@ -17,21 +17,37 @@ describe('KpiCards', () => {
     expect(within(online).getByText('86')).toBeInTheDocument();
     // « 40 en course » : précision attachée au nombre (jamais coupée), pas en fin de la ligne des véhicules.
     expect(within(online).getByText('40 en course')).toHaveClass('kpi-note');
-    expect(within(online).getByText('40 en course').textContent).toBe('40 en course');
-    const vehicles = within(online).getByText(/14 · .* 61 · .* 11/);
-    expect(vehicles).toHaveClass('kpi-sub');
-    expect(vehicles.textContent).not.toMatch(/course/);
-    // Un nombre ne se sépare jamais de son icône ou de son unité (espaces insécables).
-    expect(vehicles.textContent).toBe('🚲 14 · 🏍️ 61 · 🚗 11');
+    expect(within(online).getByText('40 en course').textContent).toBe('40\u00a0en\u00a0course');
+    // Répartition par véhicule : pictogrammes dessinés (aucun émoji), lus « Vélo 14 » ; le nombre ne se sépare jamais
+    // de son libellé (espace insécable).
+    const line = online.querySelector('.kpi-vehicles-line') as HTMLElement;
+    expect(line).toHaveClass('kpi-sub');
+    expect([...line.querySelectorAll('.kpi-vehicles')].map((v) => v.textContent)).toEqual([
+      'Vélo\u00a014',
+      'Moto\u00a061',
+      'Voiture\u00a011',
+    ]);
+    expect(line.querySelectorAll('svg')).toHaveLength(3);
+    expect(line.textContent).not.toMatch(/course/);
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(screen.getByText('1 depuis plus de 5 min')).toHaveClass('tone-red');
-    expect(screen.getByText('27 min')).toBeInTheDocument();
-    expect(screen.getByText('1,84 M F')).toBeInTheDocument();
+    // Nombre en grand et unité plus petite, collés (« 27 min », « 1,84 M FCFA »).
+    expect(screen.getByRole('article', { name: 'Délai moyen' }).querySelector('.kpi-number')?.textContent).toBe('27 min');
+    const cash = screen.getByRole('article', { name: 'Cash détenu par les livreurs' });
+    expect(cash.querySelector('.kpi-number')?.textContent).toBe('1,84 M FCFA');
     expect(screen.getByText('3 livreurs au plafond')).toBeInTheDocument();
+    // Cobalt : une seule tuile héros (livraisons en cours), les espèces en soleil, l'attente longue en alerte.
+    expect(document.querySelectorAll('.kpi-cobalt')).toHaveLength(1);
+    expect(screen.getByRole('article', { name: 'Livraisons en cours' })).toHaveClass('kpi-cobalt');
+    expect(cash).toHaveClass('kpi-sun');
+    expect(screen.getByRole('article', { name: "En attente d'un livreur" })).toHaveClass('kpi-alert');
   });
 
   it('gère l’absence de livraison du jour', () => {
     render(<KpiCards dashboard={{ ...dashboard, avgDeliveryMinutesToday: null, waitingOver5Min: 0 }} />);
     expect(screen.getByText('aucune attente longue')).toHaveClass('tone-green');
+    expect(screen.getByRole('article', { name: "En attente d'un livreur" })).not.toHaveClass('kpi-alert');
+    expect(screen.getByRole('article', { name: 'Délai moyen' }).querySelector('.kpi-number')?.textContent).toBe('-');
   });
 });
 
@@ -43,7 +59,12 @@ describe('DocumentChips', () => {
       ),
     });
     render(<DocumentChips profile={p} />);
-    expect(screen.getByText('CNIB ✓')).toHaveAttribute('data-state', 'ok');
+    // Pièce fournie : nom court et coche dessinée (pas de « ✓ », absent de la police), texte complet pour les lecteurs d'écran.
+    const cnib = screen.getByText('CNIB');
+    expect(cnib).toHaveAttribute('data-state', 'ok');
+    expect(cnib.querySelector('svg')).not.toBeNull();
+    expect(cnib.textContent).toBe('CNIB fournie');
+    expect(document.body.textContent).not.toContain('✓');
     expect(screen.getByText('Assurance expirée')).toHaveAttribute('data-state', 'expired');
     expect(screen.getByText('Selfie manquant')).toHaveAttribute('data-state', 'missing');
   });

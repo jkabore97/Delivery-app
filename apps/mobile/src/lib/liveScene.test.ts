@@ -43,6 +43,8 @@ describe('buildScene', () => {
     const r = s.lines.find((l) => l.kind === 'route');
     expect(r?.trimToMarkerId).toBe('del-1:driver');
     expect(s.lines.map((l) => l.id)).toEqual(['del-1:route', 'del-1:next']);
+    // Étape à venir (retrait → destinataire) en pointillés encre discrets : l'itinéraire du livreur reste le seul trait fort.
+    expect(s.lines.map((l) => l.kind)).toEqual(['route', 'pending']);
     // Cadrage : livreur + entreprise (+ reste du tracé), pas le destinataire.
     expect(s.fitPoints[0]).toMatchObject({ lat: 12.3627, lng: -1.521 });
     expect(s.fitPoints[1]).toMatchObject({ lat: 12.3686, lng: -1.5275 });
@@ -138,18 +140,40 @@ describe('overviewScene', () => {
     expect(idle.fitPoints.map(key)).toEqual(expect.arrayContaining(['12.3226,-1.4977', key(business)]));
   });
 
-  it('destinataires en épingles « avatar » (option de l’accueil de l’entreprise) ; l’entreprise garde son pictogramme', () => {
+  it('destinataires en épingles « avatar » (option de l’accueil de l’entreprise) ; l’entreprise à ses initiales', () => {
     const list = [delivery({ id: 'a' }), delivery({ id: 'b', recipientName: 'Boutique Faso Mode', status: 'ASSIGNED' })];
     const plain = overviewScene({ lat: 12.3686, lng: -1.5275 }, list);
     expect(plain.markers.every((m) => m.initials === undefined)).toBe(true);
     const avatars = overviewScene({ lat: 12.3686, lng: -1.5275 }, list, 'Pharmacie du Centre', { recipientInitials: true });
     expect(avatars.markers.map((m) => [m.id, m.initials ?? null])).toEqual([
-      ['business', null],
+      ['business', 'PC'],
       ['a:dropoff', 'AK'],
       ['a:driver', null],
       ['b:dropoff', 'BF'],
       ['b:driver', null],
     ]);
+  });
+});
+
+describe('overviewScene : livreurs et étapes à venir vus par l’entreprise', () => {
+  it('livreur en route vers l’entreprise : disque soleil, étape suivante en pointillés encre ; colis en route : disque blanc', () => {
+    const business = { lat: 12.3686, lng: -1.5275 };
+    const scene = overviewScene(business, [
+      delivery({ id: 'a', status: 'ASSIGNED', route: route({ target: 'PICKUP', points: [[12.373, -1.49], [12.3686, -1.5275]] }) }),
+      delivery({ id: 'b' }),
+      delivery({ id: 's', status: 'SEARCHING_DRIVER', driver: null, route: null }),
+    ], 'Le Verdoyant');
+    expect(scene.markers.filter((m) => m.kind === 'driver').map((m) => [m.id, m.tone ?? null])).toEqual([
+      ['a:driver', 'sun'],
+      ['b:driver', null],
+    ]);
+    expect(scene.lines.map((l) => [l.id, l.kind])).toEqual([
+      ['a:route', 'route'],
+      ['a:next', 'pending'],
+      ['b:route', 'route'],
+      ['s:next', 'dashed'],
+    ]);
+    expect(scene.markers[0]).toMatchObject({ id: 'business', kind: 'pickup', initials: 'LV', pulse: true, title: 'Le Verdoyant' });
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { OUAGADOUGOU_CENTER, type MapDataDto } from '@yaar/shared';
 import { buildLiveScene, scenePoints } from '../lib/map/scene';
 import type { VehicleFilter } from '../lib/mapState';
+import { Icon } from './Icon';
 import { MapFrame, useSceneMap } from './map/SceneMap';
 
 export interface LiveMapProps {
@@ -11,8 +12,8 @@ export interface LiveMapProps {
   onDriverClick?: (driverId: string) => void;
 }
 
-/** Marges du cadrage : filtres en haut, légende en bas. */
-const PADDING = { top: 64, right: 56, bottom: 64, left: 48 };
+/** Marges du cadrage : filtres en haut à gauche, zoom et « Recentrer » à droite, légende en bas à gauche. */
+const PADDING = { top: 80, right: 80, bottom: 120, left: 56 };
 
 /**
  * Carte en direct (MapLibre GL, style OpenFreeMap ou fond de secours) : entreprises, destinataires des livraisons
@@ -51,10 +52,11 @@ export function LiveMap({ data, filter, onOrderClick, onDriverClick }: LiveMapPr
         <button
           type="button"
           className="map-recenter"
+          aria-label="Recentrer"
           title="Recadrer sur les livreurs, entreprises et livraisons affichés"
           onClick={() => fit(scenePoints(scene), PADDING, 14, true)}
         >
-          Recentrer
+          <Icon name="recenter" size={20} />
         </button>
       )}
     </MapFrame>

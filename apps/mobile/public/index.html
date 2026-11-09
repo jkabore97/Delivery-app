@@ -112,8 +112,9 @@
           link.rel = 'preload';
           link.as = as;
           link.href = href;
-          // Police : demandée en mode CORS par @font-face ; sans crossorigin, le préchargement ne servirait pas.
-          if (as === 'font') link.crossOrigin = 'anonymous';
+          // Police et style de carte : demandés en mode CORS (@font-face, fetch()) ; sans crossorigin, le préchargement
+          // ne servirait pas.
+          if (as === 'font' || as === 'fetch') link.crossOrigin = 'anonymous';
           document.head.appendChild(link);
         }
         // Polices de l'application (src/fonts.ts, graisses chargées au démarrage ; liste écrite par
@@ -129,14 +130,50 @@
           meta.name = 'referrer';
           meta.content = 'no-referrer';
           document.head.appendChild(meta);
-          // Blocs JS de la page (carte comprise) téléchargés tout de suite, en parallèle de l'application
-          // (liste écrite par scripts/web-postexport.mjs). Connexion très lente : MapLibre (≈ 270 ko) n'est pas
-          // préchargé ici, pour ne pas retarder le suivi lui-même (code, heure d'arrivée) ; l'application le demande
-          // dès l'ouverture de l'écran de suivi.
+          // Blocs JS de l'écran de suivi téléchargés tout de suite, en parallèle de l'application (liste écrite par
+          // scripts/web-postexport.mjs). La carte vient ENSUITE : en 3G, MapLibre (≈ 270 ko) et le bloc principal de
+          // l'application (≈ 290 ko) se partageraient la bande passante, et l'heure d'arrivée, le code et le montant
+          // attendraient la carte (mesure « Fast 3G » : 7,2 s → 5,7 s jusqu'à l'heure d'arrivée). MapLibre et le style
+          // Cobalt (/map/cobalt-style.json, une requête de moins une fois la carte prête) partent dès que le bloc
+          // principal est arrivé ; connexion très lente : l'application les demande elle-même, après le suivi.
           var urls = /*YAAR_SUIVI_PRELOAD*/[];
+          var mapUrls = [];
           for (var i = 0; i < urls.length; i++) {
-            if (slow && urls[i].indexOf('maplibre-gl-') >= 0) continue;
-            preload(urls[i], 'script');
+            if (urls[i].indexOf('maplibre-gl-') >= 0) mapUrls.push(urls[i]);
+            else preload(urls[i], 'script');
+          }
+          var mapStarted = slow;
+          var startMap = function () {
+            if (mapStarted) return;
+            mapStarted = true;
+            for (var k = 0; k < mapUrls.length; k++) preload(mapUrls[k], 'script');
+            preload('/map/cobalt-style.json', 'fetch');
+          };
+          if (!slow && window.PerformanceObserver) {
+            try {
+              var entryDone = new PerformanceObserver(function (list) {
+                var entries = list.getEntries();
+                for (var e = 0; e < entries.length; e++) {
+                  if (/\/entry-[^/]*\.js$/.test(entries[e].name)) {
+                    entryDone.disconnect();
+                    startMap();
+                  }
+                }
+              });
+              entryDone.observe({ type: 'resource', buffered: true });
+            } catch (err) {
+              /* navigateur sans « resource timing » : au plus tard à DOMContentLoaded (ci-dessous) */
+            }
+          }
+          document.addEventListener('DOMContentLoaded', startMap);
+          // Tuiles et noms de quartiers de la carte (autre domaine) : connexion ouverte d'avance (DNS + TLS : plusieurs
+          // allers-retours en 3G), sans rien télécharger.
+          if (!slow) {
+            var pc = document.createElement('link');
+            pc.rel = 'preconnect';
+            pc.href = 'https://tiles.openfreemap.org';
+            pc.crossOrigin = 'anonymous';
+            document.head.appendChild(pc);
           }
           var text = document.getElementById('yaar-splash-text');
           if (text) text.textContent = 'Chargement du suivi de votre colis…';

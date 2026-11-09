@@ -52,6 +52,16 @@ export function recipientWhatsappText(p: ShareParty & { url?: string | null; ord
   return `${who ? `Bonjour ${who}, ` : 'Bonjour, '}${from} vous envoie un colis${p.orderNumber ? ` (#${p.orderNumber})` : ''} avec Yaar Livraison.`;
 }
 
+/**
+ * Message WhatsApp prérempli de l'entreprise à son livreur (tableau de bord) : « Bonjour Issouf, c’est Le Verdoyant
+ * (Yaar Livraison), au sujet de la livraison #1003. »
+ */
+export function driverWhatsappText(p: { driver?: string | null; businessName?: string | null; orderNumber?: number | null }): string {
+  const driver = firstName(p.driver?.trim().replace(/\s+/g, ' ') ?? '');
+  const from = p.businessName?.trim();
+  return `${driver ? `Bonjour ${driver}` : 'Bonjour'}, c’est ${from || 'votre client'} (Yaar Livraison)${p.orderNumber ? `, au sujet de la livraison #${p.orderNumber}` : ''}.`;
+}
+
 /** Lien WhatsApp « wa.me/<chiffres du numéro>?text=… » (sans numéro valide : choix du contact dans WhatsApp). */
 export function whatsappUrl(phone: string | null | undefined, text: string): string {
   const digits = (normalizePhone(phone ?? '') ?? '').replace(/\D/g, '');

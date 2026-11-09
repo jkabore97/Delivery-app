@@ -159,9 +159,11 @@ export function buildScene(input: SceneInput): LiveScene {
     }
     else lines.push({ id: `${prefix}direct`, kind: 'dashed', points: [driver, targetPoint], trimToMarkerId: driverId });
   }
-  // Étape suivante (retrait → destinataire) en pointillés tant que le colis n'est pas récupéré.
+  // Étape suivante (retrait → destinataire) tant que le colis n'est pas récupéré : tirets cobalt pendant la recherche
+  // d'un livreur (c'est la course demandée) ; pointillés encre discrets (`pending`) pendant que le livreur va au
+  // retrait (étape à venir, l'itinéraire cobalt du livreur reste le seul trait fort).
   if (pickup && dropoff && (stage === 'searching' || stage === 'pending' || stage === 'toPickup')) {
-    lines.push({ id: `${prefix}next`, kind: 'dashed', points: [pickup, dropoff] });
+    lines.push({ id: `${prefix}next`, kind: stage === 'toPickup' ? 'pending' : 'dashed', points: [pickup, dropoff] });
   }
 
   let fitPoints: MapPoint[];
@@ -213,9 +215,10 @@ export function trackingSceneInput(t: TrackingDto): SceneInput {
 }
 
 /**
- * Carte d'ensemble de l'entreprise : son point de retrait (radar si une livraison attend un livreur), les
- * destinataires et les livreurs de toutes les livraisons en cours. `recipientInitials` : destinataires en épingles
- * « avatar » à leurs initiales (l'entreprise garde son pictogramme : c'est « chez elle »).
+ * Carte d'ensemble de l'entreprise : son point de retrait (carré encre à ses initiales, radar si une livraison attend
+ * un livreur), les destinataires et les livreurs de toutes les livraisons en cours (disque soleil pour un livreur en
+ * route vers l'entreprise, blanc pour un colis en route). `recipientInitials` : destinataires en épingles « avatar » à
+ * leurs initiales.
  *
  * Cadrage : l'entreprise et les livraisons qui bougent (livreur et cible de son étape : l'entreprise pour un retrait,
  * le destinataire pour une livraison) ; les destinataires des livraisons qui attendent un livreur n'entrent dans le
@@ -240,7 +243,8 @@ export function overviewScene(
     for (const m of s.markers) {
       // Un seul marqueur pour l'entreprise, sauf retrait ailleurs qu'à son adresse.
       if (m.kind === 'pickup' && business && distanceM(m, business) < 60) continue;
-      markers.push(m);
+      // Livreur qui vient chercher le colis : disque soleil (vue de l'entreprise).
+      markers.push(m.kind === 'driver' && s.stage === 'toPickup' ? { ...m, tone: 'sun' } : m);
     }
     lines.push(...s.lines);
     if (isLiveStage(s.stage) && s.driver) {
@@ -253,7 +257,8 @@ export function overviewScene(
   }
   const fitPoints = live.length > 0 ? live : waiting;
   if (business) {
-    markers.unshift({ id: 'business', kind: 'pickup', ...business, pulse: searching, title: businessName });
+    const initials = avatarInitials(businessName);
+    markers.unshift({ id: 'business', kind: 'pickup', ...business, pulse: searching, title: businessName, ...(initials ? { initials } : {}) });
     fitPoints.push(business);
   }
   return { markers, lines, fitPoints };

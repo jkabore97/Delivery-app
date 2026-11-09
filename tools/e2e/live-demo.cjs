@@ -20,7 +20,7 @@
 //   4. Destinataire : ouvre le lien de suivi SANS compte (titre de la page, « Recherche d'un livreur », code).
 //   5. Livreur (Karim D.) : écran « Vous êtes prêt ! » s'il s'affiche (versions qui le proposent, livreur sans
 //      consentement), sinon le bouton « Passer en ligne » de l'accueil → consentement GPS si la fenêtre s'ouvre,
-//      en ligne, reçoit l'offre plein écran par polling (entreprise + zone ; carte sombre sans aucun marqueur du
+//      en ligne, reçoit l'offre plein écran par polling (entreprise + zone ; carte Cobalt sans aucun marqueur du
 //      destinataire), l'accepte, récupère le colis, voit le montant à encaisser et saisit le code lu sur la page de
 //      suivi → livré ; la page de suivi affiche « Colis livré », l'entreprise « Livrée », la console la course
 //      « Livrée » et la caisse du livreur. Aucune requête Socket.IO (mode poll). `checks.readyScreen` et
@@ -335,7 +335,7 @@ async function karimToken(page) {
     results.checks.offerCash = await amountOf(dp, 'offer-cash-total');
     // Espèces de la course : frais au retrait (payés ici par le destinataire, donc 0) + montant à la livraison.
     sameAmount('espèces de l’offre / page de suivi', results.checks.offerCash, pageAmount);
-    // Avant acceptation : carte sombre, entreprise et livreur, zone de livraison en cercle, jamais le destinataire.
+    // Avant acceptation : carte Cobalt (claire), entreprise et livreur, zone de livraison en cercle, jamais le destinataire.
     // Marqueurs lus une fois ceux du livreur ou de l'entreprise posés (sinon « aucun marqueur du destinataire »
     // serait vrai sur une carte encore vide).
     await dp.waitForSelector('[data-testid="offer-screen"] canvas.maplibregl-canvas', { timeout: 30000 });
@@ -351,7 +351,7 @@ async function karimToken(page) {
       };
     });
     if (results.checks.offerMap.markers.includes('dropoff')) throw new Error('offre : marqueur du destinataire sur la carte avant acceptation');
-    step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie), carte ${results.checks.offerMap.theme}`);
+    step(`livreur : offre de la livraison #${orderNo} reçue par polling (Le Verdoyant → Patte d’Oie), carte ${results.checks.offerMap.theme ?? 'Cobalt'}`);
     await shot(dp, 'd31-driver-offer');
     await dp.getByTestId('accept-offer').click();
     await dp.getByTestId('next-step').waitFor({ timeout: 45000 });

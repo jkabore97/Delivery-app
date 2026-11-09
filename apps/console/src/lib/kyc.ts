@@ -9,7 +9,7 @@ export interface DocChip {
   documentId: string | null;
 }
 
-/** Libellés courts des pièces pour les pastilles (maquette : « Carte grise ✓ »). */
+/** Libellés courts des pièces pour les pastilles. */
 const SHORT_LABEL: Record<DocumentType, string> = {
   CNIB: 'CNIB',
   PERMIS: 'Permis',
@@ -18,7 +18,10 @@ const SHORT_LABEL: Record<DocumentType, string> = {
   SELFIE: 'Selfie',
 };
 
-/** Une pastille par pièce exigée : fournie (✓), expirée ou manquante. */
+/** Accord des adjectifs (« CNIB fournie », « Permis fourni ») : la carte, le permis, la carte grise, l'assurance, le selfie. */
+const FEMININE: ReadonlySet<DocumentType> = new Set<DocumentType>(['CNIB', 'CARTE_GRISE', 'ASSURANCE']);
+
+/** Une pastille par pièce exigée : fournie, expirée ou manquante. */
 export function documentChips(profile: Pick<DriverProfileDto, 'requiredDocuments' | 'documents'>): DocChip[] {
   return profile.requiredDocuments.map((type) => {
     const doc = profile.documents.find((d) => d.type === type);
@@ -27,10 +30,12 @@ export function documentChips(profile: Pick<DriverProfileDto, 'requiredDocuments
   });
 }
 
+/** Phrase complète d'une pastille (« CNIB fournie », « Assurance expirée », « Selfie manquant »). */
 export function chipText(chip: DocChip): string {
-  if (chip.state === 'ok') return `${chip.label} ✓`;
-  if (chip.state === 'expired') return `${chip.label} expirée`;
-  return `${chip.label} manquant${chip.type === 'ASSURANCE' || chip.type === 'CARTE_GRISE' ? 'e' : ''}`;
+  const e = FEMININE.has(chip.type) ? 'e' : '';
+  if (chip.state === 'ok') return `${chip.label} fourni${e}`;
+  if (chip.state === 'expired') return `${chip.label} expiré${e}`;
+  return `${chip.label} manquant${e}`;
 }
 
 export function documentLabel(type: DocumentType): string {

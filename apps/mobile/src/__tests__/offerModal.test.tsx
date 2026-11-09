@@ -91,6 +91,21 @@ describe('OfferModal (plein écran)', () => {
     expect(r.getByTestId('reject-offer')).toBeTruthy();
   });
 
+  it('Cobalt : gain sur tuile cobalt douce, espèces sur tuile SOLEIL pleine au texte encre, titres en minuscules', async () => {
+    mockDriver.offers = [offer({ cashToCollect: 9700, cashAtPickup: 1700, cashAtDelivery: 8000, driverEarning: 1280 })];
+    const r = await show();
+    expect(StyleSheet.flatten(r.getByTestId('offer-earning').props.style)).toMatchObject({ backgroundColor: '#E9EDFF' });
+    expect(StyleSheet.flatten(r.getByTestId('offer-cash').props.style)).toMatchObject({ backgroundColor: '#FFC93C' });
+    // Texte encre sur le soleil (12,2:1), détail en encre brune (7,1:1) : jamais de texte jaune.
+    expect(StyleSheet.flatten(r.getByTestId('offer-cash-total').props.style)).toMatchObject({ color: '#0C1222', fontVariant: ['tabular-nums'] });
+    expect(StyleSheet.flatten(r.getByTestId('offer-cash-split').props.style)).toMatchObject({ color: '#4B3B08' });
+    const kicker = r.getByText('Détails de la course');
+    expect(StyleSheet.flatten(kicker.props.style).textTransform).toBeUndefined();
+    // Refuser : pilule rouge pleine (texte blanc 4,8:1), 56 px.
+    const reject = within(r.getByTestId('reject-offer'));
+    expect(reject.getByText('Refuser')).toBeTruthy();
+  });
+
   it('temps jusqu’au retrait : distance de l’API à la vitesse moyenne du véhicule (1 min au moins)', async () => {
     const r = await show();
     // 1,2 km à moto (22 km/h) : 3,3 min → 4 min.
@@ -105,7 +120,7 @@ describe('OfferModal (plein écran)', () => {
     expect(r.getByText(/adresse exacte du destinataire s’affiche une fois la course acceptée/)).toBeTruthy();
   });
 
-  it('carte sombre : livreur, entreprise en épingle à initiales, zone de livraison en cercle (jamais de point exact)', async () => {
+  it('carte Cobalt (claire) : livreur, entreprise en épingle à initiales, zone de livraison en cercle (jamais de point exact)', async () => {
     mockDriver.position = { lat: 12.372, lng: -1.515, at: T0, heading: null };
     mockDriver.offers = [
       offer({
@@ -127,7 +142,8 @@ describe('OfferModal (plein écran)', () => {
       zones: Array<{ kind: string; lat: number; lng: number; radiusM: number }>;
       lines: Array<{ kind: string; points: Array<{ lat: number; lng: number }> }>;
     };
-    expect(p.theme).toBe('dark');
+    // Plus de carte sombre : le fond Cobalt par défaut (aucun thème transmis).
+    expect(p.theme).toBeUndefined();
     expect(p.markers.map((m) => m.kind).sort()).toEqual(['driver', 'pickup']);
     expect(p.markers.find((m) => m.kind === 'pickup')?.initials).toBe('PC');
     expect(p.markers.some((m) => m.kind === 'dropoff')).toBe(false);

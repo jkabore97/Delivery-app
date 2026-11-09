@@ -8,7 +8,9 @@ import {
 } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
-import { Card, ErrorBanner, Loading, VEHICLE_ICON } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
+import { Banner, Card, ErrorBanner, Loading, VEHICLE_ICON } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
 import { formatDateTime, formatFcfa } from '../lib/format';
 
@@ -118,18 +120,23 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
   return (
     <Card
       title={
-        <>
-          {VEHICLE_ICON[rule.vehicleType]} {LABELS.vehicleType[rule.vehicleType]}
-        </>
+        <span className="rule-title">
+          <span className="vehicle-disc" aria-hidden="true">
+            <Icon name={VEHICLE_ICON[rule.vehicleType]} size={20} />
+          </span>
+          {LABELS.vehicleType[rule.vehicleType]}
+        </span>
       }
-      aside={<span className="muted small">Modifié le {formatDateTime(rule.updatedAt)}</span>}
+      aside={<span className="tnum">Modifié le {formatDateTime(rule.updatedAt)}</span>}
     >
       <form className="form" onSubmit={submit} aria-label={`Tarif ${LABELS.vehicleType[rule.vehicleType]}`}>
-        {field('baseFare', 'Prise en charge', 'FCFA')}
-        {field('perKm', 'Prix par km', 'FCFA/km')}
-        {field('minimumFare', 'Minimum', 'FCFA')}
-        {field('commissionPercent', 'Commission plateforme', '%')}
-        <label className="checkbox">
+        <div className="rule-fields">
+          {field('baseFare', 'Prise en charge', 'FCFA')}
+          {field('perKm', 'Prix par km', 'FCFA/km')}
+          {field('minimumFare', 'Minimum', 'FCFA')}
+          {field('commissionPercent', 'Commission plateforme', '%')}
+        </div>
+        <label className="checkbox rule-active">
           <input
             type="checkbox"
             checked={draft.isActive}
@@ -141,18 +148,28 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
           Proposé aux entreprises
         </label>
         <div className="preview" aria-live="polite">
+          <div className="preview-title">Exemples avec cette grille</div>
           {parsed.ok ? (
-            <ul>
-              {PREVIEW_KM.map((km) => (
-                <li key={km}>{previewLine(rule.vehicleType, parsed.value, km)}</li>
-              ))}
+            <ul className="preview-list">
+              {PREVIEW_KM.map((km) => {
+                const p = computeDeliveryPrice({ vehicleType: rule.vehicleType, ...parsed.value }, km);
+                return (
+                  <li key={km} title={previewLine(rule.vehicleType, parsed.value, km)}>
+                    <span className="tnum">{km} km</span>
+                    <span>
+                      <b>{formatFcfa(p.deliveryFee)}</b>
+                      <span className="tnum"> · livreur {formatFcfa(p.driverEarning)}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <span className="muted">Corrigez les champs pour voir l’aperçu.</span>
           )}
         </div>
         <ErrorBanner message={error} />
-        {saved && !dirty && <div className="alert alert-success">Tarif enregistré (nouvelles livraisons uniquement).</div>}
+        {saved && !dirty && <Banner tone="success">Tarif enregistré (nouvelles livraisons uniquement).</Banner>}
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" disabled={!dirty || busy} onClick={() => setDraft(draftFromRule(rule))}>
             Annuler
@@ -173,8 +190,8 @@ export function PricingPage() {
 
   return (
     <div className="page">
-      <h1>Tarifs</h1>
-      <p className="muted">
+      <PageTitle>Tarifs</PageTitle>
+      <p className="page-lead">
         Prix de livraison = max(minimum, prise en charge + prix/km × distance routière estimée), arrondi aux 50 FCFA
         supérieurs. Les changements s’appliquent aux nouveaux devis et livraisons.
       </p>

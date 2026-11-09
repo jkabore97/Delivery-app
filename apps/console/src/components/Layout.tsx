@@ -1,17 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { LABELS, type IncidentDto } from '@yaar/shared';
 import { useAuth } from '../auth/AuthContext';
 import { useAppConfig } from '../realtime/AppConfigContext';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useIncidents } from '../hooks/IncidentsContext';
+import { useNow } from '../hooks/useAsync';
+import { formatTime } from '../lib/format';
 import { useLiveIntervalMs, useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
+import { Icon, type IconName } from './Icon';
+import { PageTitleSlot } from './PageTitle';
+import { Avatar } from './ui';
 
 interface NavItem {
   to: string;
-  icon: string;
+  icon: IconName;
   label: string;
   badge?: number;
+  /** Pastille corail (problème à traiter) au lieu de cobalt (file d'attente). */
+  alert?: boolean;
   end?: boolean;
   adminOnly?: boolean;
 }
@@ -29,18 +36,61 @@ export function searchTarget(q: string): string {
   return `${target}?q=${encodeURIComponent(q)}`;
 }
 
+const dayFmt = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'Africa/Ouagadougou',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+/** « lundi 9 novembre · 21:42 » (heure de Ouagadougou), mis à jour toutes les 30 s. */
+function LiveClock() {
+  const now = useNow(30_000);
+  const iso = new Date(now).toISOString();
+  return (
+    <span className="tnum">
+      {dayFmt.format(now)} · <time dateTime={iso}>{formatTime(iso)}</time>
+    </span>
+  );
+}
+
+/** État du rafraîchissement : temps réel (socket) ou actualisation périodique (mode poll), en pause après inactivité. */
+function LiveState() {
+  const { connected, mode, idlePaused } = useRealtime();
+  const liveIntervalMs = useLiveIntervalMs();
+  if (mode === 'poll') {
+    return (
+      <>
+        <span className={`live-dot${idlePaused ? ' is-paused' : ''}`} aria-hidden="true" />
+        <span className="live-state" title="Mode sans temps réel : les données sont rechargées régulièrement">
+          {idlePaused ? 'Actualisation en pause' : `Actualisation automatique toutes les ${Math.round(liveIntervalMs / 1000)} s`}
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className={`live-dot${connected ? '' : ' is-off'}`} aria-hidden="true" />
+      <span className="live-state" title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
+        {connected ? 'Temps réel' : 'Hors ligne'}
+      </span>
+    </>
+  );
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
   const { dashboard, pendingStores } = useDashboard();
-  const { connected, mode, idlePaused, resume } = useRealtime();
+  const { mode, idlePaused, resume } = useRealtime();
   const { config } = useAppConfig();
   const { incidents } = useIncidents();
-  const liveIntervalMs = useLiveIntervalMs();
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [sosToasts, setSosToasts] = useState<IncidentDto[]>([]);
+  const [titleSlot, setTitleSlot] = useState<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   useSocketEvent('sos', ({ incident }) => {
     setSosToasts((prev) => [incident, ...prev.filter((i) => i.id !== incident.id)].slice(0, 3));
@@ -66,18 +116,51 @@ export function Layout() {
     });
   }, [incidents, mode]);
 
-  const items: NavItem[] = [
-    { to: '/', icon: '🗺️', label: 'Carte en direct', end: true },
-    { to: '/courses', icon: '📦', label: 'Livraisons', badge: dashboard?.waitingForDriver },
-    { to: '/entreprises', icon: '🏢', label: 'Entreprises', badge: pendingStores ?? undefined },
-    { to: '/livreurs', icon: '🛵', label: 'Livreurs' },
-    { to: '/kyc', icon: '🪪', label: 'Validation KYC', badge: dashboard?.pendingKyc },
-    { to: '/incidents', icon: '⚠️', label: 'Litiges & SOS', badge: dashboard?.openIncidents },
-    { to: '/caisse', icon: '💵', label: 'Caisse', badge: dashboard?.driversAtCashLimit },
-    { to: '/tarifs', icon: '🏷️', label: 'Tarifs' },
-    { to: '/audit', icon: '🔐', label: "Journal d'audit" },
-    { to: '/clients', icon: '👥', label: 'Anciens comptes clients' },
-    { to: '/equipe', icon: '🧑‍💼', label: 'Équipe', adminOnly: true },
+  // « / » (hors d'un champ) place le curseur dans la recherche, comme l'indique la touche affichée.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const groups: Array<{ label: string; items: NavItem[] }> = [
+    {
+      label: 'Opérations',
+      items: [
+        { to: '/', icon: 'map', label: 'Carte en direct', end: true },
+        { to: '/courses', icon: 'package', label: 'Livraisons', badge: dashboard?.waitingForDriver },
+        { to: '/incidents', icon: 'alert', label: 'Litiges & SOS', badge: dashboard?.openIncidents, alert: true },
+      ],
+    },
+    {
+      label: 'Partenaires',
+      items: [
+        { to: '/entreprises', icon: 'store', label: 'Entreprises', badge: pendingStores ?? undefined },
+        { to: '/livreurs', icon: 'moto', label: 'Livreurs' },
+        { to: '/kyc', icon: 'id', label: 'Validation KYC', badge: dashboard?.pendingKyc },
+      ],
+    },
+    {
+      label: 'Finances',
+      items: [
+        { to: '/caisse', icon: 'wallet', label: 'Caisse', badge: dashboard?.driversAtCashLimit, alert: true },
+        { to: '/tarifs', icon: 'tag', label: 'Tarifs' },
+      ],
+    },
+    {
+      label: 'Administration',
+      items: [
+        { to: '/audit', icon: 'shield', label: "Journal d'audit" },
+        { to: '/clients', icon: 'user', label: 'Anciens clients' },
+        { to: '/equipe', icon: 'users', label: 'Équipe', adminOnly: true },
+      ],
+    },
   ];
 
   function onSearch(e: FormEvent) {
@@ -89,34 +172,49 @@ export function Layout() {
   return (
     <div className={`shell ${menuOpen ? 'menu-open' : ''}`}>
       <aside className="sidebar">
-        <div className="logo">
-          Yaar<span>·</span>Console
-        </div>
-        <nav aria-label="Navigation principale">
-          <ul>
-            {items
-              .filter((i) => !i.adminOnly || user?.role === 'ADMIN')
-              .map((i) => (
-                <li key={i.to}>
-                  <NavLink to={i.to} end={i.end} onClick={() => setMenuOpen(false)}>
-                    <span aria-hidden="true">{i.icon}</span>
-                    <span className="nav-label">{i.label}</span>
-                    {i.badge ? (
-                      <span className="nav-badge" aria-label={`${i.badge} à traiter`}>
-                        {i.badge}
-                      </span>
-                    ) : null}
-                  </NavLink>
-                </li>
-              ))}
-          </ul>
+        <Link to="/" className="brand" aria-label="Yaar Console : carte en direct" onClick={() => setMenuOpen(false)}>
+          <span className="brand-word">
+            Yaar<span className="brand-dot" aria-hidden="true" />
+          </span>
+          <span className="brand-tag">Console</span>
+        </Link>
+        <nav className="nav" aria-label="Navigation principale">
+          {groups.map((g) => {
+            const items = g.items.filter((i) => !i.adminOnly || user?.role === 'ADMIN');
+            if (items.length === 0) return null;
+            return (
+              <div key={g.label} className="nav-group">
+                <div className="nav-group-label" id={`nav-${g.label}`}>
+                  {g.label}
+                </div>
+                <ul className="nav-list" aria-labelledby={`nav-${g.label}`}>
+                  {items.map((i) => (
+                    <li key={i.to}>
+                      <NavLink to={i.to} end={i.end} className="nav-link" onClick={() => setMenuOpen(false)}>
+                        <Icon name={i.icon} size={20} />
+                        <span className="nav-label">{i.label}</span>
+                        {i.badge ? (
+                          <span className={`nav-badge${i.alert ? ' is-alert' : ''}`} aria-label={`${i.badge} à traiter`}>
+                            {i.badge}
+                          </span>
+                        ) : null}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
-        <div className="sidebar-foot">
-          <div>
-            {user?.name ?? user?.phone} · {user ? LABELS.role[user.role] : ''}
+        <div className="sidebar-spacer" />
+        <div className="sidebar-user">
+          <Avatar name={user?.name ?? null} />
+          <div className="sidebar-user-text">
+            <b>{user?.name ?? user?.phone}</b>
+            <small>{user ? LABELS.role[user.role] : ''}</small>
           </div>
-          <button type="button" className="link-btn" onClick={() => logout()}>
-            Se déconnecter
+          <button type="button" className="icon-btn" aria-label="Se déconnecter" title="Se déconnecter" onClick={() => logout()}>
+            <Icon name="logout" size={20} />
           </button>
         </div>
       </aside>
@@ -129,40 +227,45 @@ export function Layout() {
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
           >
-            ☰
+            <Icon name="menu" size={20} />
           </button>
-          <form className="search" role="search" onSubmit={onSearch}>
-            <input
-              type="search"
-              aria-label="Rechercher"
-              placeholder="🔍 Rechercher une livraison (n°, compte demandeur), un livreur (plaque)…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </form>
-          {config?.demoMode ? (
-            <span
-              className="demo-badge"
-              title="Mode démonstration : données fictives, ne saisissez pas de vraies données personnelles"
-            >
-              DÉMO
-            </span>
-          ) : null}
-          {mode === 'poll' ? (
-            <span className="poll-info" title="Mode sans temps réel : les données sont rechargées régulièrement">
-              {idlePaused
-                ? 'Actualisation en pause'
-                : `Actualisation automatique toutes les ${Math.round(liveIntervalMs / 1000)} s`}
-            </span>
-          ) : (
-            <span className={`live-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
-              {connected ? 'Temps réel' : 'Hors ligne'}
-            </span>
-          )}
+          <div className="topbar-heading">
+            <div className="topbar-title" ref={setTitleSlot} />
+            <div className="topbar-meta">
+              <LiveClock />
+              <LiveState />
+            </div>
+          </div>
+          <div className="topbar-actions">
+            <form className="search-pill" role="search" onSubmit={onSearch}>
+              <Icon name="search" size={20} />
+              <input
+                ref={searchRef}
+                type="search"
+                aria-label="Rechercher"
+                placeholder="N° de livraison, compte, plaque…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <kbd className="kbd" title="Raccourci : touche « / »">
+                /
+              </kbd>
+            </form>
+            {config?.demoMode ? (
+              <span
+                className="demo-badge"
+                title="Mode démonstration : données fictives, ne saisissez pas de vraies données personnelles"
+              >
+                <Icon name="info" size={16} />
+                Démo
+              </span>
+            ) : null}
+          </div>
         </header>
         {idlePaused ? (
           <div className="idle-banner" role="status">
             <button type="button" onClick={() => resume()}>
+              <Icon name="refresh" size={18} />
               Actualisation en pause (inactivité) — cliquez pour reprendre
             </button>
           </div>
@@ -171,15 +274,30 @@ export function Layout() {
           <div className="toasts" aria-live="assertive">
             {sosToasts.map((i) => (
               <div key={i.id} className="toast toast-sos" role="alert">
-                <strong>🆘 SOS · {i.reporter.name ?? 'Livreur'}</strong>
-                <span>{i.description}</span>
+                <div className="toast-head">
+                  <span className="toast-icon" aria-hidden="true">
+                    <Icon name="alert" size={20} />
+                  </span>
+                  <strong className="toast-title">SOS · {i.reporter.name ?? 'Livreur'}</strong>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Masquer"
+                    title="Masquer"
+                    onClick={() => setSosToasts((prev) => prev.filter((x) => x.id !== i.id))}
+                  >
+                    <Icon name="close" size={18} />
+                  </button>
+                </div>
+                {i.description && <span className="toast-desc">{i.description}</span>}
                 <span className="toast-actions">
                   <a className="btn btn-small btn-light" href={`tel:${i.reporter.phone}`}>
+                    <Icon name="phone" size={16} />
                     Appeler
                   </a>
                   <button
                     type="button"
-                    className="btn btn-small btn-light"
+                    className="btn btn-small btn-on-coral"
                     onClick={() => {
                       setSosToasts((prev) => prev.filter((x) => x.id !== i.id));
                       if (location.pathname !== '/incidents') navigate(`/incidents?focus=${i.id}`);
@@ -187,22 +305,16 @@ export function Layout() {
                   >
                     Traiter
                   </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label="Masquer"
-                    onClick={() => setSosToasts((prev) => prev.filter((x) => x.id !== i.id))}
-                  >
-                    ×
-                  </button>
                 </span>
               </div>
             ))}
           </div>
         )}
-        <main className="content">
-          <Outlet />
-        </main>
+        <PageTitleSlot value={titleSlot}>
+          <main className="content">
+            <Outlet />
+          </main>
+        </PageTitleSlot>
       </div>
     </div>
   );

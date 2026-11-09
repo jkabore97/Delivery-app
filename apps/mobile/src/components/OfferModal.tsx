@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, useWindowDimensions, Vibration, View } from 'react-native';
 import { Text } from './Text';
 import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LABELS, type OfferDto } from '@yaar/shared';
 import { useExpired } from '../hooks/useCountdown';
@@ -12,12 +11,13 @@ import { formatOfferEta, offerPlaces, offerScene, visibleOffer, type OfferScene 
 import { formatFcfa, formatKm } from '../lib/format';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { dark, MAX_APP_WIDTH, palette, spacing, typeScale } from '../theme';
+import { MAX_APP_WIDTH, palette, radii, shadows, spacing } from '../theme';
 import { CountdownRing } from './design/CountdownRing';
 import { Icon } from './design/Icon';
 import { Pill } from './design/Pill';
 import { RoundButton } from './design/RoundButton';
 import { SheetSurface } from './design/Surfaces';
+import { Money } from './driver/DriverKit';
 import { LiveMap } from './map/LiveMap';
 import { avatarInitials, vehicleSideGlyph } from './map/markerArt';
 import { ArtView } from './map/MarkerViews';
@@ -39,25 +39,23 @@ const DETAILS_MAX_HEIGHT = { regular: 0.42, compact: 0.5 } as const;
 const DROPOFF_PRIVACY_NOTE = 'Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.';
 
 /**
- * Nouvelle course, en plein écran (comme les applications de coursiers) : carte sombre avec le livreur, le retrait
- * et la zone de livraison (cercle doux : jamais l'adresse du destinataire avant acceptation), pastilles « Nouvelle
- * course » et « ≈ N min · X km » jusqu'au retrait, grand bouton rond « Accepter » dans l'anneau du compte à rebours
- * de 30 s, « Refuser » en rouge, puis le détail : gain, espèces (retrait / livraison), entreprise, zone, distance.
- * Sur un grand écran web, la colonne garde la largeur de l'application.
+ * Nouvelle course, en plein écran (comme les applications de coursiers), au dessin Cobalt : carte Cobalt claire avec
+ * le livreur, le retrait (carré encre aux initiales de l'entreprise) et la zone de livraison (cercle doux : jamais
+ * l'adresse du destinataire avant acceptation), pastilles blanches « Nouvelle course » et « ≈ N min · X km » jusqu'au
+ * retrait, grand bouton rond cobalt « Accepter » dans l'anneau du compte à rebours de 30 s (rouge les 10 dernières
+ * secondes), « Refuser » en pilule rouge pleine, puis la feuille blanche : gain (tuile cobalt douce), espèces (tuile
+ * SOLEIL, texte encre ; retrait / livraison), entreprise, zone, distance. Sur un grand écran web, la colonne garde la
+ * largeur de l'application. La barre d'état reste celle de l'application (texte foncé sur fond clair).
  */
 export function OfferModal() {
   const { offers, profile, currentOrder } = useDriver();
   const offer = visibleOffer(profile, currentOrder, offers);
   return (
-    <>
-      {/* Plein écran sombre : icônes claires dans la barre d'état tant que l'offre est affichée (puis le style d'avant). */}
-      {offer ? <StatusBar style="dark" /> : null}
-      <Modal visible={!!offer} transparent animationType="fade" statusBarTranslucent onRequestClose={() => undefined}>
-        <View style={styles.backdrop}>
-          <View style={styles.frame}>{offer ? <OfferTakeover key={offer.id} offer={offer} /> : null}</View>
-        </View>
-      </Modal>
-    </>
+    <Modal visible={!!offer} transparent animationType="fade" statusBarTranslucent onRequestClose={() => undefined}>
+      <View style={styles.backdrop}>
+        <View style={styles.frame}>{offer ? <OfferTakeover key={offer.id} offer={offer} /> : null}</View>
+      </View>
+    </Modal>
   );
 }
 
@@ -66,7 +64,6 @@ const OfferMap = memo(function OfferMap({ scene, padding, recenterKey }: { scene
   return (
     <LiveMap
       style={StyleSheet.absoluteFill}
-      theme="dark"
       markers={scene.markers}
       lines={scene.lines}
       zones={scene.zones}
@@ -204,8 +201,8 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
         {/* Le véhicule : son pictogramme dans la pastille (son nom dans le détail et pour les lecteurs d'écran). */}
         <Pill
           label="Nouvelle course"
-          icon={<ArtView rects={vehicleSideGlyph(offer.vehicleType, dark.text, dark.surface)} size={22} />}
-          tone="dark"
+          icon={<ArtView rects={vehicleSideGlyph(offer.vehicleType, palette.cobalt, palette.white)} size={22} />}
+          tone="light"
           floating
           style={styles.topPill}
           textStyle={styles.topPillText}
@@ -216,7 +213,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           <Pill
             label={eta}
             icon="clock"
-            tone="dark"
+            tone="light"
             floating
             style={styles.topPill}
             textStyle={styles.topPillText}
@@ -237,7 +234,6 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
                 icon="check"
                 diameter={ring - 22}
                 tone="primary"
-                surface="dark"
                 labelInside
                 elevated
                 loading={busy === 'accept'}
@@ -266,7 +262,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           >
             {/* Le véhicule passe sous le titre plutôt que d'être coupé quand la ligne est trop courte. */}
             <View style={[styles.detailsHeader, compact && styles.detailsHeaderCompact]}>
-              <Text style={[typeScale.kicker, styles.kicker]} accessibilityRole="header">
+              <Text style={styles.kicker} accessibilityRole="header">
                 Détails de la course
               </Text>
               <Text style={styles.facts} testID="offer-vehicle">
@@ -274,23 +270,22 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
               </Text>
             </View>
             {error ? (
-              <Text style={styles.error} accessibilityRole="alert">
-                {error}
-              </Text>
+              <View style={styles.error} accessibilityRole="alert">
+                <Icon name="alert" size={18} color={palette.coralText} strokeWidth={2.4} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
             ) : null}
 
             <View style={styles.money}>
+              {/* Gain : tuile cobalt douce (le cobalt plein est réservé au bouton « Accepter »). */}
               <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.earning]} testID="offer-earning">
-                <Text style={styles.moneyLabel}>Votre gain</Text>
-                <Text style={[styles.earningValue, compact && { fontSize: 22 }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {formatFcfa(offer.driverEarning)}
-                </Text>
+                <Text style={[styles.moneyLabel, { color: palette.cobaltText }]}>Votre gain</Text>
+                <Money amount={offer.driverEarning} size={compact ? 26 : 34} color={palette.cobaltText} style={styles.moneyFigure} />
               </View>
-              <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.cash]} testID="offer-cash">
+              {/* Espèces : tuile SOLEIL pleine, texte encre (12,2:1), détail en encre brune (7,1:1). */}
+              <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.cash, shadows.sun]} testID="offer-cash">
                 <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
-                <Text style={styles.cashValue} numberOfLines={1} adjustsFontSizeToFit testID="offer-cash-total">
-                  {formatFcfa(cash.total)}
-                </Text>
+                <Money amount={cash.total} size={compact ? 22 : 24} style={styles.moneyFigure} testID="offer-cash-total" />
                 {split && !compact ? (
                   <Text style={styles.cashSplit} testID="offer-cash-split">
                     {split}
@@ -321,7 +316,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
             <View style={styles.connector} />
             <View style={styles.stop} testID="offer-dropoff">
               <View style={[styles.stopIcon, styles.zoneIcon]}>
-                <Icon name="pin" size={18} color={dark.green} />
+                <Icon name="pin" size={18} color={palette.cobalt} />
               </View>
               <View style={styles.flex}>
                 <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>Livrer : {places.dropoffZone}</Text>
@@ -337,10 +332,10 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, gap: 2 },
-  backdrop: { flex: 1, backgroundColor: dark.overlay, alignItems: 'center' },
+  backdrop: { flex: 1, backgroundColor: palette.overlay, alignItems: 'center' },
   // Sur le web, la fenêtre modale couvre tout l'écran : la colonne garde la largeur de l'application.
   frame: { flex: 1, width: '100%', maxWidth: MAX_APP_WIDTH, overflow: 'hidden' },
-  root: { flex: 1, backgroundColor: dark.background },
+  root: { flex: 1, backgroundColor: palette.canvas },
   top: {
     position: 'absolute',
     left: spacing.md,
@@ -351,45 +346,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  topPill: { paddingHorizontal: 12, gap: 7 },
-  topPillText: { fontSize: 13.5 },
+  topPill: { paddingHorizontal: 14, gap: 8 },
+  topPillText: { fontSize: 14 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: spacing.md },
   actions: { alignItems: 'center', gap: 12 },
   actionsRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xl },
-  sheet: { paddingTop: spacing.lg },
+  sheet: { paddingTop: 20 },
   sheetCompact: { paddingTop: spacing.md },
   details: { gap: spacing.md },
   detailsCompact: { gap: 10 },
   // Titre et véhicule sur une ligne ; s'ils n'y tiennent pas, le véhicule passe dessous (jamais coupé).
   detailsHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: spacing.sm, rowGap: 2 },
   detailsHeaderCompact: { flexDirection: 'column', alignItems: 'flex-start', gap: 2 },
-  kicker: { color: dark.textMuted },
-  facts: { color: dark.textMuted, fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  error: {
-    color: dark.red,
-    backgroundColor: dark.redSoft,
-    borderRadius: 12,
-    padding: spacing.md,
-    fontWeight: '700',
-    overflow: 'hidden',
-  },
-  money: { flexDirection: 'row', gap: spacing.sm },
-  moneyBox: { flex: 1, borderRadius: 16, padding: spacing.md, gap: 2 },
+  kicker: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
+  facts: { color: palette.inkMuted, fontSize: 13, lineHeight: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  error: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.banner, backgroundColor: palette.coralTint },
+  errorText: { flex: 1, color: palette.coralText, fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  money: { flexDirection: 'row', gap: 10 },
+  moneyBox: { flex: 1, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 14, gap: 4 },
   moneyBoxCompact: { paddingVertical: 10 },
-  earning: { backgroundColor: dark.greenSoft },
-  cash: { backgroundColor: dark.amberSoft },
-  moneyLabel: { color: dark.textMuted, fontSize: 12.5, fontWeight: '800' },
-  earningValue: { color: dark.green, fontSize: 26, fontWeight: '900', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
-  cashValue: { color: dark.amber, fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 3 },
-  cashSplit: { color: dark.amber, fontSize: 11.5, fontWeight: '700', fontVariant: ['tabular-nums'], opacity: 0.9 },
-  cashSplitWide: { fontSize: 12, marginTop: -4, paddingHorizontal: 2 },
+  earning: { backgroundColor: palette.cobaltTint },
+  cash: { backgroundColor: palette.sun },
+  moneyLabel: { color: palette.ink, fontSize: 13, lineHeight: 17, fontWeight: '700' },
+  moneyFigure: { marginTop: 2 },
+  cashSplit: { color: palette.onSun2, fontSize: 12, lineHeight: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  // Petit écran : détail sur toute la largeur, sous les tuiles (fond blanc : encre brune des espèces, 5,9:1).
+  cashSplitWide: { color: palette.amberText, fontSize: 12.5, marginTop: -2, paddingHorizontal: 2 },
   stop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  stopIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  businessIcon: { backgroundColor: palette.ink, borderRadius: 12 },
+  stopIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  businessIcon: { backgroundColor: palette.ink, borderRadius: 13 },
   zoneIcon: { backgroundColor: palette.cobaltTint, borderWidth: 1.5, borderColor: palette.cobalt, borderStyle: 'dashed' },
-  stopInitials: { color: palette.white, fontWeight: '800', fontSize: 13 },
-  stopTitle: { color: dark.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
-  stopTitleCompact: { fontSize: 15 },
-  stopLine: { color: dark.textMuted, fontSize: 13, lineHeight: 18 },
-  connector: { width: 2, height: 10, marginLeft: 17, marginVertical: -6, borderRadius: 1, backgroundColor: dark.border },
+  stopInitials: { color: palette.white, fontWeight: '800', fontSize: 13.5, letterSpacing: 0.2 },
+  stopTitle: { color: palette.ink, fontSize: 16, lineHeight: 21, fontWeight: '800', letterSpacing: -0.2 },
+  stopTitleCompact: { fontSize: 15, lineHeight: 20 },
+  stopLine: { color: palette.inkMuted, fontSize: 13.5, lineHeight: 19, fontWeight: '500' },
+  connector: { width: 2, height: 12, marginLeft: 19, marginVertical: -7, borderRadius: 1, backgroundColor: palette.line },
 });

@@ -83,18 +83,19 @@ describe('Carte en direct (App)', () => {
     const bus = createMemoryBus();
     renderWithProviders(<App socketUrl="http://api.test" busOverride={bus} />, { routes: liveRoutes, bus });
 
-    expect(await screen.findByRole('heading', { name: 'Carte en direct · Ouagadougou' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Carte en direct', level: 1 })).toBeInTheDocument();
     expect(await screen.findByText('318')).toBeInTheDocument();
     expect(await screen.findByTestId('map')).toHaveTextContent('2 livreurs · filtre ALL · 0 SOS');
     expect(await screen.findByText('Zogona → Tampouy')).toBeInTheDocument();
     expect(await screen.findByText('Ousmane B.')).toBeInTheDocument();
-    expect(screen.getByText('Voir les 7 dossiers →')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Voir les 7 dossiers' })).toHaveAttribute('href', '/kyc');
 
     // Pastilles du menu (KYC = 7, litiges = 2)
     const nav = screen.getByRole('navigation', { name: 'Navigation principale' });
     expect(within(nav).getByLabelText('7 à traiter')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '🚲 Vélo' }));
+    await user.click(screen.getByRole('button', { name: 'Vélo' }));
+    expect(screen.getByRole('button', { name: 'Vélo' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('map')).toHaveTextContent('filtre BIKE');
 
     // Un livreur se déconnecte, puis un SOS arrive
@@ -102,7 +103,8 @@ describe('Carte en direct (App)', () => {
     expect(screen.getByTestId('map')).toHaveTextContent('1 livreurs');
     act(() => bus.emit('sos', { incident: sos }));
     expect(screen.getByTestId('map')).toHaveTextContent('1 SOS');
-    const toast = screen.getByText('🆘 SOS · Karim D.').closest('.toast') as HTMLElement;
+    const toast = screen.getByText('SOS · Karim D.').closest('.toast') as HTMLElement;
+    expect(toast).toHaveAttribute('role', 'alert');
     expect(within(toast).getByRole('link', { name: 'Appeler' })).toHaveAttribute('href', 'tel:+22673000002');
   });
 

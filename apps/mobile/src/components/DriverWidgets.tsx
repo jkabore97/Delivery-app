@@ -13,6 +13,8 @@ import { RoundButton } from './design/RoundButton';
 
 /** Point d'état : vert (suivi actif), soleil (en attente, en pause), gris (hors ligne). */
 const STATUS_DOT = { on: palette.mint, pending: palette.sun, paused: palette.sun, off: '#9AA3B2' } as const;
+/** Halo du point d'état (en ligne : le point « vit »). */
+const STATUS_HALO = { on: 'rgba(22, 196, 127, 0.22)', pending: 'rgba(255, 201, 60, 0.3)', paused: 'rgba(255, 201, 60, 0.3)', off: 'transparent' } as const;
 
 /**
  * Indicateur légal permanent « En ligne : suivi GPS actif » / « Hors ligne : position non suivie » (pastille blanche
@@ -25,13 +27,13 @@ export function OnlineStatusPill() {
     <View style={styles.statusWrap} pointerEvents="box-none">
       <Pill
         label={status.label}
-        tone="dark"
+        tone="light"
         floating
         live
         numberOfLines={2}
         style={styles.statusPill}
         textStyle={styles.statusText}
-        leading={<View style={[styles.dot, { backgroundColor: STATUS_DOT[status.tone] }]} />}
+        leading={<View style={[styles.dot, { backgroundColor: STATUS_DOT[status.tone], boxShadow: `0 0 0 4px ${STATUS_HALO[status.tone]}` }]} />}
         testID="online-status"
       />
       {gpsError ? (
@@ -51,40 +53,52 @@ export function OnlineStatusPill() {
 export function GoOnlineButton({ onError, blocked = false }: { onError: (msg: string | null) => void; blocked?: boolean }) {
   const { togglingOnline, setOnline } = useDriver();
   return (
-    <RoundButton
-      label={'Passer\nen ligne'}
-      icon="power"
-      diameter={116}
-      tone="primary"
-      surface="light"
-      labelInside
-      elevated
-      loading={togglingOnline}
-      disabled={blocked}
-      onPress={async () => {
-        onError(null);
-        const err = await setOnline(true);
-        if (err) onError(err);
-      }}
-      accessibilityLabel="Passer en ligne"
-      accessibilityHint={
-        blocked
-          ? 'Indisponible : plafond d’espèces atteint, déposez l’argent auprès de Yaar.'
-          : 'Votre position sera suivie tant que vous êtes en ligne.'
-      }
-      testID="online-switch"
-    />
+    // Anneau blanc autour du disque cobalt : le bouton se détache de la carte, même en plein soleil.
+    <View style={[styles.powerRing, shadows.float]}>
+      <RoundButton
+        label={'Passer\nen ligne'}
+        icon="power"
+        diameter={POWER_DIAMETER}
+        tone="primary"
+        labelInside
+        elevated
+        loading={togglingOnline}
+        disabled={blocked}
+        onPress={async () => {
+          onError(null);
+          const err = await setOnline(true);
+          if (err) onError(err);
+        }}
+        accessibilityLabel="Passer en ligne"
+        accessibilityHint={
+          blocked
+            ? 'Indisponible : plafond d’espèces atteint, déposez l’argent auprès de Yaar.'
+            : 'Votre position sera suivie tant que vous êtes en ligne.'
+        }
+        testID="online-switch"
+      />
+    </View>
   );
 }
 
-/** « Passer hors ligne » (accueil en ligne, sans course en cours). */
-export function GoOfflinePill({ onError }: { onError: (msg: string | null) => void }) {
+/** Diamètre du grand bouton rond « Passer en ligne » (anneau blanc de 8 px autour). */
+const POWER_DIAMETER = 112;
+const POWER_RING = 8;
+
+/**
+ * « Passer hors ligne » (accueil en ligne, sans course en cours) : pilule de 56 px. `floating` : blanche à ombre
+ * flottante, posée sur la carte au-dessus de la feuille (là où était « Passer en ligne ») ; sinon secondaire à filet.
+ */
+export function GoOfflinePill({ onError, floating = false }: { onError: (msg: string | null) => void; floating?: boolean }) {
   const { togglingOnline, setOnline } = useDriver();
   return (
     <Pill
       label="Passer hors ligne"
       icon="power"
-      tone="outline"
+      tone={floating ? 'light' : 'outline'}
+      floating={floating}
+      size="lg"
+      style={floating ? styles.offlineFloating : styles.offline}
       loading={togglingOnline}
       onPress={async () => {
         onError(null);
@@ -147,16 +161,28 @@ export function SosButton({ size = 64 }: { size?: number }) {
       disabled={busy}
       testID="sos-button"
     >
-      <Text style={[styles.sosText, size < 56 && { fontSize: 14 }]}>SOS</Text>
+      <Text style={[styles.sosText, size < 56 && { fontSize: 14 }]} accessibilityElementsHidden importantForAccessibility="no">
+        SOS
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   statusWrap: { alignItems: 'center', gap: 4, maxWidth: '100%' },
-  statusPill: { paddingHorizontal: 12, gap: 7 },
-  statusText: { fontSize: 13, letterSpacing: 0 },
+  statusPill: { paddingLeft: 14, paddingRight: 16, gap: 9 },
+  statusText: { fontSize: 13.5, letterSpacing: 0 },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  powerRing: {
+    width: POWER_DIAMETER + POWER_RING * 2,
+    height: POWER_DIAMETER + POWER_RING * 2,
+    borderRadius: (POWER_DIAMETER + POWER_RING * 2) / 2,
+    backgroundColor: palette.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offline: { alignSelf: 'stretch', justifyContent: 'center' },
+  offlineFloating: { alignSelf: 'center', paddingHorizontal: 22 },
   gpsError: {
     color: palette.white,
     // Opaque : blanc sur coralFill = 4,8:1 quel que soit le fond de carte dessous.

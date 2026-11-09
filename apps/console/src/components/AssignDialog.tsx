@@ -4,7 +4,7 @@ import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 import { useAsync } from '../hooks/useAsync';
 import { formatKm, formatPhone } from '../lib/format';
-import { Badge, Empty, ErrorBanner, Loading, Modal } from './ui';
+import { Avatar, Badge, Empty, ErrorBanner, Loading, Modal } from './ui';
 
 /** Raison pour laquelle un livreur ne peut pas être affecté (null = affectable). */
 export function candidateBlocker(c: DriverCandidateDto): string | null {
@@ -56,8 +56,9 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
       {candidates.loading && !candidates.data ? (
         <Loading />
       ) : candidates.data && candidates.data.length === 0 ? (
-        <Empty>Aucun livreur {LABELS.vehicleType[vehicleType].toLowerCase()} approuvé disponible.</Empty>
+        <Empty icon="users">Aucun livreur {LABELS.vehicleType[vehicleType].toLowerCase()} approuvé disponible.</Empty>
       ) : (
+        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -73,14 +74,27 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
               const blocker = candidateBlocker(c);
               return (
                 <tr key={c.id}>
-                  <td>{c.name ?? 'Sans nom'}</td>
                   <td>
-                    <a href={`tel:${c.phone}`}>{formatPhone(c.phone)}</a>
+                    <span className="person">
+                      <Avatar name={c.name} size="sm" tone="sun" />
+                      <span className="person-name">{c.name ?? 'Sans nom'}</span>
+                    </span>
                   </td>
-                  <td>{formatKm(c.distanceKm)}</td>
+                  <td>
+                    <a href={`tel:${c.phone}`} className="phone">
+                      {formatPhone(c.phone)}
+                    </a>
+                  </td>
+                  <td className="tnum strong">{formatKm(c.distanceKm)}</td>
                   <td>
                     <span className="inline-badges">
-                      {c.isOnline ? <Badge tone="green">En ligne</Badge> : <Badge tone="grey">Hors ligne</Badge>}
+                      {c.isOnline ? (
+                        <Badge tone="green" dot>
+                          En ligne
+                        </Badge>
+                      ) : (
+                        <Badge tone="grey">Hors ligne</Badge>
+                      )}
                       {c.isBusy && <Badge tone="blue">En course</Badge>}
                       {c.cashBlocked && <Badge tone="red">Plafond cash</Badge>}
                     </span>
@@ -101,6 +115,7 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
             })}
           </tbody>
         </table>
+        </div>
       )}
       <p className="hint">
         Un livreur hors ligne peut être affecté si vous l’avez joint par téléphone. Les offres automatiques en cours sont

@@ -3,10 +3,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ACTIVE_ORDER_STATUSES, LABELS, ORDER_STATUSES, ORDER_TYPES, type OrderDto, type OrderStatus } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
 import { CsvExport } from '../components/CsvExport';
-import { Badge, Card, Empty, ErrorBanner, Loading, OrderStatusBadge, Pagination, Vehicle } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
+import { Badge, BizMark, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, OrderStatusBadge, Pagination, Vehicle } from '../components/ui';
 import { useAsync, useDebouncedCallback, useNow } from '../hooks/useAsync';
 import { etaCell, isBusinessDelivery, orderKind } from '../lib/delivery';
-import { formatDateTime, formatFcfa } from '../lib/format';
+import { formatFcfa } from '../lib/format';
 import { enumParam, pageParam } from '../lib/params';
 import { POLL_MS } from '../config';
 import { usePolling, useSocketEvent } from '../realtime/RealtimeContext';
@@ -28,7 +30,13 @@ export function statusFilterToList(value: string | null): OrderStatus[] | undefi
 /** Entreprise expéditrice (ancienne commande : boutique ou client). */
 function SenderCell({ o }: { o: OrderDto }) {
   const kind = orderKind(o);
-  if (kind === 'business') return <span className="strong">{o.store?.name ?? '-'}</span>;
+  if (kind === 'business')
+    return (
+      <span className="person">
+        <BizMark name={o.store?.name} />
+        <span className="person-name">{o.store?.name ?? '-'}</span>
+      </span>
+    );
   return (
     <span>
       {kind === 'legacyFood' ? (o.store?.name ?? '-') : (o.client?.name ?? o.client?.phone ?? '-')}
@@ -41,7 +49,7 @@ function RecipientCell({ o }: { o: OrderDto }) {
   const name = o.recipientName ?? (isBusinessDelivery(o) ? null : (o.client?.name ?? null));
   return (
     <span>
-      {name ?? '-'}
+      <span className="strong">{name ?? '-'}</span>
       {o.recipientIsBusiness ? (
         <>
           {' '}
@@ -57,7 +65,7 @@ function AmountCell({ o }: { o: OrderDto }) {
   const goods = o.cashToCollect ?? 0;
   return (
     <span>
-      {formatFcfa(o.total)}
+      <span className="money">{formatFcfa(o.total)}</span>
       <div className="muted small">
         frais {formatFcfa(o.deliveryFee)}
         {goods > 0 ? ` · marchandise ${formatFcfa(goods)}` : ''}
@@ -111,36 +119,30 @@ export function OrdersPage() {
 
   return (
     <div className="page">
-      <h1>Livraisons</h1>
+      <PageTitle>Livraisons</PageTitle>
       <Card>
         <div className="filters">
-          <label>
-            Statut
-            <select value={status} onChange={(e) => update({ status: e.target.value })}>
-              <option value="">Tous</option>
-              <option value="ACTIVE">En cours (non terminées)</option>
-              {DELIVERY_STATUSES.map((s) => (
+          <FilterSelect label="Statut" value={status} onChange={(v) => update({ status: v })}>
+            <option value="">Tous</option>
+            <option value="ACTIVE">En cours (non terminées)</option>
+            {DELIVERY_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {LABELS.orderStatus[s]}
+              </option>
+            ))}
+            <optgroup label="Ancien parcours (commandes repas)">
+              {LEGACY_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {LABELS.orderStatus[s]}
                 </option>
               ))}
-              <optgroup label="Ancien parcours (commandes repas)">
-                {LEGACY_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {LABELS.orderStatus[s]}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-          <label>
-            Type
-            <select value={type} onChange={(e) => update({ type: e.target.value })}>
-              <option value="">Tous</option>
-              <option value="PARCEL">Colis (livraisons d’entreprise)</option>
-              <option value="FOOD">Repas (ancien parcours)</option>
-            </select>
-          </label>
+            </optgroup>
+          </FilterSelect>
+          <FilterSelect label="Type" value={type} onChange={(v) => update({ type: v })}>
+            <option value="">Tous</option>
+            <option value="PARCEL">Colis (livraisons d’entreprise)</option>
+            <option value="FOOD">Repas (ancien parcours)</option>
+          </FilterSelect>
           <form onSubmit={onSearch} className="filter-search">
             <label>
               Recherche
@@ -152,12 +154,14 @@ export function OrdersPage() {
               />
             </label>
             <button type="submit" className="btn btn-primary">
+              <Icon name="search" size={18} />
               Rechercher
             </button>
           </form>
           {q && (
-            <Link to={`/livreurs?q=${encodeURIComponent(q)}`} className="small">
-              Chercher « {q} » parmi les livreurs →
+            <Link to={`/livreurs?q=${encodeURIComponent(q)}`} className="card-link filters-note">
+              Chercher « {q} » parmi les livreurs
+              <Icon name="chevronRight" size={16} />
             </Link>
           )}
         </div>
@@ -165,7 +169,7 @@ export function OrdersPage() {
         {orders.loading && !orders.data ? (
           <Loading />
         ) : !orders.data || orders.data.items.length === 0 ? (
-          <Empty>Aucune livraison ne correspond à ces critères.</Empty>
+          <Empty icon="search">Aucune livraison ne correspond à ces critères.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="table table-clickable">
@@ -187,14 +191,14 @@ export function OrdersPage() {
                   return (
                     <tr key={o.id} onClick={() => navigate(`/courses/${o.id}`)}>
                       <td>
-                        <Link to={`/courses/${o.id}`} className="strong" onClick={(e) => e.stopPropagation()}>
+                        <Link to={`/courses/${o.id}`} className="table-link" onClick={(e) => e.stopPropagation()}>
                           #{o.number}
                         </Link>
                       </td>
                       <td>
                         <SenderCell o={o} />
                       </td>
-                      <td>
+                      <td className="cell-wide">
                         <RecipientCell o={o} />
                       </td>
                       <td>
@@ -207,17 +211,19 @@ export function OrdersPage() {
                       <td className="num">
                         <AmountCell o={o} />
                       </td>
-                      <td className="nowrap">
+                      <td className="nowrap tnum">
                         {eta ? (
                           <span title="Estimation d’arrivée chez le destinataire">
-                            {eta.duration}
+                            <span className="strong">{eta.duration}</span>
                             {eta.clock && <div className="muted small">vers {eta.clock}</div>}
                           </span>
                         ) : (
                           <span className="muted">-</span>
                         )}
                       </td>
-                      <td>{formatDateTime(o.createdAt)}</td>
+                      <td>
+                        <DateTimeCell iso={o.createdAt} />
+                      </td>
                     </tr>
                   );
                 })}

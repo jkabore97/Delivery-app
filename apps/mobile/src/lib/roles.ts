@@ -26,10 +26,13 @@ export function homePathForRole(role: Role): '/business' | '/driver' | '/login' 
   return space ? `/${space}` : '/login';
 }
 
-/** Rôles proposés à l'inscription (premier code) : il n'y a pas d'inscription client. */
+/**
+ * Rôles proposés à l'inscription (premier code) : il n'y a pas d'inscription client. `icon` : pictogramme du système de
+ * design (Cobalt n'a pas d'émoji), dessiné dans la tuile du rôle de l'écran de connexion.
+ */
 export const SIGNUP_ROLES = [
-  { role: 'SELLER', label: 'Entreprise', emoji: '🏪', hint: 'Je fais livrer mes clients' },
-  { role: 'DRIVER', label: 'Livreur', emoji: '🛵', hint: 'Je livre avec Yaar' },
+  { role: 'SELLER', label: 'Entreprise', icon: 'store', hint: 'Je fais livrer mes clients' },
+  { role: 'DRIVER', label: 'Livreur', icon: 'moto', hint: 'Je livre avec Yaar' },
 ] as const;
 
 export type SignupRole = (typeof SIGNUP_ROLES)[number]['role'];

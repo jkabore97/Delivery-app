@@ -114,7 +114,9 @@ describe('kyc', () => {
     });
     const chips = documentChips(p);
     expect(chips.map((c) => c.state)).toEqual(['ok', 'ok', 'ok', 'expired', 'missing']);
-    expect(chips.map(chipText)).toEqual(['CNIB ✓', 'Permis ✓', 'Carte grise ✓', 'Assurance expirée', 'Selfie manquant']);
+    expect(chips.map(chipText)).toEqual(['CNIB fournie', 'Permis fourni', 'Carte grise fournie', 'Assurance expirée', 'Selfie manquant']);
+    expect(chipText({ type: 'PERMIS', label: 'Permis', state: 'expired', documentId: null })).toBe('Permis expiré');
+    expect(chipText({ type: 'CNIB', label: 'CNIB', state: 'missing', documentId: null })).toBe('CNIB manquante');
   });
 
   it('détermine les actions possibles selon le statut', () => {

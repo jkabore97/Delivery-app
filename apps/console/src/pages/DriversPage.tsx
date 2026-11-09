@@ -7,18 +7,24 @@ import {
 } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
 import { DocumentChips } from '../components/DocumentChips';
+import { Icon } from '../components/Icon';
+import { DocsMeter } from '../components/KycQueuePanel';
+import { PageTitle } from '../components/PageTitle';
 import {
+  Avatar,
   Badge,
   Card,
   DriverStatusBadge,
   Empty,
   ErrorBanner,
+  FilterSelect,
   Loading,
   Pagination,
+  Rating,
   Vehicle,
 } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
-import { formatDate, formatFcfa, formatPhone, initials } from '../lib/format';
+import { formatDate, formatFcfa, formatPhone } from '../lib/format';
 import { enumParam, pageParam } from '../lib/params';
 
 const PAGE_SIZE = 20;
@@ -70,39 +76,30 @@ export function DriversPage() {
 
   return (
     <div className="page">
-      <h1>Livreurs</h1>
+      <PageTitle>Livreurs</PageTitle>
       <Card>
         <div className="filters">
-          <label>
-            Statut
-            <select value={status} onChange={(e) => update({ status: e.target.value })}>
-              <option value="">Tous</option>
-              {DRIVER_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {LABELS.driverStatus[s]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Véhicule
-            <select value={vehicleType} onChange={(e) => update({ vehicleType: e.target.value })}>
-              <option value="">Tous</option>
-              {VEHICLE_TYPES.map((v) => (
-                <option key={v} value={v}>
-                  {LABELS.vehicleType[v]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Disponibilité
-            <select value={online} onChange={(e) => update({ online: e.target.value })}>
-              <option value="">Tous</option>
-              <option value="true">En ligne</option>
-              <option value="false">Hors ligne</option>
-            </select>
-          </label>
+          <FilterSelect label="Statut" value={status} onChange={(v) => update({ status: v })}>
+            <option value="">Tous</option>
+            {DRIVER_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {LABELS.driverStatus[s]}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect label="Véhicule" value={vehicleType} onChange={(v) => update({ vehicleType: v })}>
+            <option value="">Tous</option>
+            {VEHICLE_TYPES.map((v) => (
+              <option key={v} value={v}>
+                {LABELS.vehicleType[v]}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect label="Disponibilité" value={online} onChange={(v) => update({ online: v })}>
+            <option value="">Tous</option>
+            <option value="true">En ligne</option>
+            <option value="false">Hors ligne</option>
+          </FilterSelect>
           <form onSubmit={onSearch} className="filter-search">
             <label>
               Recherche
@@ -114,6 +111,7 @@ export function DriversPage() {
               />
             </label>
             <button type="submit" className="btn btn-primary">
+              <Icon name="search" size={18} />
               Rechercher
             </button>
           </form>
@@ -122,7 +120,7 @@ export function DriversPage() {
         {drivers.loading && !drivers.data ? (
           <Loading />
         ) : !drivers.data || drivers.data.items.length === 0 ? (
-          <Empty>Aucun livreur.</Empty>
+          <Empty icon="search">Aucun livreur.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="table table-clickable">
@@ -143,15 +141,20 @@ export function DriversPage() {
                   <tr key={d.userId} onClick={() => navigate(`/livreurs/${d.userId}`)}>
                     <td>
                       <span className="person">
-                        <span className="avatar avatar-small" aria-hidden="true">
-                          {initials(d.name)}
-                        </span>
-                        {d.name ?? 'Sans nom'}
+                        <Avatar name={d.name} size="sm" tone="sun" />
+                        <span className="person-name">{d.name ?? 'Sans nom'}</span>
                       </span>
                     </td>
-                    <td>{formatPhone(d.phone)}</td>
+                    <td className="phone">{formatPhone(d.phone)}</td>
                     <td>
-                      <Vehicle type={d.vehicleType} /> {d.plate ?? ''}
+                      {d.plate ? (
+                        <span className="vehicle-plate">
+                          <Vehicle type={d.vehicleType} withLabel={false} />
+                          <span className="plate">{d.plate}</span>
+                        </span>
+                      ) : (
+                        <Vehicle type={d.vehicleType} />
+                      )}
                     </td>
                     <td>
                       <span className="inline-badges">
@@ -161,14 +164,21 @@ export function DriversPage() {
                     </td>
                     <td>
                       {d.isOnline ? (
-                        <Badge tone={d.isBusy ? 'blue' : 'green'}>{d.isBusy ? 'En course' : 'En ligne'}</Badge>
+                        <Badge tone={d.isBusy ? 'blue' : 'green'} dot>
+                          {d.isBusy ? 'En course' : 'En ligne'}
+                        </Badge>
                       ) : (
                         <Badge tone="grey">Hors ligne</Badge>
                       )}
                     </td>
-                    <td className={`num ${d.cashBlocked ? 'tone-red strong' : ''}`}>{formatFcfa(d.cashHeld)}</td>
-                    <td>{d.ratingAvg === null ? '-' : `${d.ratingAvg.toFixed(1)} ★ (${d.ratingCount})`}</td>
-                    <td>{formatDate(d.createdAt)}</td>
+                    <td className={`num ${d.cashBlocked ? 'tone-red' : ''}`}>
+                      {formatFcfa(d.cashHeld)}
+                      {d.cashBlocked && <div className="small nowrap">plafond atteint</div>}
+                    </td>
+                    <td>
+                      <Rating avg={d.ratingAvg} count={d.ratingCount} />
+                    </td>
+                    <td className="tnum nowrap">{formatDate(d.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -197,8 +207,8 @@ export function KycQueuePage() {
 
   return (
     <div className="page">
-      <h1>Validation KYC</h1>
-      <p className="muted">
+      <PageTitle>Validation KYC</PageTitle>
+      <p className="page-lead">
         Dossiers en attente, du plus ancien au plus récent. Chaque consultation de pièce est enregistrée dans le journal
         d’audit.
       </p>
@@ -207,28 +217,31 @@ export function KycQueuePage() {
         <Loading />
       ) : !queue.data || queue.data.items.length === 0 ? (
         <Card>
-          <Empty>Aucun dossier en attente de validation.</Empty>
+          <Empty icon="check">Aucun dossier en attente de validation.</Empty>
         </Card>
       ) : (
         <div className="kyc-grid">
           {queue.data.items.map((d) => (
             <article key={d.userId} className="card kyc-card">
               <div className="kyc-card-head">
-                <span className="avatar" aria-hidden="true">
-                  {initials(d.name)}
-                </span>
-                <div>
+                <Avatar name={d.name} size="lg" tone="sun" />
+                <div className="person-text">
                   <div className="strong">{d.name ?? 'Sans nom'}</div>
                   <div className="muted small">
-                    {LABELS.vehicleType[d.vehicleType]} {d.plate ?? ''} · {formatPhone(d.phone)}
+                    {LABELS.vehicleType[d.vehicleType]}
+                    {d.plate ? ` · ${d.plate}` : ''} · <span className="phone">{formatPhone(d.phone)}</span>
                   </div>
                 </div>
               </div>
+              <DocsMeter profile={d} />
               <DocumentChips profile={d} />
-              <div className="muted small">Déposé le {formatDate(d.createdAt)}</div>
-              <button type="button" className="btn btn-primary" onClick={() => navigate(`/kyc/${d.userId}`)}>
-                Examiner le dossier
-              </button>
+              <div className="kyc-card-foot">
+                <span className="muted small tnum">Déposé le {formatDate(d.createdAt)}</span>
+                <button type="button" className="btn btn-small btn-primary" onClick={() => navigate(`/kyc/${d.userId}`)}>
+                  Examiner le dossier
+                  <Icon name="chevronRight" size={16} />
+                </button>
+              </div>
             </article>
           ))}
         </div>

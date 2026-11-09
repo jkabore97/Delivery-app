@@ -8,12 +8,16 @@ import {
   TRACKING_CONSENT_TITLE,
 } from '../lib/consent';
 import { useDriver } from '../state/driver';
-import { colors, spacing, MAX_APP_WIDTH, palette, SHEET_RADIUS } from '../theme';
-import { Icon } from './design/Icon';
-import { Banner, Button, Muted, Subtitle } from './ui';
+import { MAX_APP_WIDTH, palette, SHEET_RADIUS, shadows, spacing } from '../theme';
+import { Icon, type IconName } from './design/Icon';
+import { Banner, Button } from './ui';
+
+/** Pictogramme de chaque point du texte de consentement (collecte, usage, partage, durée, retrait). */
+const POINT_ICONS: IconName[] = ['pin', 'route', 'shield', 'clock', 'logout'];
 
 /**
- * Consentement éclairé au suivi GPS (obligatoire avant le premier passage en ligne).
+ * Consentement éclairé au suivi GPS (obligatoire avant le premier passage en ligne), en feuille blanche Cobalt
+ * (coins de 32 px, poignée) : pastille, titre, points illustrés, « J'accepte… » en pilule cobalt, « Pas maintenant ».
  * Ouverte par `setOnline(true)` sans consentement, sur `403 CONSENT_REQUIRED`, ou depuis le profil.
  */
 export function TrackingConsentModal() {
@@ -25,51 +29,41 @@ export function TrackingConsentModal() {
     const err = await acceptTrackingConsent();
     if (err) setError(err);
   };
+  const close = () => {
+    setError(null);
+    dismissConsentPrompt();
+  };
 
   return (
-    <Modal
-      visible={consentPromptOpen}
-      transparent
-      animationType="slide"
-      onRequestClose={() => {
-        setError(null);
-        dismissConsentPrompt();
-      }}
-    >
+    <Modal visible={consentPromptOpen} transparent animationType="slide" onRequestClose={close}>
       <View style={styles.backdrop}>
-        <View style={styles.sheet} testID="tracking-consent">
-          <ScrollView contentContainerStyle={{ gap: spacing.md }}>
+        <View style={[styles.sheet, shadows.sheet]} testID="tracking-consent" accessibilityViewIsModal>
+          <View style={styles.handle} />
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
             <View style={styles.heading}>
-              <Icon name="pin" size={20} color={colors.green} />
-              <Subtitle style={styles.headingText}>{TRACKING_CONSENT_TITLE}</Subtitle>
-            </View>
-            <Muted>{TRACKING_CONSENT_INTRO}</Muted>
-            {TRACKING_CONSENT_POINTS.map((p) => (
-              <View key={p} style={styles.point}>
-                <Text style={styles.bullet}>•</Text>
-                <Text style={styles.pointText}>{p}</Text>
+              <View style={styles.disc}>
+                <Icon name="pin" size={26} color={palette.cobaltText} strokeWidth={2.3} />
               </View>
-            ))}
+              <Text style={styles.title} accessibilityRole="header">
+                {TRACKING_CONSENT_TITLE}
+              </Text>
+            </View>
+            <Text style={styles.intro}>{TRACKING_CONSENT_INTRO}</Text>
+            <View style={styles.points}>
+              {TRACKING_CONSENT_POINTS.map((p, i) => (
+                <View key={p} style={styles.point}>
+                  <View style={styles.pointIcon}>
+                    <Icon name={POINT_ICONS[i] ?? 'check'} size={16} color={palette.cobaltText} strokeWidth={2.4} />
+                  </View>
+                  <Text style={styles.pointText}>{p}</Text>
+                </View>
+              ))}
+            </View>
           </ScrollView>
           {error ? <Banner message={error} /> : null}
-          <Button
-            title={TRACKING_CONSENT_ACCEPT}
-            color={colors.green}
-            onPress={accept}
-            loading={consentBusy}
-            testID="accept-tracking-consent"
-          />
-          <Button
-            title="Pas maintenant"
-            variant="outline"
-            disabled={consentBusy}
-            onPress={() => {
-              setError(null);
-              dismissConsentPrompt();
-            }}
-            testID="decline-tracking-consent"
-          />
-          <Muted>Sans ce consentement, vous ne pouvez pas passer en ligne ni recevoir de courses.</Muted>
+          <Button title={TRACKING_CONSENT_ACCEPT} onPress={accept} loading={consentBusy} testID="accept-tracking-consent" />
+          <Button title="Pas maintenant" variant="ghost" disabled={consentBusy} onPress={close} testID="decline-tracking-consent" />
+          <Text style={styles.note}>Sans ce consentement, vous ne pouvez pas passer en ligne ni recevoir de courses.</Text>
         </View>
       </View>
     </Modal>
@@ -83,17 +77,24 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MAX_APP_WIDTH,
     alignSelf: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: palette.card,
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
-    padding: spacing.lg,
-    gap: spacing.md,
-    paddingBottom: spacing.xl * 1.5,
-    maxHeight: '90%',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    gap: spacing.sm,
+    maxHeight: '92%',
   },
-  heading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headingText: { flex: 1, fontWeight: '900' },
-  point: { flexDirection: 'row', gap: spacing.sm },
-  bullet: { color: colors.green, fontWeight: '900', fontSize: 15 },
-  pointText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
+  handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: palette.handle, marginBottom: spacing.sm },
+  scroll: { gap: spacing.md, paddingBottom: spacing.sm },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  disc: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.cobaltTint },
+  title: { flex: 1, fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4, color: palette.ink },
+  intro: { fontSize: 15, lineHeight: 21, fontWeight: '500', color: palette.inkMuted },
+  points: { gap: 10, padding: spacing.lg, borderRadius: 20, backgroundColor: palette.raised },
+  point: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  pointIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.white },
+  pointText: { flex: 1, color: palette.ink, fontSize: 14, lineHeight: 20, fontWeight: '500', paddingTop: 4 },
+  note: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted, textAlign: 'center' },
 });

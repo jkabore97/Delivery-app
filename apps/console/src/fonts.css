@@ -1,0 +1,21 @@
+/*
+ * LE SEUL fichier de la console qui connaît la police (système de design « Cobalt »).
+ *
+ * Plus Jakarta Sans, auto-hébergée par le paquet @fontsource-variable/plus-jakarta-sans : un fichier variable par
+ * alphabet (latin ≈ 27 Ko en woff2) couvre toutes les graisses utilisées (500, 600, 700, 800), servi par la console
+ * elle-même (aucune requête vers Google Fonts). Seul le style droit est importé : Cobalt n'utilise pas d'italique.
+ *
+ * Changer de police (voir README, « Police ») :
+ *   1. `npm install @fontsource-variable/<police> -w apps/console`, puis retirer celle-ci de apps/console/package.json ;
+ *   2. dans CE fichier seulement : l'`@import` ci-dessous et le premier nom de `--font-sans`.
+ * Tout le reste de la console écrit `font-family: var(--font-sans)` (ou hérite), jamais un nom de police.
+ */
+@import '@fontsource-variable/plus-jakarta-sans/wght.css';
+
+:root {
+  /* Police de l'interface, avec la police du système en repli (chargement, caractère absent de la police). */
+  --font-sans: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  /* Identifiants techniques du journal d'audit (n° d'objet, adresse IP) : chasse fixe. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}

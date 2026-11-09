@@ -5,20 +5,26 @@ import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 import { BlobViewer } from '../components/BlobViewer';
 import { DocumentChips } from '../components/DocumentChips';
+import { Icon } from '../components/Icon';
+import { DocsMeter } from '../components/KycQueuePanel';
+import { PageTitle } from '../components/PageTitle';
 import {
+  Avatar,
   Badge,
+  Banner,
   Card,
   DriverStatusBadge,
   ErrorBanner,
   KeyValue,
   Loading,
   Modal,
+  Rating,
   ReasonDialog,
   Vehicle,
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync } from '../hooks/useAsync';
-import { formatDate, formatDateTime, formatFcfa, formatPhone, initials } from '../lib/format';
+import { formatDate, formatDateTime, formatFcfa, formatPhone, formatTime } from '../lib/format';
 import { documentLabel, kycActions } from '../lib/kyc';
 
 type DialogState =
@@ -76,38 +82,28 @@ export function DriverDetailPage() {
 
   return (
     <div className="page">
-      <p className="breadcrumb">
-        <Link to={d.status === 'PENDING' ? '/kyc' : '/livreurs'}>
-          ← {d.status === 'PENDING' ? 'Validation KYC' : 'Livreurs'}
+      <PageTitle>
+        <span className="profile-title">
+          <Avatar name={d.name} tone="sun" />
+          {d.name ?? 'Sans nom'}
+        </span>
+        <DriverStatusBadge status={d.status} />
+        {d.isSuspendedUser && <Badge tone="red">Compte suspendu</Badge>}
+      </PageTitle>
+      <div className="page-toolbar">
+        <Link to={d.status === 'PENDING' ? '/kyc' : '/livreurs'} className="back-link">
+          <Icon name="chevronLeft" size={18} />
+          {d.status === 'PENDING' ? 'Validation KYC' : 'Livreurs'}
         </Link>
-      </p>
-      <div className="page-head">
-        <h1 className="person">
-          <span className="avatar" aria-hidden="true">
-            {initials(d.name)}
-          </span>
-          {d.name ?? 'Sans nom'} <DriverStatusBadge status={d.status} />
-          {d.isSuspendedUser && <Badge tone="red">Compte suspendu</Badge>}
-        </h1>
         <div className="actions">
-          {actions.canApprove && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy || actions.approveDisabledReason !== null}
-              title={actions.approveDisabledReason ?? undefined}
-              onClick={() => setDialog({ kind: 'approve' })}
-            >
-              Valider le dossier
-            </button>
-          )}
           {actions.canReject && (
-            <button type="button" className="btn btn-danger-soft" disabled={busy} onClick={() => setDialog({ kind: 'reject' })}>
+            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setDialog({ kind: 'reject' })}>
+              <Icon name="close" size={18} />
               Refuser
             </button>
           )}
           {actions.canSuspend && (
-            <button type="button" className="btn btn-danger-soft" disabled={busy} onClick={() => setDialog({ kind: 'suspend' })}>
+            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setDialog({ kind: 'suspend' })}>
               Suspendre
             </button>
           )}
@@ -121,22 +117,50 @@ export function DriverDetailPage() {
               Réintégrer
             </button>
           )}
+          {actions.canApprove && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || actions.approveDisabledReason !== null}
+              title={actions.approveDisabledReason ?? undefined}
+              onClick={() => setDialog({ kind: 'approve' })}
+            >
+              <Icon name="check" size={18} />
+              Valider le dossier
+            </button>
+          )}
         </div>
       </div>
-      {actions.approveDisabledReason && <div className="alert alert-warn">{actions.approveDisabledReason}.</div>}
+      {actions.approveDisabledReason && <Banner tone="warn">{actions.approveDisabledReason}.</Banner>}
       <ErrorBanner message={actionError} />
       {notice && (
-        <div className="alert alert-success" role="status">
+        <Banner tone="success" role="status">
           {notice}
-        </div>
+        </Banner>
       )}
       <div className="grid-2">
         <Card title="Profil">
           <KeyValue
             items={[
-              ['Téléphone', <a key="p" href={`tel:${d.phone}`}>{formatPhone(d.phone)}</a>],
+              [
+                'Téléphone',
+                <a key="p" href={`tel:${d.phone}`} className="phone">
+                  {formatPhone(d.phone)}
+                </a>,
+              ],
               ['Véhicule', <Vehicle key="v" type={d.vehicleType} />],
-              ['Immatriculation', d.plate ?? (d.vehicleType === 'BIKE' ? 'Non requise (vélo)' : <span className="tone-red">Manquante</span>)],
+              [
+                'Immatriculation',
+                d.plate ? (
+                  <span key="pl" className="plate">
+                    {d.plate}
+                  </span>
+                ) : d.vehicleType === 'BIKE' ? (
+                  'Non requise (vélo)'
+                ) : (
+                  <span className="tone-red strong">Manquante</span>
+                ),
+              ],
               ['Statut', LABELS.driverStatus[d.status]],
               ...(d.rejectionReason ? ([['Motif du refus', d.rejectionReason]] as Array<[string, string]>) : []),
               ...(d.suspensionReason ? ([['Motif de suspension', d.suspensionReason]] as Array<[string, string]>) : []),
@@ -146,14 +170,14 @@ export function DriverDetailPage() {
                 d.trackingConsentAt ? (
                   `Consentement donné le ${formatDateTime(d.trackingConsentAt)}`
                 ) : (
-                  <span key="g" className="tone-orange">Consentement non donné (ne peut pas passer en ligne)</span>
+                  <span key="g" className="tone-orange strong">Consentement non donné (ne peut pas passer en ligne)</span>
                 ),
               ],
-              ['Note', d.ratingAvg === null ? '-' : `${d.ratingAvg.toFixed(1)} ★ (${d.ratingCount} avis)`],
+              ['Note', d.ratingAvg === null ? '-' : <Rating key="r" avg={d.ratingAvg} count={d.ratingCount} />],
               [
                 'Cash détenu',
                 <span key="c" className={d.cashBlocked ? 'tone-red strong' : ''}>
-                  {formatFcfa(d.cashHeld)} / {formatFcfa(d.cashLimit)}
+                  <span className="money">{formatFcfa(d.cashHeld)}</span> / <span className="money">{formatFcfa(d.cashLimit)}</span>
                   {d.cashBlocked ? ' · plafond atteint' : ''} · <Link to={`/caisse?driverId=${d.userId}`}>Caisse</Link>
                 </span>,
               ],
@@ -162,72 +186,87 @@ export function DriverDetailPage() {
             ]}
           />
         </Card>
-        <Card title="Pièces du dossier" aside={<DocumentChips profile={d} />}>
+        <Card title="Pièces du dossier" aside={<DocsMeter profile={d} />}>
+          <DocumentChips profile={d} />
           <p className="hint">
             Les pièces sont protégées et ne sont jamais préchargées. Chaque consultation est enregistrée dans le{' '}
             <Link to="/audit?action=DRIVER_DOCUMENT_VIEWED&entityType=DriverDocument">journal d’audit</Link> ·{' '}
             <Link to={`/audit?entityType=DriverProfile&entityId=${encodeURIComponent(d.userId)}`}>historique du dossier</Link>.
           </p>
-          <table className="table table-compact">
-            <thead>
-              <tr>
-                <th>Pièce</th>
-                <th>État</th>
-                <th>Expiration</th>
-                <th>Déposée</th>
-                <th aria-label="Action" />
-              </tr>
-            </thead>
-            <tbody>
-              {docTypes.map((type) => {
-                const doc = docsByType.get(type);
-                return (
-                  <tr key={type}>
-                    <td>{documentLabel(type)}</td>
-                    <td>
-                      {!doc ? (
-                        <Badge tone="grey">Manquante</Badge>
-                      ) : doc.isExpired ? (
-                        <Badge tone="orange">Expirée</Badge>
-                      ) : (
-                        <Badge tone="green">Fournie</Badge>
-                      )}
-                    </td>
-                    <td>{doc?.expiresAt ? formatDate(doc.expiresAt) : '-'}</td>
-                    <td>{doc ? `${formatDateTime(doc.uploadedAt)} · ${formatSize(doc.sizeBytes)}` : '-'}</td>
-                    <td className="cell-action">
-                      {doc && (
-                        <button
-                          type="button"
-                          className="btn btn-small btn-ghost"
-                          onClick={() => {
-                            setViewed((prev) => new Set(prev).add(doc.id));
-                            setDialog({ kind: 'doc', doc });
-                          }}
-                        >
-                          {viewed.has(doc.id) ? 'Revoir' : 'Voir'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="table table-compact">
+              <thead>
+                <tr>
+                  <th>Pièce</th>
+                  <th>État</th>
+                  <th>Expiration</th>
+                  <th>Déposée</th>
+                  <th aria-label="Action" />
+                </tr>
+              </thead>
+              <tbody>
+                {docTypes.map((type) => {
+                  const doc = docsByType.get(type);
+                  return (
+                    <tr key={type}>
+                      <td className="strong">{documentLabel(type)}</td>
+                      <td>
+                        {!doc ? (
+                          <Badge tone="grey">Manquante</Badge>
+                        ) : doc.isExpired ? (
+                          <Badge tone="red">Expirée</Badge>
+                        ) : (
+                          <Badge tone="green">Fournie</Badge>
+                        )}
+                      </td>
+                      <td className={`tnum ${doc?.isExpired ? 'tone-red strong' : ''}`}>{doc?.expiresAt ? formatDate(doc.expiresAt) : '-'}</td>
+                      <td className="tnum nowrap">
+                        {doc ? (
+                          <span className="datetime">
+                            <time dateTime={doc.uploadedAt}>{formatDate(doc.uploadedAt)}</time>
+                            <span className="muted small">
+                              {formatTime(doc.uploadedAt)} · {formatSize(doc.sizeBytes)}
+                            </span>
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      <td className="cell-action">
+                        {doc && (
+                          <button
+                            type="button"
+                            className={`btn btn-small ${viewed.has(doc.id) ? 'btn-ghost' : 'btn-soft'}`}
+                            onClick={() => {
+                              setViewed((prev) => new Set(prev).add(doc.id));
+                              setDialog({ kind: 'doc', doc });
+                            }}
+                          >
+                            <Icon name={viewed.has(doc.id) ? 'check' : 'eye'} size={16} />
+                            {viewed.has(doc.id) ? 'Revoir' : 'Voir'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
       {dialog?.kind === 'approve' && (
         <Modal title={`Valider le dossier de ${d.name ?? 'ce livreur'}`} onClose={() => setDialog(null)}>
           <div className="form">
             {d.documents.some((doc) => !viewed.has(doc.id)) && (
-              <div className="alert alert-warn" role="alert">
+              <Banner tone="warn" role="alert">
                 Vous n’avez pas ouvert toutes les pièces :{' '}
                 {d.documents
                   .filter((doc) => !viewed.has(doc.id))
                   .map((doc) => documentLabel(doc.type))
                   .join(', ')}
                 .
-              </div>
+              </Banner>
             )}
             <p>
               Vous confirmez avoir vérifié les pièces (identité, permis, carte grise, assurance, selfie) de ce livreur.
@@ -246,6 +285,7 @@ export function DriverDetailPage() {
                   void run(() => api.approveDriver(d.userId), 'Dossier validé : le livreur peut se mettre en ligne.');
                 }}
               >
+                <Icon name="check" size={18} />
                 Je confirme, valider
               </button>
             </div>

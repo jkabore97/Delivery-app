@@ -1,24 +1,30 @@
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../components/Text';
 import { router, useLocalSearchParams } from 'expo-router';
-import { isTerminal, LABELS } from '@yaar/shared';
+import { isTerminal, type OrderDto } from '@yaar/shared';
+import { liveEta, deliveryTimeline } from '../../../components/business/dashboardData';
+import { AmountsBlock, CancelReason, DeliveredNote, RecipientBlock, TimesLine } from '../../../components/business/DeliveryDetail';
+import { deliveryChip } from '../../../components/business/DeliveryCards';
+import { useIsDesktop, PAGE_PADDING, TILE_GAP } from '../../../components/business/desktop/layout';
+import { MapTile } from '../../../components/business/desktop/MapTile';
+import { PageHeader } from '../../../components/business/desktop/PageHeader';
+import { SegmentedProgress } from '../../../components/business/parts';
 import { CallRoundButton, WhatsAppRoundButton } from '../../../components/design/ContactButtons';
-import { Icon } from '../../../components/design/Icon';
-import { MapIconButton, Pill } from '../../../components/design/Pill';
+import { MapIconButton, Pill, StatusChip } from '../../../components/design/Pill';
 import { RoundButton, ROUND_BUTTON_SIZES } from '../../../components/design/RoundButton';
-import { DarkScreen } from '../../../components/design/Surfaces';
+import { SurfaceScreen } from '../../../components/design/Surfaces';
 import { DisputeBox } from '../../../components/DisputeBox';
 import { avatarInitials } from '../../../components/map/markerArt';
 import { RatingCard, Stars } from '../../../components/Rating';
 import { ShareFeedback, ShareTrackingCard, useShareNotice } from '../../../components/ShareTrackingCard';
 import { FloatingChip, LiveTrackingLayout } from '../../../components/tracking/LiveTrackingLayout';
-import { AmountBox, ArrivalHeadline, DriverCard, InfoRow, StepsProgress } from '../../../components/tracking/TrackingParts';
+import { ArrivalHeadline, DriverCard, StateDisc } from '../../../components/tracking/TrackingParts';
 import { useAsync } from '../../../hooks/useAsync';
 import { errorMessage } from '../../../lib/api';
-import { amountsToCollect, canBusinessCancel, collectDetail, feePaymentText, goodsAmountText } from '../../../lib/delivery';
+import { canBusinessCancel } from '../../../lib/delivery';
 import { confirmAsync } from '../../../lib/dialog';
-import { formatDateTime, formatFcfa, formatOrderNumber, formatTime } from '../../../lib/format';
+import { formatDateTime, formatOrderNumber } from '../../../lib/format';
 import {
   buildScene,
   deliveryEtaLine,
@@ -29,22 +35,21 @@ import {
   type LiveDriver,
 } from '../../../lib/liveScene';
 import { fixTime } from '../../../lib/map/motion';
-import { formatPhone } from '../../../lib/phone';
 import { POLL_MS } from '../../../lib/publicConfig';
-import { recipientCallName, recipientWhatsappText, shareFeedback, shareOrCopyTrackingLink } from '../../../lib/share';
-import { trackingHeadline, trackingSteps } from '../../../lib/trackingSteps';
+import { driverWhatsappText, recipientCallName, recipientWhatsappText, shareFeedback, shareOrCopyTrackingLink } from '../../../lib/share';
+import { trackingHeadline } from '../../../lib/trackingSteps';
 import { useApi } from '../../../state/auth';
 import { useBusiness } from '../../../state/business';
 import { useOrderRoom, usePolling, useSocket, useSocketEvent } from '../../../state/socket';
-import { dark, spacing, typeScale } from '../../../theme';
+import { palette, radii, shadows, spacing, tabular } from '../../../theme';
 
 /**
- * Suivi d'une livraison par l'entreprise (comme Uber Direct) : carte claire en direct (livreur animé, itinéraire
- * jusqu'au destinataire en épingle à ses initiales), feuille sombre : heure d'arrivée et état, étapes, « Colis pour
- * … » (adresse, repère, colis), livreur, montants (ce que paie le destinataire, ce qui revient à l'entreprise),
- * annulation avant le retrait ; en bas, boutons ronds « Partager » (le lien de suivi), « WhatsApp client » (au
- * destinataire, message prérempli avec le lien de suivi) et « Appeler le livreur ». L'entreprise ne voit jamais le
- * code de livraison.
+ * Suivi d'une livraison par l'entreprise (comme Uber Direct). Téléphone : carte claire en direct (livreur animé,
+ * itinéraire jusqu'au destinataire en épingle à ses initiales) et feuille blanche : heure d'arrivée en très grand,
+ * progression en pilules avec les heures, « Colis pour … », livreur, montants (soleil pour les espèces), annulation
+ * avant le retrait ; en bas, boutons ronds « Partager » (le lien de suivi), « WhatsApp client » et « Appeler le
+ * livreur ». Ordinateur : la carte à gauche, une colonne de tuiles à droite (heure d'arrivée en tuile cobalt,
+ * destinataire, livreur, montants, lien de suivi). L'entreprise ne voit jamais le code de livraison.
  *
  * Pendant que le livreur vient chercher le colis, le titre donne SON arrivée chez l'entreprise (durée restante de
  * l'itinéraire vers le retrait) ; l'heure de livraison au destinataire est rappelée en dessous.
@@ -54,6 +59,7 @@ export default function BusinessDeliveryScreen() {
   const api = useApi();
   const { store } = useBusiness();
   const { pollIntervalMs } = useSocket();
+  const desktop = useIsDesktop();
   const order = useAsync(() => api.getOrder(id), [api, id]);
   const [live, setLive] = useState<LiveDriver | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -80,9 +86,18 @@ export default function BusinessDeliveryScreen() {
   );
 
   const o = order.data;
-  // Destinataire en épingle « avatar » à ses initiales ; l'entreprise garde son pictogramme (c'est chez elle).
-  const input = useMemo(() => (o ? { ...orderSceneInput(o, live), initials: { dropoff: avatarInitials(o.recipientName) } } : null), [o, live]);
-  const scene = useMemo(() => (input ? buildScene(input) : null), [input]);
+  const businessName = o?.store?.name ?? store?.name ?? null;
+  // Épingles « avatar » : l'entreprise (carré encre) et le destinataire (goutte cobalt) à leurs initiales.
+  const input = useMemo(
+    () => (o ? { ...orderSceneInput(o, live), initials: { pickup: avatarInitials(businessName), dropoff: avatarInitials(o.recipientName) } } : null),
+    [o, live, businessName],
+  );
+  const scene = useMemo(() => {
+    if (!input) return null;
+    const s = buildScene(input);
+    // Vue de l'entreprise : livreur en route vers elle en disque soleil.
+    return s.stage === 'toPickup' ? { ...s, markers: s.markers.map((m) => (m.kind === 'driver' ? { ...m, tone: 'sun' as const } : m)) } : s;
+  }, [input]);
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/business'));
 
   if (!o || !scene || !input) {
@@ -95,26 +110,26 @@ export default function BusinessDeliveryScreen() {
       }
     };
     return (
-      <DarkScreen>
+      <SurfaceScreen scroll={false}>
         <View style={styles.waiting}>
           {order.error ? (
             <>
+              <StateDisc icon="alert" tone="danger" />
               <Text style={styles.error} accessibilityRole="alert">
                 {order.error}
               </Text>
               {/* Mode socket : aucun rafraîchissement automatique ne relancera le chargement. */}
-              <Pill label="Réessayer" icon="refresh" tone="green" onPress={() => void retry()} loading={retrying} testID="retry-order" />
+              <Pill label="Réessayer" icon="refresh" tone="cobalt" onPress={() => void retry()} loading={retrying} testID="retry-order" />
             </>
           ) : (
-            <ActivityIndicator size="large" color={dark.green} />
+            <ActivityIndicator size="large" color={palette.cobalt} />
           )}
           <Pill label="Retour" icon="back" tone="outline" onPress={goBack} />
         </View>
-      </DarkScreen>
+      </SurfaceScreen>
     );
   }
 
-  const businessName = o.store?.name ?? store?.name ?? null;
   const deliveryEta = estimateArrivalMinutes(scene, input, o.etaMinutes);
   const pickupEta = estimatePickupMinutes(scene, input);
   const toPickup = scene.stage === 'toPickup';
@@ -122,12 +137,6 @@ export default function BusinessDeliveryScreen() {
   const terminal = isTerminal(o.status);
   const now = Date.now();
   const headline = trackingHeadline(o.status, 'business', { recipient: o.recipientName, driver: o.driver?.name?.split(' ')[0] });
-  const amounts = amountsToCollect(o);
-  const cancelled = o.status === 'CANCELLED';
-  // Phrases d'argent vraies à chaque étape (« à payer » / « payés », « à reverser », annulée : aucuns frais).
-  const goods = goodsAmountText(o.status);
-  const feeText = feePaymentText(o.status, amounts.feePaidBy);
-  const recipient = o.recipientName ?? 'le destinataire';
   const shareParty = {
     recipientName: o.recipientName,
     recipientIsBusiness: o.recipientIsBusiness,
@@ -135,6 +144,7 @@ export default function BusinessDeliveryScreen() {
     businessName,
   };
   const driverPhone = liveStage ? (o.driver?.phone ?? null) : null;
+  const steps = deliveryTimeline(o, now, liveEta(o, now));
 
   const cancel = () => {
     void confirmAsync({
@@ -174,13 +184,80 @@ export default function BusinessDeliveryScreen() {
     }
   };
 
-  const slot = ROUND_BUTTON_SIZES.medium;
+  const cancelButton = canBusinessCancel(o.status) ? (
+    <Pill label="Annuler la livraison" icon="close" tone="red" onPress={cancel} loading={cancelling} style={desktop ? null : styles.center} testID="cancel-delivery" />
+  ) : null;
+  const errorNode = actionError ? (
+    <Text style={styles.error} accessibilityRole="alert">
+      {actionError}
+    </Text>
+  ) : null;
+  const rating = (
+    <>
+      {o.canRate ? (
+        <RatingCard
+          title="Notez le livreur"
+          onSubmit={async (score, comment) => {
+            await api.rateOrder(o.id, { score, ...(comment ? { comment } : {}) });
+            await order.reload(true);
+          }}
+        />
+      ) : null}
+      {o.myRating ? (
+        <View style={styles.myRating}>
+          <Text style={styles.myRatingLabel}>Votre note</Text>
+          <Stars value={o.myRating} size={22} />
+        </View>
+      ) : null}
+    </>
+  );
   // Juste après la demande, tant qu'aucun livreur n'est en route : la carte « Prévenez le destinataire » est l'action
   // de l'écran (envoyer le lien) ; les boutons ronds la doubleraient.
   const promptShare = created === '1' && !terminal;
+  const shareCard = (
+    <ShareTrackingCard
+      url={o.trackingUrl}
+      recipientName={o.recipientName}
+      recipientIsBusiness={o.recipientIsBusiness}
+      recipientPhone={o.recipientPhone}
+      businessName={businessName}
+      prominent={promptShare}
+      tone="dark"
+    />
+  );
+
+  if (desktop) {
+    return (
+      <DesktopDelivery
+        order={o}
+        scene={scene}
+        stageKey={o.status}
+        animationMs={Math.max(pollIntervalMs, 4000)}
+        onBack={goBack}
+        headline={headline.title}
+        subtitle={headline.subtitle}
+        deliveryEta={deliveryEta}
+        pickupEta={pickupEta}
+        toPickup={toPickup}
+        now={now}
+        businessName={businessName}
+        driverPhone={driverPhone}
+        cancelButton={cancelButton}
+        shareCard={terminal ? null : shareCard}
+        extra={
+          <>
+            {errorNode}
+            {rating}
+          </>
+        }
+      />
+    );
+  }
+
+  const slot = ROUND_BUTTON_SIZES.medium;
   const actions = terminal || (promptShare && !driverPhone) ? undefined : (
     <View style={{ gap: spacing.sm }}>
-      {shareNotice ? <ShareFeedback notice={shareNotice} tone="dark" testID="share-feedback" /> : null}
+      {shareNotice ? <ShareFeedback notice={shareNotice} testID="share-feedback" /> : null}
       {shareNotice && !shareNotice.ok && o.trackingUrl ? (
         // Copie impossible : le lien, sélectionnable, à copier à la main.
         <Text style={styles.link} selectable testID="tracking-link">
@@ -222,7 +299,6 @@ export default function BusinessDeliveryScreen() {
       fitPoints={scene.fitPoints}
       stageKey={o.status}
       animationMs={Math.max(pollIntervalMs, 4000)}
-      sheetTheme="dark"
       topLeft={<MapIconButton icon="back" onPress={goBack} accessibilityLabel="Retour" testID="back-button" />}
       topCenter={<FloatingChip testID="order-chip">{`Livraison ${formatOrderNumber(o.number)}`}</FloatingChip>}
       footer={actions}
@@ -236,155 +312,184 @@ export default function BusinessDeliveryScreen() {
           secondary={deliveryEtaLine(deliveryEta, now, recipientCallName(o.recipientName, o.recipientIsBusiness), pickupEta)}
           headline={headline}
           now={now}
-          theme="dark"
         />
       ) : (
-        <ArrivalHeadline etaMinutes={deliveryEta} headline={headline} now={now} theme="dark" />
+        <ArrivalHeadline etaMinutes={deliveryEta} headline={headline} now={now} />
       )}
-      {o.status !== 'CANCELLED' ? <StepsProgress steps={trackingSteps(o.status, 'business')} theme="dark" /> : null}
-      {o.status === 'CANCELLED' && o.cancelReason ? <Text style={styles.reason}>Motif : {o.cancelReason}</Text> : null}
-
-      {promptShare ? (
-        <ShareTrackingCard
-          url={o.trackingUrl}
-          recipientName={o.recipientName}
-          recipientIsBusiness={o.recipientIsBusiness}
-          recipientPhone={o.recipientPhone}
-          businessName={businessName}
-          prominent
-          tone="dark"
-        />
-      ) : null}
-
-      <View style={styles.block} testID="recipient-card">
-        <View style={styles.recipientTop}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[typeScale.kicker, styles.kicker]}>Colis pour</Text>
-            <Text style={styles.recipientName}>
-              {o.recipientName ?? 'Destinataire'}
-              {o.recipientIsBusiness ? <Text style={styles.recipientTag}> · entreprise</Text> : null}
-            </Text>
-            {o.recipientPhone ? <Text style={styles.phone}>{formatPhone(o.recipientPhone)}</Text> : null}
-          </View>
-          {o.recipientPhone && !terminal ? (
-            <CallRoundButton phone={o.recipientPhone} label={`Appeler ${recipient}`} size="small" showLabel={false} testID="call-recipient" />
-          ) : null}
-        </View>
-        {o.dropoff ? (
-          <InfoRow icon="pin" title={o.dropoff.address} subtitle={o.dropoff.landmark ? `Repère : ${o.dropoff.landmark}` : null} theme="dark" />
-        ) : null}
-        {o.parcelDescription ? <InfoRow icon="package" title={o.parcelDescription} theme="dark" /> : null}
-        {o.notes ? <Text style={styles.notes}>« {o.notes} »</Text> : null}
-      </View>
-
-      {o.driver && liveStage ? (
-        <DriverCard name={o.driver.name} vehicleType={o.driver.vehicleType} plate={o.driver.plate} ratingAvg={o.driver.ratingAvg} theme="dark" />
-      ) : null}
-
-      <View style={{ gap: spacing.sm }} testID="amounts">
-        {amounts.atDropoff > 0 && o.status !== 'CANCELLED' ? (
-          <AmountBox
-            label={o.status === 'DELIVERED' ? 'Encaissé auprès du destinataire' : 'Le destinataire paie à la livraison'}
-            amount={amounts.atDropoff}
-            detail={collectDetail(amounts)}
-            theme="dark"
-            testID="recipient-amount"
-          />
-        ) : null}
-        {amounts.goods > 0 && o.status !== 'CANCELLED' ? (
-          <AmountBox
-            label={goods.label}
-            amount={amounts.goods}
-            detail={goods.detail}
-            tone="green"
-            theme="dark"
-            testID="business-amount"
-          />
-        ) : null}
-        {amounts.atPickup > 0 && (o.status === 'SEARCHING_DRIVER' || o.status === 'ASSIGNED') ? (
-          <AmountBox label="À payer au livreur au retrait" amount={amounts.atPickup} detail="Frais de livraison, en espèces." theme="dark" testID="pickup-amount" />
-        ) : null}
-        <View style={styles.feeRow} testID="delivery-fee">
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={styles.feeLabel}>Frais de livraison · {LABELS.vehicleType[o.vehicleType].toLowerCase()}</Text>
-            {feeText ? <Text style={styles.feePayer}>{feeText}</Text> : null}
-          </View>
-          {/* Annulée : montant barré, rien n'est facturé. */}
-          <Text style={[styles.feeValue, cancelled && styles.feeValueCancelled]}>{formatFcfa(o.deliveryFee)}</Text>
-        </View>
-      </View>
-
-      {o.status === 'DELIVERED' && o.deliveredAt ? (
-        <View style={styles.delivered}>
-          <Icon name="check" size={18} color={dark.green} strokeWidth={2.8} />
-          <Text style={styles.deliveredText}>Livrée le {formatDateTime(o.deliveredAt)}.</Text>
-        </View>
-      ) : null}
-      {o.canRate ? (
-        <RatingCard
-          title="Notez le livreur"
-          tone="dark"
-          onSubmit={async (score, comment) => {
-            await api.rateOrder(o.id, { score, ...(comment ? { comment } : {}) });
-            await order.reload(true);
-          }}
-        />
-      ) : null}
-      {o.myRating ? (
-        <View style={styles.myRating}>
-          <Text style={styles.feeLabel}>Votre note</Text>
-          <Stars value={o.myRating} size={22} emptyColor={dark.raisedHigh} />
-        </View>
-      ) : null}
-
-      {actionError ? (
-        <Text style={styles.error} accessibilityRole="alert">
-          {actionError}
-        </Text>
-      ) : null}
-      {canBusinessCancel(o.status) ? (
-        <Pill
-          label="Annuler la livraison"
-          icon={<Icon name="close" size={16} color={dark.red} strokeWidth={2.6} />}
-          tone="outline"
-          onPress={cancel}
-          loading={cancelling}
-          style={styles.center}
-          textStyle={{ color: dark.red }}
-          testID="cancel-delivery"
-        />
-      ) : null}
-      <Text style={styles.meta}>
-        Demandée à {formatTime(o.createdAt)}
-        {o.assignedAt ? ` · livreur à ${formatTime(o.assignedAt)}` : ''}
-        {o.pickedUpAt ? ` · récupérée à ${formatTime(o.pickedUpAt)}` : ''}
-      </Text>
-      <DisputeBox orderId={o.id} tone="dark" placeholder="Décrivez le problème (retard, colis abîmé…)" />
+      {steps.length > 0 ? <SegmentedProgress steps={steps} labels /> : null}
+      <CancelReason order={o} />
+      {promptShare ? shareCard : null}
+      <RecipientBlock order={o} terminal={terminal} />
+      {o.driver && liveStage ? <DriverCard name={o.driver.name} vehicleType={o.driver.vehicleType} plate={o.driver.plate} ratingAvg={o.driver.ratingAvg} /> : null}
+      <AmountsBlock order={o} />
+      <DeliveredNote order={o} />
+      {rating}
+      {errorNode}
+      {cancelButton}
+      <TimesLine order={o} />
+      <DisputeBox orderId={o.id} placeholder="Décrivez le problème (retard, colis abîmé…)" />
     </LiveTrackingLayout>
   );
 }
 
+/* ------------------------------------------------------------------------------------------------------------------ */
+/* Ordinateur                                                                                                          */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+function DesktopDelivery({
+  order: o,
+  scene,
+  stageKey,
+  animationMs,
+  onBack,
+  headline,
+  subtitle,
+  deliveryEta,
+  pickupEta,
+  toPickup,
+  now,
+  businessName,
+  driverPhone,
+  cancelButton,
+  shareCard,
+  extra,
+}: {
+  order: OrderDto;
+  scene: ReturnType<typeof buildScene>;
+  stageKey: string;
+  animationMs: number;
+  onBack: () => void;
+  headline: string;
+  subtitle: string | null;
+  deliveryEta: number | null;
+  pickupEta: number | null;
+  toPickup: boolean;
+  now: number;
+  businessName: string | null;
+  driverPhone: string | null;
+  cancelButton: ReactNode;
+  shareCard: ReactNode;
+  extra: ReactNode;
+}) {
+  const chip = deliveryChip(o.status);
+  const liveStage = isLiveStage(scene.stage);
+  const eta = liveEta(o, now);
+  const steps = deliveryTimeline(o, now, eta);
+  const recipient = recipientCallName(o.recipientName, o.recipientIsBusiness) || 'le destinataire';
+  return (
+    <View style={styles.page} testID="business-tracking">
+      <PageHeader
+        back={{ onPress: onBack, label: 'Retour au tableau de bord' }}
+        title={`Livraison ${formatOrderNumber(o.number)}`}
+        titleAccessory={<StatusChip label={chip.label} tone={chip.tone} dot={chip.dot} />}
+        subtitle={[o.recipientName, o.dropoff?.address].filter(Boolean).join(' · ') || undefined}
+        actions={cancelButton}
+      />
+      <View style={styles.deskRow}>
+        <MapTile
+          markers={scene.markers}
+          lines={scene.lines}
+          fitPoints={scene.fitPoints}
+          cameraKey={stageKey}
+          animationMs={animationMs}
+          overlay={<FloatingChip testID="order-chip">{`Livraison ${formatOrderNumber(o.number)}`}</FloatingChip>}
+          style={styles.deskMap}
+          testID="delivery-map"
+        />
+        <ScrollView style={styles.deskColumn} contentContainerStyle={styles.deskColumnContent} showsVerticalScrollIndicator={false}>
+          {liveStage || o.status === 'SEARCHING_DRIVER' || o.status === 'PENDING' ? (
+            <View style={[styles.etaTile, shadows.hero]} testID="tracking-headline">
+              <Text style={styles.etaKicker}>{toPickup ? 'Livreur au retrait vers' : eta.kind === 'request' ? 'Demandée à' : 'Arrivée vers'}</Text>
+              <View style={styles.etaRow}>
+                <Text style={[styles.etaClock, !eta.clock && styles.etaWord]}>{eta.clock ?? eta.label}</Text>
+                {eta.clock && eta.inText ? <Text style={styles.etaIn}>{eta.inText}</Text> : null}
+              </View>
+              <Text style={styles.etaHeadline}>{headline}</Text>
+              {toPickup && deliveryEta !== null ? (
+                <Text style={styles.etaSub} testID="eta-secondary">
+                  {deliveryEtaLine(deliveryEta, now, recipient, pickupEta)}
+                </Text>
+              ) : subtitle ? (
+                <Text style={styles.etaSub}>{subtitle}</Text>
+              ) : null}
+              {steps.length > 0 ? <SegmentedProgress steps={steps} onCobalt labels style={styles.etaSteps} /> : null}
+            </View>
+          ) : (
+            <View style={[styles.tile, shadows.tile, styles.stateTile]} testID="tracking-headline">
+              <StateDisc icon={o.status === 'DELIVERED' ? 'check' : 'close'} tone={o.status === 'DELIVERED' ? 'success' : 'danger'} size={52} />
+              <View style={styles.flex}>
+                <Text style={styles.stateTitle}>{headline}</Text>
+                <Text style={styles.stateSub}>
+                  {o.status === 'DELIVERED' && o.deliveredAt ? `Livrée le ${formatDateTime(o.deliveredAt)}` : o.cancelledAt ? `Annulée le ${formatDateTime(o.cancelledAt)}` : ''}
+                </Text>
+              </View>
+            </View>
+          )}
+          {steps.length > 0 && !liveStage && o.status === 'DELIVERED' ? (
+            <View style={[styles.tile, shadows.tile]}>
+              <SegmentedProgress steps={steps} labels />
+            </View>
+          ) : null}
+          <CancelReason order={o} />
+          {shareCard ? <View style={[styles.tile, shadows.tile, styles.tilePad]}>{shareCard}</View> : null}
+          <View style={[styles.tile, shadows.tile, styles.tilePad]}>
+            <RecipientBlock order={o} terminal={isTerminal(o.status)} />
+          </View>
+          {o.driver && liveStage ? (
+            <View style={[styles.tile, shadows.tile, styles.tilePad]}>
+              <DriverCard
+                name={o.driver.name}
+                vehicleType={o.driver.vehicleType}
+                plate={o.driver.plate}
+                ratingAvg={o.driver.ratingAvg}
+                phone={driverPhone}
+                whatsappText={driverWhatsappText({ driver: o.driver.name, businessName, orderNumber: o.number })}
+              />
+            </View>
+          ) : null}
+          <View style={[styles.tile, shadows.tile, styles.tilePad]}>
+            <Text style={styles.tileTitle}>Montants</Text>
+            <AmountsBlock order={o} />
+          </View>
+          <DeliveredNote order={o} />
+          {extra}
+          <View style={[styles.tile, shadows.tile, styles.tilePad]}>
+            <DisputeBox orderId={o.id} placeholder="Décrivez le problème (retard, colis abîmé…)" />
+          </View>
+          <TimesLine order={o} />
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingVertical: spacing.xl * 3 },
+  flex: { flex: 1 },
+  waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.xl },
   actions: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'flex-start', paddingTop: spacing.xs },
-  link: { color: dark.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  reason: { color: dark.red, fontSize: 14, fontWeight: '700' },
-  block: { gap: spacing.md, padding: spacing.md, borderRadius: 18, backgroundColor: dark.raised, borderWidth: 1, borderColor: dark.border },
-  recipientTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  kicker: { color: dark.green },
-  recipientName: { ...typeScale.subtitle, color: dark.text, fontWeight: '900' },
-  recipientTag: { fontSize: 14, fontWeight: '700', color: dark.textMuted },
-  phone: { color: dark.textMuted, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  notes: { color: dark.textMuted, fontSize: 14, lineHeight: 20, fontStyle: 'italic' },
-  feeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
-  feeLabel: { color: dark.text, fontSize: 14, fontWeight: '800' },
-  feeValue: { color: dark.text, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  feeValueCancelled: { color: dark.textMuted, textDecorationLine: 'line-through' },
-  feePayer: { color: dark.textMuted, fontSize: 12.5, fontWeight: '600' },
-  delivered: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: dark.greenSoft, borderRadius: 12, padding: spacing.md },
-  deliveredText: { color: dark.green, fontWeight: '800', fontSize: 14 },
+  link: { color: palette.ink, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   myRating: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  error: { color: dark.red, backgroundColor: dark.redSoft, borderRadius: 12, padding: spacing.md, fontWeight: '700', overflow: 'hidden' },
+  myRatingLabel: { color: palette.ink, fontSize: 14, fontWeight: '700' },
+  error: { color: palette.coralText, backgroundColor: palette.coralTint, borderRadius: radii.banner, padding: spacing.md, fontWeight: '700', overflow: 'hidden', textAlign: 'center' },
   center: { alignSelf: 'center' },
-  meta: { fontSize: 12, color: dark.textFaint, textAlign: 'center' },
+  page: { flex: 1, padding: PAGE_PADDING, backgroundColor: palette.canvas },
+  deskRow: { flex: 1, flexDirection: 'row', gap: TILE_GAP, marginTop: 16, minHeight: 0 },
+  deskMap: { flex: 1, minWidth: 0 },
+  deskColumn: { width: 440, flexGrow: 0 },
+  deskColumnContent: { gap: TILE_GAP, paddingBottom: 8 },
+  tile: { backgroundColor: palette.card, borderRadius: 24 },
+  tilePad: { padding: 20, gap: 14 },
+  tileTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.25, color: palette.ink },
+  etaTile: { borderRadius: radii.hero, backgroundColor: palette.cobalt, padding: 24, gap: 4 },
+  etaKicker: { fontSize: 14, lineHeight: 18, fontWeight: '600', color: palette.onCobalt2 },
+  etaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
+  etaClock: { fontSize: 64, lineHeight: 64, fontWeight: '800', letterSpacing: -2.6, color: palette.onCobalt, marginLeft: -2, ...tabular },
+  etaWord: { fontSize: 32, lineHeight: 38, letterSpacing: -0.8, marginLeft: 0 },
+  etaIn: { fontSize: 18, lineHeight: 22, fontWeight: '800', color: palette.onCobalt, ...tabular },
+  etaHeadline: { marginTop: 6, fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.onCobalt },
+  etaSub: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.onCobalt2, ...tabular },
+  etaSteps: { marginTop: 16 },
+  stateTile: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20 },
+  stateTitle: { fontSize: 20, lineHeight: 26, fontWeight: '800', letterSpacing: -0.3, color: palette.ink },
+  stateSub: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted, ...tabular },
 });

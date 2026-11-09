@@ -50,7 +50,21 @@ describe('Connexion : Entreprise et Livreur seulement', () => {
     expect(r.getByTestId('role-DRIVER')).toHaveTextContent(/Livreur/);
     expect(r.queryByTestId('role-CLIENT')).toBeNull();
     expect(r.queryByText(/Je suis client/)).toBeNull();
-    expect(r.getByTestId('recipient-hint')).toHaveTextContent(/Pas besoin de compte/);
+    expect(r.getByTestId('recipient-hint')).toHaveTextContent(/^Vous attendez un colis \?Pas besoin de compte/);
+  });
+
+  it('Cobalt : tuiles de profil à pictogramme (aucun émoji), profil choisi annoncé', async () => {
+    const r = await render(<LoginScreen />);
+    const emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+    for (const id of ['role-SELLER', 'role-DRIVER', 'recipient-hint', 'demo-notice']) {
+      const text = (r.getByTestId(id).props.accessibilityLabel as string | undefined) ?? '';
+      expect(text).not.toMatch(emoji);
+    }
+    expect(r.queryByText(/[🏪🛵📦]/u)).toBeNull();
+    expect(r.getByTestId('role-SELLER').props.accessibilityState).toMatchObject({ selected: true });
+    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ selected: false });
+    await fireEvent.press(r.getByTestId('role-DRIVER'));
+    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ selected: true });
   });
 
   it('démo : code de démonstration, aucun code demandé (pas de limite de 5 codes par heure) ; profil transmis', async () => {
@@ -119,7 +133,8 @@ describe('Code de vérification', () => {
     mockParams.role = 'CLIENT';
     mockAuth.api.verifyOtp.mockResolvedValue({ accessToken: 't', tokenType: 'Bearer', expiresIn: 3600, isNewUser: true, user: user('SELLER') });
     const r = await render(<VerifyScreen />);
-    expect(r.getByTestId('signup-role')).toHaveTextContent(/compte 🏪 Entreprise sera créé/);
+    expect(r.getByTestId('signup-role')).toHaveTextContent(/Un compte Entreprise sera créé/);
+    expect(r.getByTestId('signup-role')).not.toHaveTextContent(/🏪/u);
     await fireEvent.press(r.getByText('Valider'));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/business'));
     expect(mockAuth.api.verifyOtp).toHaveBeenCalledWith(expect.objectContaining({ role: 'SELLER' }));

@@ -76,22 +76,26 @@ export function searchingCountText(n: number): string {
   return `${n} ${n > 1 ? label.replace(/^recherche/, 'recherches') : label}`;
 }
 
-/** Libellés de statut côté entreprise. */
-export function businessStatusLabel(status: OrderStatus): { label: string; tone: 'orange' | 'blue' | 'green' | 'grey' | 'red' } {
+/**
+ * Libellés de statut côté entreprise, en minuscules (Cobalt écrit les états comme des phrases : « En livraison »).
+ * `tone` : couleur Cobalt de la puce d'état (spec : recherche gris à point cobalt, livreur vers le retrait soleil, en
+ * livraison cobaltTint, livrée mint, annulée corail).
+ */
+export function businessStatusLabel(status: OrderStatus): { label: string; tone: 'grey' | 'amber' | 'blue' | 'green' | 'red' } {
   switch (status) {
     case 'PENDING':
     case 'ACCEPTED':
     case 'READY':
     case 'SEARCHING_DRIVER':
-      return { label: SEARCHING_LABEL.toUpperCase(), tone: 'orange' };
+      return { label: SEARCHING_LABEL, tone: 'grey' };
     case 'ASSIGNED':
-      return { label: 'LIVREUR EN ROUTE', tone: 'blue' };
+      return { label: 'Livreur en route', tone: 'amber' };
     case 'PICKED_UP':
-      return { label: 'EN LIVRAISON', tone: 'green' };
+      return { label: 'En livraison', tone: 'blue' };
     case 'DELIVERED':
-      return { label: 'LIVRÉE', tone: 'grey' };
+      return { label: 'Livrée', tone: 'green' };
     case 'CANCELLED':
-      return { label: 'ANNULÉE', tone: 'red' };
+      return { label: 'Annulée', tone: 'red' };
   }
 }
 

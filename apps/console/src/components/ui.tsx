@@ -9,12 +9,20 @@ import {
 } from '@yaar/shared';
 import { errorMessage } from '../api/client';
 import { statusLabel } from '../lib/delivery';
+import { formatDate, formatTime, initials } from '../lib/format';
+import { Icon, type IconName } from './Icon';
 
-export type Tone = 'green' | 'orange' | 'red' | 'blue' | 'grey';
+/**
+ * Puces d'état Cobalt (24 px, 12/700, fond teinté + texte assorti, contrastes ≥ 4,5:1) :
+ * green = livrée / réussite (mint) · orange = à valider, attention (sunTint) · red = annulée, problème (coralTint) ·
+ * blue = en livraison, en cours (cobaltTint) · grey = neutre (raised) · sun = livreur vers le retrait (soleil plein,
+ * texte encre) · search = recherche d'un livreur (gris, point cobalt) · coral = SOS (corail plein, texte blanc).
+ */
+export type Tone = 'green' | 'orange' | 'red' | 'blue' | 'grey' | 'sun' | 'search' | 'coral';
 
-export function Badge({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
+export function Badge({ tone, children, title, dot }: { tone: Tone; children: ReactNode; title?: string; dot?: boolean }) {
   return (
-    <span className={`badge badge-${tone}`} title={title}>
+    <span className={`badge badge-${tone}${dot ? ' badge-dot' : ''}`} title={title}>
       {children}
     </span>
   );
@@ -22,13 +30,13 @@ export function Badge({ tone, children, title }: { tone: Tone; children: ReactNo
 
 const ORDER_TONE: Record<OrderStatus, Tone> = {
   PENDING: 'grey',
-  ACCEPTED: 'orange',
-  READY: 'orange',
-  SEARCHING_DRIVER: 'red',
-  ASSIGNED: 'blue',
+  ACCEPTED: 'grey',
+  READY: 'grey',
+  SEARCHING_DRIVER: 'search',
+  ASSIGNED: 'sun',
   PICKED_UP: 'blue',
   DELIVERED: 'green',
-  CANCELLED: 'grey',
+  CANCELLED: 'red',
 };
 
 /** `business` : livraison d'entreprise (l'étape PENDING n'attend pas de vendeur). */
@@ -47,61 +55,162 @@ export function DriverStatusBadge({ status }: { status: DriverStatus }) {
   return <Badge tone={DRIVER_TONE[status]}>{LABELS.driverStatus[status]}</Badge>;
 }
 
-const INCIDENT_TONE: Record<IncidentStatus, Tone> = { OPEN: 'red', IN_PROGRESS: 'orange', RESOLVED: 'green' };
+const INCIDENT_TONE: Record<IncidentStatus, Tone> = { OPEN: 'red', IN_PROGRESS: 'blue', RESOLVED: 'green' };
 
 export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
   return <Badge tone={INCIDENT_TONE[status]}>{LABELS.incidentStatus[status]}</Badge>;
 }
 
 export function IncidentTypeBadge({ type }: { type: IncidentType }) {
-  return <Badge tone={type === 'SOS' ? 'red' : type === 'DISPUTE' ? 'orange' : 'grey'}>{LABELS.incidentType[type]}</Badge>;
+  return <Badge tone={type === 'SOS' ? 'coral' : type === 'DISPUTE' ? 'orange' : 'grey'}>{LABELS.incidentType[type]}</Badge>;
 }
 
-export const VEHICLE_ICON: Record<VehicleType, string> = { BIKE: '🚲', MOTO: '🏍️', CAR: '🚗' };
+/** Pictogramme de chaque véhicule (de profil, comme sur la carte et dans l'application). */
+export const VEHICLE_ICON: Record<VehicleType, IconName> = { BIKE: 'bike', MOTO: 'moto', CAR: 'car' };
 
-export function Vehicle({ type, withLabel = true }: { type: VehicleType; withLabel?: boolean }) {
+export function Vehicle({ type, withLabel = true, size = 18 }: { type: VehicleType; withLabel?: boolean; size?: number }) {
   return (
     <span className="vehicle" title={LABELS.vehicleType[type]}>
-      <span aria-hidden="true">{VEHICLE_ICON[type]}</span>
-      {withLabel ? ` ${LABELS.vehicleType[type]}` : <span className="sr-only">{LABELS.vehicleType[type]}</span>}
+      <Icon name={VEHICLE_ICON[type]} size={size} />
+      {withLabel ? LABELS.vehicleType[type] : <span className="sr-only">{LABELS.vehicleType[type]}</span>}
     </span>
+  );
+}
+
+/** Avatar rond aux initiales (cobaltTint) ; `business` : carré encre aux initiales blanches (entreprise). */
+export function Avatar({
+  name,
+  size = 'md',
+  tone,
+  business = false,
+}: {
+  name: string | null | undefined;
+  size?: 'sm' | 'md' | 'lg';
+  tone?: 'sun' | 'mint';
+  business?: boolean;
+}) {
+  const cls = ['avatar', size === 'sm' ? 'avatar-small' : size === 'lg' ? 'avatar-large' : '', tone ? `avatar-${tone}` : '', business ? 'avatar-biz' : '']
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span className={cls} aria-hidden="true">
+      {initials(name)}
+    </span>
+  );
+}
+
+/**
+ * Marque d'une entreprise (carré encre arrondi aux initiales blanches, comme sur la carte). Les initiales sont
+ * dessinées en CSS (`attr(data-initials)`) : elles ne s'ajoutent pas au texte de la cellule ni à ce que lit un lecteur
+ * d'écran, qui lit déjà le nom à côté.
+ */
+export function BizMark({ name, large }: { name: string | null | undefined; large?: boolean }) {
+  return <span className={`biz-mark${large ? ' biz-mark-large' : ''}`} data-initials={initials(name)} aria-hidden="true" />;
+}
+
+/** Date d'un tableau : heure en avant, date en dessous (chiffres tabulaires). */
+export function DateTimeCell({ iso }: { iso: string | null | undefined }) {
+  if (!iso) return <span className="muted">-</span>;
+  return (
+    <span className="datetime">
+      <time dateTime={iso}>{formatTime(iso)}</time>
+      <span className="muted small">{formatDate(iso)}</span>
+    </span>
+  );
+}
+
+/** Note d'un livreur : étoile dessinée (la police n'a pas « ★ »), chiffres tabulaires. */
+export function Rating({ avg, count }: { avg: number | null; count?: number }) {
+  if (avg === null) return <span className="muted">-</span>;
+  return (
+    <span className="rating" title={`Note moyenne ${avg.toFixed(1).replace('.', ',')} sur 5`}>
+      <Icon name="star" size={14} />
+      {avg.toFixed(1).replace('.', ',')}
+      {count !== undefined && <span className="muted"> ({count})</span>}
+    </span>
+  );
+}
+
+const BANNER_ICON: Record<'info' | 'warn' | 'error' | 'success', IconName> = {
+  info: 'info',
+  warn: 'alert',
+  error: 'alertCircle',
+  success: 'checkCircle',
+};
+
+/** Bandeau Cobalt (rayon 16, pictogramme à gauche) : info cobalt, avertissement soleil, erreur corail, réussite mint. */
+export function Banner({
+  tone,
+  children,
+  role,
+  action,
+}: {
+  tone: 'info' | 'warn' | 'error' | 'success';
+  children: ReactNode;
+  role?: 'alert' | 'status' | 'note';
+  action?: ReactNode;
+}) {
+  return (
+    <div className={`alert alert-${tone}`} role={role}>
+      <Icon name={BANNER_ICON[tone]} size={20} />
+      <div className="alert-text">{children}</div>
+      {action}
+    </div>
   );
 }
 
 export function ErrorBanner({ message, onRetry }: { message: string | null; onRetry?: () => void }) {
   if (!message) return null;
   return (
-    <div className="alert alert-error" role="alert">
-      <span>{message}</span>
-      {onRetry && (
-        <button type="button" className="btn btn-small btn-ghost" onClick={onRetry}>
-          Réessayer
-        </button>
-      )}
-    </div>
+    <Banner
+      tone="error"
+      role="alert"
+      action={
+        onRetry && (
+          <button type="button" className="btn btn-small btn-ghost" onClick={onRetry}>
+            <Icon name="refresh" size={16} />
+            Réessayer
+          </button>
+        )
+      }
+    >
+      {message}
+    </Banner>
   );
 }
 
 export function Loading({ label = 'Chargement…' }: { label?: string }) {
   return (
     <div className="loading" role="status">
+      <span className="spinner" aria-hidden="true" />
       {label}
     </div>
   );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="empty">{children}</div>;
+/** État vide : pictogramme dans un disque gris et phrase courte. */
+export function Empty({ children, icon = 'list', compact }: { children: ReactNode; icon?: IconName; compact?: boolean }) {
+  return (
+    <div className={`empty${compact ? ' empty-compact' : ''}`}>
+      <span className="empty-icon" aria-hidden="true">
+        <Icon name={icon} size={compact ? 18 : 20} />
+      </span>
+      <span>{children}</span>
+    </div>
+  );
 }
 
 export function Card({
   title,
   aside,
+  sub,
   children,
   className,
 }: {
   title?: ReactNode;
   aside?: ReactNode;
+  /** Ligne d'information sous le titre (13/600, gris). */
+  sub?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -113,6 +222,7 @@ export function Card({
           {aside && <div className="card-aside">{aside}</div>}
         </header>
       )}
+      {sub && <p className="card-sub">{sub}</p>}
       {children}
     </section>
   );
@@ -133,20 +243,21 @@ export function Pagination({
   if (total === 0) return null;
   return (
     <nav className="pagination" aria-label="Pagination">
-      <button type="button" className="btn btn-small btn-ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        ← Précédent
-      </button>
       <span>
         Page {page} / {pages} · {total} résultat{total > 1 ? 's' : ''}
       </span>
-      <button
-        type="button"
-        className="btn btn-small btn-ghost"
-        disabled={page >= pages}
-        onClick={() => onPage(page + 1)}
-      >
-        Suivant →
-      </button>
+      {pages > 1 && (
+        <span className="actions">
+          <button type="button" className="btn btn-small btn-ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+            <Icon name="chevronLeft" size={16} />
+            Précédent
+          </button>
+          <button type="button" className="btn btn-small btn-ghost" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+            Suivant
+            <Icon name="chevronRight" size={16} />
+          </button>
+        </span>
+      )}
     </nav>
   );
 }
@@ -165,8 +276,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
       <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="modal-head">
           <h2 id={titleId}>{title}</h2>
-          <button type="button" className="icon-btn" aria-label="Fermer" onClick={onClose}>
-            ×
+          <button type="button" className="icon-btn" aria-label="Fermer" title="Fermer" onClick={onClose}>
+            <Icon name="close" size={20} />
           </button>
         </header>
         <div className="modal-body">{children}</div>
@@ -227,7 +338,7 @@ export function ReasonDialog({
   return (
     <Modal title={title} onClose={onClose}>
       <form onSubmit={submit} className="form">
-        {description && <div className="muted">{description}</div>}
+        {description && <p className="hint">{description}</p>}
         <label htmlFor={inputId}>
           {label}
           {required ? '' : ' (facultatif)'}
@@ -265,5 +376,29 @@ export function KeyValue({ items }: { items: Array<[string, ReactNode]> }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** Liste déroulante d'un filtre : libellé au-dessus, flèche dessinée (le `select` natif n'en a plus). */
+export function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label>
+      {label}
+      <span className="select-wrap">
+        <select value={value} onChange={(e) => onChange(e.target.value)}>
+          {children}
+        </select>
+      </span>
+    </label>
   );
 }

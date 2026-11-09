@@ -1,69 +1,93 @@
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 import { Text } from '../../components/Text';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '../../components/design/Icon';
-import { PackageCard } from '../../components/design/PackageCard';
+import { ScreenHeader, SurfaceScreen } from '../../components/design/Surfaces';
+import { IconDisc, ListRow, Money, shortDateTime, WhiteCard } from '../../components/driver/DriverKit';
+import { avatarInitials } from '../../components/map/markerArt';
+import { Banner } from '../../components/ui';
 import { useAsync } from '../../hooks/useAsync';
-import { formatDateTime, formatFcfa, formatKm, formatOrderNumber } from '../../lib/format';
+import { formatFcfa, formatKm, formatOrderNumber } from '../../lib/format';
 import { useApi } from '../../state/auth';
-import { dark, spacing } from '../../theme';
+import { palette, spacing } from '../../theme';
 
-/** Courses terminées : montants conservés, adresses et téléphones masqués après livraison (confidentialité). */
+/** Pastille de l'entreprise (initiales, cobalt doux) ; sans entreprise : pictogramme du colis. */
+function Avatar({ name, testID }: { name: string | null; testID: string }) {
+  const letters = avatarInitials(name);
+  if (!letters) return <IconDisc icon="package" tone="cobalt" size={44} style={styles.avatarIcon} />;
+  return (
+    <View style={styles.avatar} testID={`${testID}-avatar`}>
+      <Text style={styles.avatarText}>{letters}</Text>
+    </View>
+  );
+}
+
+/**
+ * Courses terminées (Cobalt) : une carte blanche en liste à filets (pastille, entreprise, numéro et distance, gain en
+ * grands chiffres, date, espèces encaissées). Montants conservés, adresses et téléphones masqués après livraison
+ * (confidentialité).
+ */
 export default function DriverHistory() {
   const api = useApi();
   const list = useAsync(() => api.listOrders({ status: ['DELIVERED'], pageSize: 50 }), [api]);
   const items = list.data?.items ?? [];
   const count = list.data?.total ?? items.length;
   return (
-    <SafeAreaView style={styles.root} edges={['bottom']}>
-      <StatusBar style="dark" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={list.loading && !!list.data} onRefresh={() => void list.reload()} tintColor={dark.text} />}
-      >
-        {list.error ? (
-          <Text style={styles.error} accessibilityRole="alert">
-            {list.error}
-          </Text>
-        ) : null}
-        {!list.data && list.loading ? <ActivityIndicator color={dark.green} style={{ marginTop: spacing.xl }} /> : null}
-        {list.data && items.length === 0 ? (
-          <View style={styles.empty}>
-            <Icon name="package" size={40} color={dark.textFaint} />
-            <Text style={styles.emptyText}>Aucune course livrée pour le moment.</Text>
-          </View>
-        ) : null}
-        {items.length > 0 ? (
-          <Text style={styles.summary}>{`${count} course${count > 1 ? 's' : ''} livrée${count > 1 ? 's' : ''}`}</Text>
-        ) : null}
-        {items.map((o) => (
-          <PackageCard
-            key={o.id}
-            kicker={`Course ${formatOrderNumber(o.number)}`}
-            status={{ label: 'LIVRÉE', tone: 'green' }}
-            name={o.store?.name ?? 'Colis'}
-            // Sans entreprise, « Colis » n'a pas d'initiales qui aient un sens : pictogramme du colis.
-            avatarIcon={o.store ? undefined : 'package'}
-            meta={[o.deliveredAt ? formatDateTime(o.deliveredAt) : null, formatKm(o.distanceKm)].filter(Boolean).join(' · ')}
-            description={o.cashCollected !== null && o.cashCollected > 0 ? `Encaissé ${formatFcfa(o.cashCollected)}` : null}
-            descriptionIcon="cash"
-            amount={o.driverEarning !== null ? { label: 'Votre gain', value: o.driverEarning, tone: 'green' } : null}
-            testID={`history-${o.id}`}
-          />
-        ))}
-        <Text style={styles.note}>Les adresses des courses terminées ne sont plus affichées (protection des données des clients).</Text>
-      </ScrollView>
-    </SafeAreaView>
+    <SurfaceScreen
+      edges={['top', 'bottom']}
+      header={
+        <ScreenHeader
+          title="Mes courses"
+          subtitle={list.data ? `${count} course${count > 1 ? 's' : ''} livrée${count > 1 ? 's' : ''}` : null}
+          onBack={() => (router.canGoBack() ? router.back() : router.replace('/driver/profile'))}
+        />
+      }
+    >
+      {list.error ? <Banner message={list.error} /> : null}
+      {!list.data && list.loading ? <ActivityIndicator color={palette.cobalt} size="large" style={styles.loading} /> : null}
+      {list.data && items.length === 0 ? (
+        <WhiteCard style={styles.empty}>
+          <IconDisc icon="package" tone="cobalt" size={56} />
+          <Text style={styles.emptyText}>Aucune course livrée pour le moment.</Text>
+        </WhiteCard>
+      ) : null}
+      {items.length > 0 ? (
+        <WhiteCard style={styles.list}>
+          {items.map((o, i) => {
+            const testID = `history-${o.id}`;
+            const meta = [formatOrderNumber(o.number), formatKm(o.distanceKm)].join(' · ');
+            const cash = o.cashCollected !== null && o.cashCollected > 0 ? `Encaissé ${formatFcfa(o.cashCollected)}` : null;
+            return (
+              <ListRow
+                key={o.id}
+                first={i === 0}
+                leading={o.store ? <Avatar name={o.store.name} testID={testID} /> : <IconDisc icon="package" tone="cobalt" size={44} style={styles.avatarIcon} />}
+                title={o.store?.name ?? 'Colis'}
+                subtitle={cash ? `${meta}\n${cash}` : meta}
+                right={o.driverEarning !== null ? <Money amount={o.driverEarning} sign="+" size={17} /> : null}
+                rightSub={o.deliveredAt ? shortDateTime(o.deliveredAt) : null}
+                testID={testID}
+              />
+            );
+          })}
+        </WhiteCard>
+      ) : null}
+      <View style={styles.note}>
+        <Icon name="shield" size={16} color={palette.inkMuted} strokeWidth={2.3} />
+        <Text style={styles.noteText}>Les adresses des courses terminées ne sont plus affichées (protection des données des clients).</Text>
+      </View>
+    </SurfaceScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: dark.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
-  error: { color: dark.red, backgroundColor: dark.redSoft, borderRadius: 12, padding: spacing.md, fontWeight: '700', overflow: 'hidden' },
-  empty: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xl * 2 },
-  emptyText: { color: dark.textMuted, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  summary: { color: dark.textMuted, fontSize: 13, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase', paddingHorizontal: 4 },
-  note: { color: dark.textFaint, fontSize: 12.5, lineHeight: 17, textAlign: 'center', marginTop: spacing.sm },
+  loading: { marginTop: spacing.xl },
+  list: { paddingVertical: 4, gap: 0 },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.cobaltTint },
+  avatarText: { fontSize: 15, fontWeight: '800', letterSpacing: 0.2, color: palette.cobaltText },
+  avatarIcon: { flexShrink: 0 },
+  empty: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xl },
+  emptyText: { color: palette.ink, fontSize: 16, lineHeight: 22, fontWeight: '700', textAlign: 'center' },
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: spacing.xs, marginTop: spacing.xs },
+  noteText: { flex: 1, color: palette.inkMuted, fontSize: 13, lineHeight: 18, fontWeight: '500' },
 });

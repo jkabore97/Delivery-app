@@ -4,7 +4,8 @@ Console web du back office Yaar Livraison (modèle B2B, docs/API.md « Livraison
 demandent des livraisons vers des destinataires sans compte, qui suivent le livreur par un lien public. La console
 supervise en temps réel les livreurs et les livraisons, affecte à la main, valide les entreprises et les dossiers KYC,
 tient la caisse (espèces des livreurs, montants dus aux entreprises), les tarifs, les litiges/SOS et le journal
-d'audit. Interface en français, montants en FCFA. Maquette de référence : `docs/mockups/2-console-controleur.png`.
+d'audit. Interface en français, montants en FCFA. Apparence : système de design « Cobalt »
+([`docs/DESIGN.md`](../../docs/DESIGN.md)), version bureau dense (voir « Apparence (Cobalt) » ci-dessous).
 L'ancien parcours de commande client (repas, produits, panier) est abandonné : ses commandes restent lisibles
 (articles affichés seulement pour elles).
 
@@ -77,11 +78,11 @@ visible. MapLibre (≈ 1 Mo, 275 Ko gzip, + 10 Ko de CSS) est un bloc séparé c
 | Route | Écran |
 |---|---|
 | `/connexion` | téléphone + code SMS (OTP) |
-| `/` | **Carte en direct** : 6 cartes KPI, carte MapLibre (cf. « Cartes »), filtre Vélo/Moto/Voiture, légende, livraisons en attente avec compteur d'attente et bouton « Affecter », dossiers KYC à valider (lien « Vérifier » vers la fiche : aucune validation en un clic), alertes (incidents `OPEN` + `IN_PROGRESS`) |
+| `/` | **Carte en direct** : 6 tuiles d'indicateurs (une seule tuile cobalt, livraisons en cours ; espèces en tuile soleil ; attente longue en alerte corail), carte MapLibre (cf. « Cartes »), filtre Vélo/Moto/Voiture, légende, livraisons en attente avec compteur d'attente et bouton « Affecter », dossiers KYC à valider (lien « Vérifier » vers la fiche : aucune validation en un clic), alertes (incidents `OPEN` + `IN_PROGRESS`) |
 | `/courses`, `/courses/:id` | **Livraisons** : liste filtrable (statut, type, recherche n° / nom ou téléphone du compte demandeur) avec entreprise, destinataire, statut, véhicule, montant, arrivée estimée, création ; fiche avec carte (itinéraire + livreur), entreprise expéditrice, retrait, destinataire (étiquette « entreprise »), colis, véhicule, frais et qui les paie (entreprise au retrait / destinataire à la livraison), marchandise à encaisser, dû à l'entreprise, lien de suivi du destinataire (ouvrir / copier), chronologie, affecter/réaffecter, annuler, valider sans code, réinitialiser le code, photo de livraison. Ancienne commande repas : articles, client et vendeur |
 | `/entreprises` | **Entreprises** (ancienne adresse `/vendeurs` redirigée) : file de validation des profils d'entreprise (une entreprise doit être validée avant de demander des livraisons), refus / suspension avec motif, comptes des entreprises (suspendre / réactiver) |
 | `/livreurs`, `/livreurs/:id` | liste (statut, véhicule, en ligne, recherche) ; fiche avec pièces, visionneuse, valider (fenêtre de confirmation qui signale les pièces non ouvertes) / refuser / suspendre / réintégrer, liens vers le journal d'audit |
-| `/kyc`, `/kyc/:id` | file des dossiers `PENDING` (FIFO) avec pastilles ✓ / expirée / manquante ; même fiche de revue |
+| `/kyc`, `/kyc/:id` | file des dossiers `PENDING` (FIFO) avec barre d'avancement et pastilles fournie (coche) / expirée / manquante ; même fiche de revue |
 | `/clients` | anciens comptes clients du parcours de commande abandonné (suspendre avec motif / réactiver) |
 | `/incidents` | SOS, litiges (filtre « Ouvert » par défaut) : prise en charge, résolution avec note, appel du déclarant |
 | `/caisse` | cash détenu, livreurs au plafond, enregistrement d'un versement, grand livre par livreur ; **à reverser aux entreprises** (`GET /controller/cash/businesses`, lecture seule : pas encore de reversement dans l'API) |
@@ -91,6 +92,51 @@ visible. MapLibre (≈ 1 Mo, 275 Ko gzip, + 10 Ko de CSS) est un bloc séparé c
 
 La recherche du bandeau ouvre `/courses?q=…` (une plaque d'immatriculation ouvre `/livreurs?q=…`, et la liste des livraisons propose « chercher parmi les livreurs »). Les filtres lus dans l'URL sont validés : une valeur inconnue est ignorée. Les pastilles du menu viennent de `GET /controller/dashboard`
 (livraisons en attente, dossiers KYC, incidents ouverts, livreurs au plafond) et de `GET /controller/stores?approvalStatus=PENDING` (entreprises à valider).
+
+## Apparence (Cobalt)
+
+La console est la version bureau, dense, du tableau de bord entreprise de la planche Cobalt : barre latérale blanche de
+248 px (mot-symbole « Yaar » à point cobalt, menu en pilules à pictogrammes, pastilles cobalt ou corail, utilisateur en
+bas), barre du haut (titre 30/800, date et état de l'actualisation, recherche en pilule, badge « Démo »), tuiles
+blanches de rayon 24 à ombre douce sur le fond `canvas`, sans bordure.
+
+- **Jetons** : un seul bloc `:root` en tête de `src/styles.css` (noms proches de `apps/mobile/src/theme.ts` : `--canvas`,
+  `--card`, `--raised`, `--ink`, `--ink-muted`, `--cobalt`, `--cobalt-tint`, `--cobalt-text`, `--sun`, `--mint`,
+  `--coral-fill`…, rayons `--r-*`, ombres `--sh-*`). Aucune couleur écrite en dur ailleurs ; contrastes ≥ 4,5:1 pour
+  le petit texte (valeurs mesurées en commentaire).
+- **Règles** : au plus une tuile cobalt pleine par écran (livraisons en cours sur la carte, livraison en cours sur sa
+  fiche, panneau de l'écran de connexion) ; le soleil pour les espèces (cash détenu, à encaisser, à reverser) ; menthe
+  = livrée / réussite ; corail = problème (points, pictogrammes ; boutons destructifs en `--coral-fill`) ; aucun émoji.
+- **Pictogrammes** : `src/components/Icon.tsx` + `iconPaths.ts`, la famille de l'application mobile (grille 24, trait
+  2,2 arrondi), plus pièce d'identité, étiquette, export… Toujours décoratifs (`aria-hidden`) : le bouton porte le
+  libellé (`aria-label` pour un bouton sans texte).
+- **Composants** (`src/components/ui.tsx`) : `Badge` (puces 24 px : `green` livrée, `blue` en livraison, `sun` livreur
+  vers le retrait, `search` recherche d'un livreur, `orange` à valider, `red` annulée / problème, `coral` SOS, `grey`),
+  `Banner` (info, avertissement, erreur, réussite), `Avatar` (livreurs en soleil, comptes en cobalt pâle), `BizMark`
+  (entreprise : carré encre aux initiales), `Rating` (étoile dessinée), `DateTimeCell`, `FilterSelect`, `Empty`,
+  `Loading`, `Pagination`, `Modal`. `PageTitle` (`src/components/PageTitle.tsx`) : chaque écran déclare son titre, que
+  la coque affiche dans la barre du haut. `KpiTile` (`KpiCards.tsx`), `DeliveryHero` (tuile héros de la fiche de
+  livraison : heure d'arrivée, étapes, livreur, destinataire, pilule soleil des espèces).
+- **Tableaux** : dans une tuile blanche, filets fins, en-tête collant, chiffres tabulaires, montants alignés à droite.
+- **Accessibilité** : anneau de focus cobalt de 2 px (`:focus-visible`), vrais boutons et liens, boutons-pictogrammes
+  libellés, cibles de 44 px sur écran tactile (`pointer: coarse`), « / » place le curseur dans la recherche.
+
+### Police
+
+**Plus Jakarta Sans**, auto-hébergée (paquet `@fontsource-variable/plus-jakarta-sans` : un fichier variable woff2 par
+alphabet, ≈ 27 Ko pour le latin, toutes les graisses 500 à 800, servi par la console). Un seul fichier la connaît :
+**`src/fonts.css`** (l'`@import` du paquet et la variable `--font-sans`, avec `--font-mono` pour les identifiants du
+journal d'audit) ; tout le reste écrit `var(--font-sans)` ou hérite. Chiffres tabulaires (`font-variant-numeric:
+tabular-nums`, classes `.tnum` / `.num`) pour les heures, montants, compteurs et plaques.
+
+Changer de police :
+
+1. `npm install @fontsource-variable/<police> -w apps/console` (ou `@fontsource/<police>` pour des fichiers par
+   graisse), puis `npm uninstall @fontsource-variable/plus-jakarta-sans -w apps/console` ;
+2. dans `src/fonts.css` seulement : l'`@import` (ex. `@fontsource-variable/inter/wght.css`) et le premier nom de
+   `--font-sans` (ex. `'Inter Variable'`) ;
+3. vérifier `npm run build -w apps/console` et regarder les écrans : une autre police a d'autres largeurs (tuiles
+   d'indicateurs, menu de 248 px, chiffres tabulaires).
 
 ## Temps réel
 
@@ -140,7 +186,10 @@ src/
   hooks/                 useAsync (chargement + anti-course), anti-rebond, DashboardProvider
   lib/                   formatage FR, état de carte, règles KYC, livraisons d'entreprise (delivery.ts)
   lib/map/               MapLibre : style et secours, scène (fonctions pures), marqueurs DOM, animation, contrôleur
-  components/            Layout, KPI, LiveMap et DeliveryMap (MapLibre), panneaux, dialogues, visionneuse
+  fonts.css              LA police (seul fichier qui la nomme) : variable --font-sans
+  styles.css             jetons Cobalt (un bloc :root) et styles de la console
+  components/            Layout (coque), PageTitle, Icon + iconPaths, ui (puces, bandeaux, tableaux…), KPI,
+                         DeliveryHero, LiveMap et DeliveryMap (MapLibre), panneaux, dialogues, visionneuse
   pages/                 un fichier par écran
 test/                    vitest + Testing Library (fetch simulé, bus temps réel en mémoire, MapLibre simulé)
 ```

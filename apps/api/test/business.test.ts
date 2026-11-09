@@ -6,6 +6,7 @@ import {
   roadDistanceKm,
   type ApiErrorBody,
   type BusinessBalanceDto,
+  type BusinessSummaryDto,
   type CashLedgerEntryDto,
   type DriverEarningsDto,
   type MapDataDto,
@@ -588,5 +589,134 @@ describe('espace entreprise et console', () => {
     const map = (await call(t.app, 'GET', '/controller/map', staff.accessToken)).json<MapDataDto>();
     expect(map.stores.find((x) => x.name === 'Grillades de Pissy')?.approvalStatus).toBe('PENDING');
     expect(map.stores.find((x) => x.name === 'Librairie Jeunesse')?.approvalStatus).toBe('APPROVED');
+  });
+});
+
+describe('tableau de bord : GET /business/summary', () => {
+  const at = (iso: string) => t.clock.set(new Date(iso));
+  const summaryOf = async (token: string) => {
+    const r = await call(t.app, 'GET', '/business/summary', token);
+    expect(r.statusCode, r.body).toBe(200);
+    return r.json<BusinessSummaryDto>();
+  };
+  /** Livreur en ligne avec une position récente (horloge du test) ; les précédents passent hors ligne. */
+  const freshDriver = async () => {
+    await t.prisma.driverProfile.updateMany({ data: { isOnline: false } });
+    return createDriver(t, 'MOTO', near);
+  };
+  /** Demande à `created`, affectation et retrait aussitôt, livraison (code) à `delivered`. */
+  async function deliveredBetween(token: string, created: string, delivered: string, over: Record<string, unknown> = {}) {
+    at(created);
+    const driver = await freshDriver();
+    const o = await create(token, over);
+    await assign(o.id, driver.accessToken);
+    expect((await call(t.app, 'POST', `/orders/${o.id}/pickup`, driver.accessToken, {})).statusCode).toBe(200);
+    at(delivered);
+    const code = (await t.prisma.order.findUniqueOrThrow({ where: { id: o.id } })).deliveryCode;
+    const r = await call(t.app, 'POST', `/orders/${o.id}/deliver`, driver.accessToken, { code });
+    expect(r.statusCode, r.body).toBe(200);
+    return o;
+  }
+  async function cancelledAt(token: string, created: string, cancelled: string) {
+    at(created);
+    const o = await create(token);
+    at(cancelled);
+    expect((await call(t.app, 'POST', `/orders/${o.id}/cancel`, token, {})).statusCode).toBe(200);
+    return o;
+  }
+
+  it('jour UTC : livrées et annulées du jour, délai moyen, marchandise et frais ; en cours ; tous ses établissements', async () => {
+    const { seller, storeId, productIds } = await createStore(t);
+    const token = seller.accessToken;
+    // Ancienne commande d'un client sur la même boutique : hors des livraisons de l'entreprise (comme la liste).
+    const client = await login(t.app, 'CLIENT');
+    await call(t.app, 'POST', '/orders', client.accessToken, {
+      type: 'FOOD', storeId, vehicleType: 'MOTO', items: [{ productId: productIds[0], quantity: 1 }], dropoff,
+    });
+
+    // La veille : livrée à 23:50 et annulée à 23:59 (hors du jour).
+    await deliveredBetween(token, '2026-11-06T23:20:00.000Z', '2026-11-06T23:50:00.000Z', { cashToCollect: 4_000 });
+    await cancelledAt(token, '2026-11-06T23:58:00.000Z', '2026-11-06T23:59:00.000Z');
+    // Le jour : demandée la veille à 23:40, livrée à 00:15 (35 min) ; 09:00 → 09:25 ; 10:00 → 10:30.
+    await deliveredBetween(token, '2026-11-06T23:40:00.000Z', '2026-11-07T00:15:00.000Z', { feePaidBy: 'RECIPIENT', cashToCollect: 12_000 });
+    await deliveredBetween(token, '2026-11-07T09:00:00.000Z', '2026-11-07T09:25:00.000Z', { cashToCollect: 0 });
+    const onOther = await deliveredBetween(token, '2026-11-07T10:00:00.000Z', '2026-11-07T10:30:00.000Z', { cashToCollect: 5_000 });
+    // Livraison passée par un autre établissement du même compte : comptée aussi.
+    const second = await t.prisma.store.create({
+      data: { ownerId: seller.user.id, name: 'Le Verdoyant Ouaga 2000', address: 'Ouaga 2000', landmark: '', lat: P.ouaga2000.lat, lng: P.ouaga2000.lng, approvalStatus: 'APPROVED' },
+    });
+    await t.prisma.order.update({ where: { id: onOther.id }, data: { storeId: second.id } });
+    await cancelledAt(token, '2026-11-07T08:00:00.000Z', '2026-11-07T08:05:00.000Z');
+
+    // En cours : colis en route, livreur vers le retrait, recherche d'un livreur.
+    at('2026-11-07T11:00:00.000Z');
+    const pickedDriver = await freshDriver();
+    const picked = await create(token);
+    await assign(picked.id, pickedDriver.accessToken);
+    await call(t.app, 'POST', `/orders/${picked.id}/pickup`, pickedDriver.accessToken, {});
+    const assignedDriver = await freshDriver();
+    const assigned = await create(token);
+    await assign(assigned.id, assignedDriver.accessToken);
+    await t.prisma.driverProfile.updateMany({ data: { isOnline: false } });
+    await create(token, { recipientName: 'Bintou' });
+
+    // Une autre entreprise, livrée le même jour : jamais dans ce résumé.
+    const other = await createBusiness(t, P.zogona, { name: 'Faso Mode' });
+    await deliveredBetween(other.business.accessToken, '2026-11-07T11:10:00.000Z', '2026-11-07T11:30:00.000Z', { cashToCollect: 9_999 });
+
+    at('2026-11-07T18:00:00.000Z');
+    expect(await summaryOf(token)).toEqual({
+      date: '2026-11-07',
+      active: 3,
+      today: { delivered: 3, cancelled: 1, avgDeliveryMinutes: 30, goodsCollected: 17_000, deliveryFees: 3 * fee() },
+    });
+    expect(await summaryOf(other.business.accessToken)).toEqual({
+      date: '2026-11-07',
+      active: 0,
+      today: { delivered: 1, cancelled: 0, avgDeliveryMinutes: 20, goodsCollected: 9_999, deliveryFees: fee(1, P.zogona) },
+    });
+
+    // Dernière seconde du jour, puis minuit : le jour suivant repart de zéro, les livraisons en cours restent.
+    at('2026-11-07T23:59:59.999Z');
+    expect((await summaryOf(token)).today.delivered).toBe(3);
+    at('2026-11-08T00:00:00.000Z');
+    expect(await summaryOf(token)).toEqual({
+      date: '2026-11-08',
+      active: 3,
+      today: { delivered: 0, cancelled: 0, avgDeliveryMinutes: null, goodsCollected: 0, deliveryFees: 0 },
+    });
+  });
+
+  it('réservé aux entreprises : 401 sans jeton, 403 pour les autres rôles', async () => {
+    expect((await call(t.app, 'GET', '/business/summary')).statusCode).toBe(401);
+    const client = await login(t.app, 'CLIENT');
+    const driver = await createDriver(t, 'MOTO', near);
+    const staff = await loginStaff(t);
+    const admin = await loginStaff(t, 'ADMIN');
+    for (const token of [client.accessToken, driver.accessToken, staff.accessToken, admin.accessToken]) {
+      const r = await call(t.app, 'GET', '/business/summary', token);
+      expect(r.statusCode).toBe(403);
+      expect(r.json<ApiErrorBody>().error.code).toBe('FORBIDDEN');
+    }
+  });
+
+  it('journée vide : zéros et délai moyen null, même sans établissement validé', async () => {
+    const pending = await createBusiness(t, P.centre, { approval: 'PENDING' });
+    expect(await summaryOf(pending.business.accessToken)).toEqual({
+      date: '2026-11-06',
+      active: 0,
+      today: { delivered: 0, cancelled: 0, avgDeliveryMinutes: null, goodsCollected: 0, deliveryFees: 0 },
+    });
+    // Entreprise validée, une livraison la veille seulement.
+    const { business } = await createBusiness(t);
+    await deliveredBetween(business.accessToken, '2026-11-05T15:00:00.000Z', '2026-11-05T15:20:00.000Z', { cashToCollect: 3_000 });
+    at('2026-11-06T09:00:00.000Z');
+    expect((await summaryOf(business.accessToken)).today).toEqual({
+      delivered: 0,
+      cancelled: 0,
+      avgDeliveryMinutes: null,
+      goodsCollected: 0,
+      deliveryFees: 0,
+    });
   });
 });

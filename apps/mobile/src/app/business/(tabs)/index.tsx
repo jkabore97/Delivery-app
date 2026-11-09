@@ -1,47 +1,29 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../../components/Text';
-import { router, useFocusEffect, useIsFocused } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import type { OrderDto, StoreDto } from '@yaar/shared';
-import { BUSINESS_ACCENT, ORANGE_INK } from '../../../components/business/accent';
-import { ActiveDeliveryCard } from '../../../components/business/DeliveryCards';
 import { DarkBanner } from '../../../components/business/DarkForm';
+import { focusedDelivery, isSearching, neighbourhood } from '../../../components/business/dashboardData';
+import { BusinessDashboard } from '../../../components/business/desktop/Dashboard';
+import { useIsDesktop } from '../../../components/business/desktop/layout';
+import { BusinessMark, NewDeliveryButton } from '../../../components/business/parts';
+import { CompactDeliveryCard, HeroDeliveryCard, KpiChips, MapSummaryPill } from '../../../components/business/phone/HomeParts';
+import { useBusinessSummary, useSummaryRefresh } from '../../../components/business/summary';
+import { useActiveDeliveries } from '../../../components/business/useDeliveries';
 import { CourierIllustration } from '../../../components/design/CourierIllustration';
-import { Icon } from '../../../components/design/Icon';
-import { Pill } from '../../../components/design/Pill';
+import { MapIconButton } from '../../../components/design/Pill';
 import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import { LiveTrackingLayout } from '../../../components/tracking/LiveTrackingLayout';
 import { Loading } from '../../../components/ui';
-import { useLiveRoutes } from '../../../hooks/useLiveRoutes';
-import { errorMessage } from '../../../lib/api';
-import { BUSINESS_ACTIVE_STATUSES, searchingCountText, sortActiveDeliveries } from '../../../lib/delivery';
 import { overviewScene } from '../../../lib/liveScene';
 import { POLL_MS } from '../../../lib/publicConfig';
-import { useApi } from '../../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../../state/business';
-import { useOrderRooms, usePolling, useSocket, useSocketEvent } from '../../../state/socket';
-import { dark, palette, spacing, typeScale } from '../../../theme';
+import { useSocket } from '../../../state/socket';
+import { palette, spacing, typography } from '../../../theme';
 
-const isSearching = (o: OrderDto) => o.status === 'SEARCHING_DRIVER' || o.status === 'PENDING';
-
-/** Pastille posée sur la carte : « ● 2 en route · ● 1 recherche d’un livreur », toujours sur une seule ligne. */
-function SummaryChip({ onTheWay, searching }: { onTheWay: number; searching: number }) {
-  return (
-    <View style={styles.summary} accessibilityRole="summary">
-      <View style={[styles.dot, { backgroundColor: dark.green }]} />
-      <Text style={[styles.summaryText, styles.noShrink]} numberOfLines={1} testID="summary-on-the-way">{`${onTheWay} en route`}</Text>
-      {searching > 0 ? (
-        <>
-          <Text style={styles.summarySep}>·</Text>
-          <View style={[styles.dot, { backgroundColor: palette.sun }]} />
-          <Text style={[styles.summaryText, styles.shrink]} numberOfLines={1} testID="summary-searching">
-            {searchingCountText(searching)}
-          </Text>
-        </>
-      ) : null}
-    </View>
-  );
-}
+/** Place des boutons latéraux de la barre du haut de LiveTrackingLayout (la pastille de la carte s'aligne à gauche). */
+const TOP_SIDE_WIDTH = 52;
 
 /**
  * Explication sous « Aucune livraison en cours » : l'invitation à demander un livreur seulement si c'est possible ;
@@ -53,35 +35,32 @@ function emptyText(store: StoreDto): string {
     : 'Vos livraisons s’afficheront ici, avec leur livreur en direct sur la carte.';
 }
 
-/**
- * Onglet « Livraisons » de l'entreprise (comme Uber Direct / DoorDash Drive) : carte claire plein écran avec toutes
- * les livraisons en cours (son point de retrait, les livreurs en direct, les destinataires en épingles à leurs
- * initiales, les itinéraires par les rues lus sur GET /orders/:id ; cadrée sur les livraisons en route), pastille
- * « 2 en route · 1 recherche d’un livreur » sur la carte, feuille sombre : nom de l'entreprise, « Livraisons en cours »
- * et la pastille « + Nouvelle » sur la même ligne, puis une carte dense par livraison (colis en route d'abord, par
- * heure d'arrivée ; heure d'arrivée sous le nom, repère, livreur, WhatsApp / Appeler le destinataire ; toucher →
- * suivi). Sans livraison : illustration et explication, la feuille reste courte et la carte occupe le reste.
- */
+/** Accueil de l'entreprise : tableau de bord sur ordinateur, carte et feuille sur téléphone. */
 export default function BusinessDeliveriesScreen() {
-  const api = useApi();
+  const desktop = useIsDesktop();
+  return desktop ? <BusinessDashboard /> : <PhoneHome />;
+}
+
+/**
+ * Accueil de l'entreprise sur téléphone (planche Cobalt) : carte claire sur le haut de l'écran (son point de retrait,
+ * les livreurs en direct, les destinataires à leurs initiales, itinéraires par les rues), pastille « 3 en cours » et
+ * bouton « Recentrer » posés dessus ; feuille blanche : nom de l'entreprise en titre, « Nouvelle livraison » en pilule
+ * cobalt pleine largeur, chiffres du jour (en cours, livrées, à reverser en soleil), puis la livraison dont le colis
+ * arrive le premier en tuile cobalt (toucher → suivi) et les autres en cartes compactes (deux côte à côte s'il y en a
+ * exactement deux, sinon en liste), chacune avec WhatsApp / Appeler à côté de la partie qui ouvre le suivi.
+ */
+function PhoneHome() {
   const { store, stores, error: storeError, refreshStores } = useBusiness();
   const { pollIntervalMs } = useSocket();
-  const { width } = useWindowDimensions();
-  const [items, setItems] = useState<OrderDto[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { summary } = useBusinessSummary();
+  const { width, height } = useWindowDimensions();
+  const focused = useIsFocused();
+  const enabled = focused && !!store;
+  const { items, deliveries, error, load } = useActiveDeliveries(enabled);
+  useSummaryRefresh(enabled);
   const [retrying, setRetrying] = useState(false);
-
-  const load = useCallback(async (): Promise<boolean> => {
-    try {
-      const res = await api.listDeliveries({ status: BUSINESS_ACTIVE_STATUSES, pageSize: 50 });
-      setItems(sortActiveDeliveries(res.items));
-      setError(null);
-      return true;
-    } catch (e) {
-      setError(errorMessage(e));
-      return false;
-    }
-  }, [api]);
+  // « Recentrer » : un nouveau `stageKey` recadre la carte et reprend le suivi (LiveTrackingLayout).
+  const [recenter, setRecenter] = useState(0);
 
   // « Réessayer » : en mode socket, rien ne relance le chargement tout seul après une erreur.
   const retry = async () => {
@@ -92,31 +71,6 @@ export default function BusinessDeliveriesScreen() {
       setRetrying(false);
     }
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load]),
-  );
-  // Mode socket : statuts (et nouvel itinéraire) par order.updated, positions par driver.location.
-  useSocketEvent('order.updated', () => void load());
-  useOrderRooms((items ?? []).map((o) => o.id));
-  useSocketEvent('driver.location', (e) => {
-    setItems(
-      (prev) =>
-        prev?.map((o) =>
-          o.id === e.orderId && o.driver
-            ? { ...o, driver: { ...o.driver, lastLocation: { lat: e.lat, lng: e.lng, at: e.at, heading: e.heading } } }
-            : o,
-        ) ?? prev,
-    );
-  });
-  // Mode poll (Vercel) : la liste complète (URL constante) porte aussi les positions des livreurs (toutes les 10 s).
-  const focused = useIsFocused();
-  usePolling(load, POLL_MS.businessDeliveries, focused && !!store);
-  // Itinéraires par les rues : la liste n'en transporte pas (seulement leur date de calcul), le détail si.
-  const fetchOrder = useCallback((id: string) => api.getOrder(id), [api]);
-  const deliveries = useLiveRoutes(items, fetchOrder, focused && !!store);
 
   const business = store ? { lat: store.lat, lng: store.lng } : null;
   const overview = useMemo(
@@ -129,33 +83,26 @@ export default function BusinessDeliveriesScreen() {
   const list = deliveries ?? [];
   const now = Date.now();
   const searching = list.filter(isSearching).length;
-  const onTheWay = list.length - searching;
-  const canRequest = !!store && isBusinessApproved(store);
+  const hero = focusedDelivery(list);
+  const others = hero ? list.filter((o) => o.id !== hero.id) : [];
+  const small = width < 380;
+  // Petit téléphone (360 × 640) : le titre et « Nouvelle livraison » défilent avec la liste (la feuille est courte).
+  const short = height < 700;
+  // Rien en cours : la carte montre le quartier de l'entreprise (~2 km), pas son seul marqueur au zoom maximal.
+  const fitPoints = list.length === 0 && business ? neighbourhood(business) : overview.fitPoints;
   // Nouvelle livraison ou nouvelle étape : la carte recadre (même si elle avait été déplacée).
-  const stageKey = list.map((o) => `${o.id}:${o.status}`).sort().join('|') || 'empty';
+  const stageKey = `${list.map((o) => `${o.id}:${o.status}`).sort().join('|') || 'empty'}#${recenter}`;
+  const openDelivery = (o: OrderDto) => router.push(`/business/livraison/${o.id}`);
 
   const header = (
     <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text style={styles.kicker} numberOfLines={1}>
-          {store ? store.name : 'Yaar Livraison · Entreprise'}
+      <View style={styles.titleRow}>
+        <Text style={[styles.title, small && styles.titleSmall]} numberOfLines={1} accessibilityRole="header">
+          {store ? store.name : 'Yaar Livraison'}
         </Text>
-        <Text style={[styles.title, canRequest && width < 400 && styles.titleNarrow]} accessibilityRole="header">
-          Livraisons en cours
-        </Text>
+        {store ? <BusinessMark name={store.name} size={small ? 36 : 40} /> : null}
       </View>
-      {canRequest ? (
-        // Pastille compacte sur la ligne du titre (le disque orange « Nouvelle » de la barre d'onglets fait de même).
-        <Pill
-          label="Nouvelle"
-          icon={<Icon name="plus" size={18} color={ORANGE_INK} strokeWidth={2.8} />}
-          onPress={() => router.push('/business/nouvelle')}
-          style={styles.newPill}
-          textStyle={{ color: ORANGE_INK }}
-          accessibilityLabel="Nouvelle livraison"
-          testID="new-delivery"
-        />
-      ) : null}
+      <NewDeliveryButton stores={stores} store={store} />
     </View>
   );
 
@@ -163,105 +110,103 @@ export default function BusinessDeliveriesScreen() {
     <LiveTrackingLayout
       markers={overview.markers}
       lines={overview.lines}
-      fitPoints={overview.fitPoints}
+      fitPoints={fitPoints}
       stageKey={stageKey}
       animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
-      sheetTheme="dark"
-      // Une livraison : feuille courte (la carte garde la place). Plusieurs : un peu plus haute, pour lire les heures
-      // d'arrivée de deux livraisons au moins sans faire défiler.
-      sheetMaxRatio={list.length >= 2 ? 0.62 : 0.5}
-      // Cadrage : les épingles tiennent au-dessus de la mention des données (pas 90 px : la carte est courte ici).
+      // La carte garde le haut de l'écran (~40 %) ; sans livraison, la feuille reste courte.
+      sheetMaxRatio={list.length > 0 ? 0.62 : 0.56}
+      // Cadrage : les épingles tiennent au-dessus de la mention des données (la carte est courte ici).
       fitBottomMargin={44}
       insetBottom={false}
       // Une seule carte (contexte WebGL) à la fois : démontée quand une livraison est ouverte par-dessus.
       mapVisible={focused}
-      topCenter={list.length > 0 ? <SummaryChip onTheWay={onTheWay} searching={searching} /> : null}
-      sheetHeader={header}
+      topCenter={
+        list.length > 0 ? (
+          <View style={styles.pillSlot} pointerEvents="box-none">
+            <MapSummaryPill total={list.length} searching={searching} />
+          </View>
+        ) : null
+      }
+      topRight={
+        <MapIconButton icon="recenter" color={palette.cobalt} onPress={() => setRecenter((n) => n + 1)} accessibilityLabel="Recentrer la carte" testID="home-recenter" />
+      }
+      sheetHeader={short ? undefined : header}
       testID="business-home"
     >
+      {short ? header : null}
       {storeError ? (
         <DarkBanner message={storeError} action={{ label: 'Réessayer', onPress: () => void retry(), loading: retrying, testID: 'retry-store' }} />
       ) : null}
-      {!store ? (
-        <View style={styles.noStore}>
-          <Text style={styles.muted}>Créez le profil de votre entreprise pour demander des livraisons.</Text>
-          <Pill
-            label="Créer mon profil d’entreprise"
-            icon="store"
-            tone="green"
-            size="lg"
-            onPress={() => router.navigate('/business/profile')}
-            style={styles.stretch}
-          />
+      {store ? <StoreApprovalBanner store={store} /> : <Text style={styles.muted}>Créez le profil de votre entreprise pour demander des livraisons.</Text>}
+      {store ? <KpiChips active={items ? list.length : (summary?.active ?? 0)} summary={summary} /> : null}
+      {store ? (
+        <View style={styles.sectionRow}>
+          <Text style={styles.section} accessibilityRole="header">
+            Livraisons en cours
+          </Text>
+          {list.length > 0 ? <Text style={styles.sectionCount}>{list.length}</Text> : null}
         </View>
-      ) : (
-        <StoreApprovalBanner store={store} tone="dark" />
-      )}
+      ) : null}
       {error ? (
         <DarkBanner message={error} action={{ label: 'Réessayer', onPress: () => void retry(), loading: retrying, testID: 'retry-deliveries' }} />
       ) : null}
       {store && items === null && !error ? (
         <View style={styles.loading}>
-          <ActivityIndicator color={dark.green} />
+          <ActivityIndicator color={palette.cobalt} />
           <Text style={styles.muted}>Chargement des livraisons…</Text>
         </View>
       ) : null}
       {store && items !== null && list.length === 0 ? (
         <View style={styles.empty} testID="no-active-delivery">
-          <CourierIllustration width={canRequest ? 210 : 150} />
-          <Text style={styles.emptyTitle}>Aucune livraison en cours</Text>
-          <Text style={[styles.muted, styles.center]}>{emptyText(store)}</Text>
+          <CourierIllustration width={short ? 104 : 120} />
+          <View style={styles.emptyText}>
+            <Text style={styles.emptyTitle}>Aucune livraison en cours</Text>
+            <Text style={styles.muted}>{emptyText(store)}</Text>
+          </View>
         </View>
       ) : null}
-      {list.map((o) => (
-        <ActiveDeliveryCard
-          key={o.id}
-          order={o}
-          businessName={store?.name ?? null}
-          now={now}
-          onPress={() => router.push(`/business/livraison/${o.id}`)}
-        />
-      ))}
+      {hero ? <HeroDeliveryCard order={hero} now={now} onPress={() => openDelivery(hero)} compact={small} /> : null}
+      {others.length === 2 ? (
+        <View style={styles.duo}>
+          {others.map((o) => (
+            <CompactDeliveryCard key={o.id} order={o} now={now} businessName={store?.name ?? null} onPress={() => openDelivery(o)} layout="duo" />
+          ))}
+        </View>
+      ) : (
+        others.map((o) => (
+          <CompactDeliveryCard key={o.id} order={o} now={now} businessName={store?.name ?? null} onPress={() => openDelivery(o)} layout="row" />
+        ))
+      )}
     </LiveTrackingLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headerText: { flex: 1, gap: 2 },
-  kicker: { ...typeScale.kicker, color: BUSINESS_ACCENT },
-  title: { ...typeScale.title, color: dark.text },
-  // Téléphone de moins de 400 px : le titre et « + Nouvelle » tiennent sur une ligne.
-  titleNarrow: { fontSize: 21, letterSpacing: -0.3 },
-  newPill: { backgroundColor: BUSINESS_ACCENT, borderColor: BUSINESS_ACCENT, paddingHorizontal: 14, gap: 6 },
-  stretch: { alignSelf: 'stretch', justifyContent: 'center' },
-  summary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 40,
-    maxWidth: '100%',
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: dark.chip,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    shadowColor: '#000000',
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+  header: { gap: 14 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 40 },
+  title: { ...typography.display, flex: 1, color: palette.ink },
+  titleSmall: { fontSize: 26, lineHeight: 30, letterSpacing: -0.8 },
+  // La pastille s'aligne sur le bord gauche de la carte (par-dessus la place vide du bouton de gauche).
+  pillSlot: { alignSelf: 'stretch', alignItems: 'flex-start', marginLeft: -TOP_SIDE_WIDTH },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  section: { fontSize: 16, lineHeight: 21, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
+  sectionCount: {
+    minWidth: 24,
+    height: 22,
+    paddingHorizontal: 7,
+    borderRadius: 11,
+    overflow: 'hidden',
+    backgroundColor: palette.cobaltTint,
+    color: palette.cobaltText,
+    fontSize: 12,
+    lineHeight: 22,
+    fontWeight: '800',
+    textAlign: 'center',
   },
-  summaryText: { color: dark.text, fontSize: 13.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  noShrink: { flexShrink: 0 },
-  shrink: { flexShrink: 1 },
-  // Séparateur en textMuted : sur la pastille posée sur la carte, textFaint n'atteindrait pas 4,5:1.
-  summarySep: { color: dark.textMuted, fontSize: 14, fontWeight: '800' },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  noStore: { gap: spacing.md },
+  duo: { flexDirection: 'row', gap: 8 },
   loading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
-  muted: { color: dark.textMuted, fontSize: 14, lineHeight: 20 },
-  center: { textAlign: 'center' },
-  empty: { alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm },
-  emptyTitle: { color: dark.text, fontSize: 19, fontWeight: '900', letterSpacing: -0.2 },
+  muted: { color: palette.inkMuted, fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  empty: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: 22, backgroundColor: palette.canvas, paddingVertical: 12, paddingLeft: 8, paddingRight: 16 },
+  emptyText: { flex: 1, gap: 4 },
+  emptyTitle: { fontSize: 16, lineHeight: 21, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
 });

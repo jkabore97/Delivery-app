@@ -736,3 +736,33 @@ export interface BusinessBalanceDto {
   deliveries: number;
   lastDeliveredAt: IsoDateString | null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Résumé du jour de l'entreprise (tableau de bord)                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /business/summary (SELLER) : chiffres du tableau de bord de l'entreprise, sur les mêmes livraisons que
+ * GET /business/deliveries (celles demandées par le compte, tous ses établissements). « Aujourd'hui » = le jour UTC
+ * en cours (Ouagadougou est à UTC+0). Montants en FCFA, même modèle que les espèces des livraisons (docs/API.md,
+ * « Livraisons d'entreprise ») : `goodsCollected` = marchandise (`cashToCollect`) encaissée pour l'entreprise sur les
+ * livraisons livrées aujourd'hui, la somme que Yaar lui reverse.
+ */
+export interface BusinessSummaryDto {
+  /** Jour UTC du résumé, « 2026-11-09 ». */
+  date: string;
+  /** Livraisons en cours (recherche d'un livreur, livreur en route vers le retrait, colis en route). */
+  active: number;
+  today: {
+    /** Livraisons livrées aujourd'hui (`deliveredAt` dans le jour). */
+    delivered: number;
+    /** Livraisons annulées aujourd'hui (`cancelledAt` dans le jour). */
+    cancelled: number;
+    /** Délai moyen demande → livraison (`deliveredAt − createdAt`) des livraisons livrées aujourd'hui, en minutes arrondies ; null sans livraison. */
+    avgDeliveryMinutes: number | null;
+    /** Marchandise encaissée pour l'entreprise sur les livraisons livrées aujourd'hui (« À reverser »). */
+    goodsCollected: number;
+    /** Frais de livraison des livraisons livrées aujourd'hui (quel que soit le payeur). */
+    deliveryFees: number;
+  };
+}

@@ -3,6 +3,7 @@ import {
   createDeliverySchema,
   deliveryQuoteSchema,
   orderListQuerySchema,
+  type BusinessSummaryDto,
   type OrderDto,
   type Paginated,
   type QuoteResponse,
@@ -32,5 +33,10 @@ export async function businessRoutes(app: FastifyInstance, ctx: AppContext): Pro
   /** Livraisons demandées par l'entreprise (filtre `status`, `updatedSince` comme GET /orders). */
   app.get('/business/deliveries', { preHandler: business }, async (req): Promise<Paginated<OrderDto>> => {
     return ctx.deliveries.list(getAuth(req), parse(orderListQuerySchema, req.query));
+  });
+
+  /** Tableau de bord : livraisons en cours et chiffres du jour (mêmes livraisons que GET /business/deliveries). */
+  app.get('/business/summary', { preHandler: business }, async (req): Promise<BusinessSummaryDto> => {
+    return ctx.deliveries.summary(getAuth(req));
   });
 }

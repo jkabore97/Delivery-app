@@ -34,6 +34,9 @@ jest.mock('../state/business', () => ({
   isBusinessApproved: (s: StoreDto | null) => !!s && s.approvalStatus === 'APPROVED',
 }));
 
+// Carte en direct (trajet du parcours sur ordinateur) : jamais affichée au format téléphone des tests.
+jest.mock('../components/map/LiveMap', () => ({ LiveMap: () => null }));
+
 // Carte du choix d'adresse simulée : un bouton « déplace » la carte jusqu'à Patte d'Oie.
 const mockCenterOn = jest.fn();
 jest.mock('../components/map/PickerMap', () => {

@@ -1,6 +1,7 @@
 import { Share } from 'react-native';
 import {
   copyText,
+  driverWhatsappText,
   recipientCallName,
   recipientWhatsappText,
   shareFeedback,
@@ -141,5 +142,14 @@ describe('boutons des livraisons de l’entreprise', () => {
     expect(shareFeedback('dismissed')).toBeNull();
     expect(shareButtonShortLabel(env())).toBe('Envoyer par WhatsApp');
     expect(shareButtonShortLabel(env({ platform: 'android' }))).toBe('Envoyer le lien de suivi');
+  });
+});
+
+describe('message WhatsApp de l’entreprise à son livreur', () => {
+  it('prénom du livreur, nom de l’entreprise et numéro de la livraison', () => {
+    expect(driverWhatsappText({ driver: 'Issouf Sawadogo', businessName: 'Le Verdoyant', orderNumber: 1003 })).toBe(
+      'Bonjour Issouf, c’est Le Verdoyant (Yaar Livraison), au sujet de la livraison #1003.',
+    );
+    expect(driverWhatsappText({ driver: null, businessName: null })).toBe('Bonjour, c’est votre client (Yaar Livraison).');
   });
 });

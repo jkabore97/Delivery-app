@@ -11,8 +11,11 @@ import {
 import { useApi } from '../auth/AuthContext';
 import { AssignDialog } from '../components/AssignDialog';
 import { BlobViewer } from '../components/BlobViewer';
+import { DeliveryHero } from '../components/DeliveryHero';
 import { DeliveryMap } from '../components/DeliveryMap';
-import { Badge, Card, ErrorBanner, KeyValue, Loading, OrderStatusBadge, ReasonDialog, Vehicle } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
+import { Badge, Banner, Card, ErrorBanner, KeyValue, Loading, OrderStatusBadge, ReasonDialog, Vehicle } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback, useNow } from '../hooks/useAsync';
 import {
@@ -33,22 +36,29 @@ function Address({ a }: { a: AddressDto | null }) {
   if (!a) return <span className="muted">Masqué</span>;
   return (
     <div>
-      <div>{a.address}</div>
+      <div className="strong">{a.address}</div>
       {a.landmark && <div className="muted">Repère : {a.landmark}</div>}
       <a
-        className="small"
+        className="small osm-link"
         href={`https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=17/${a.lat}/${a.lng}`}
         target="_blank"
         rel="noopener noreferrer"
       >
-        Voir sur OpenStreetMap ({a.lat.toFixed(4)}, {a.lng.toFixed(4)})
+        Voir sur OpenStreetMap <span className="tnum">({a.lat.toFixed(4)}, {a.lng.toFixed(4)})</span>
+        <Icon name="external" size={13} />
       </a>
     </div>
   );
 }
 
 function Phone({ phone }: { phone: string | null | undefined }) {
-  return phone ? <a href={`tel:${phone}`}>{formatPhone(phone)}</a> : <span className="muted">-</span>;
+  return phone ? (
+    <a href={`tel:${phone}`} className="phone">
+      {formatPhone(phone)}
+    </a>
+  ) : (
+    <span className="muted">-</span>
+  );
 }
 
 /** Ligne de la chronologie : « En attente du vendeur → En préparation » ; livraison d'entreprise : « Création · Demande reçue ». */
@@ -96,13 +106,15 @@ export function TrackingLink({ url }: { url: string }) {
       </code>
       <div className="actions">
         <a className="btn btn-small btn-ghost" href={url} target="_blank" rel="noopener noreferrer">
+          <Icon name="external" size={16} />
           Ouvrir
         </a>
         <button type="button" className="btn btn-small btn-ghost" onClick={() => void copy()}>
+          <Icon name="copy" size={16} />
           Copier le lien
         </button>
         {copied === 'ok' && (
-          <span className="small tone-green" role="status">
+          <span className="small tone-green strong" role="status">
             Lien copié
           </span>
         )}
@@ -212,8 +224,10 @@ function DriverCell({ o }: { o: OrderDto }) {
   if (!o.driver) return <span className="muted">Aucun livreur affecté</span>;
   return (
     <span>
-      <Link to={`/livreurs/${o.driver.id}`}>{o.driver.name ?? 'Sans nom'}</Link> ·{' '}
-      <Vehicle type={o.driver.vehicleType} /> {o.driver.plate ? `· ${o.driver.plate}` : ''}
+      <Link to={`/livreurs/${o.driver.id}`} className="person-name">
+        {o.driver.name ?? 'Sans nom'}
+      </Link>{' '}
+      · <Vehicle type={o.driver.vehicleType} /> {o.driver.plate ? <span className="plate">{o.driver.plate}</span> : null}
       {o.driver.phone ? (
         <>
           {' · '}
@@ -260,7 +274,12 @@ function Parties({ o }: { o: OrderDto }) {
                 {o.client && (
                   <div className="muted small">
                     Compte demandeur : {o.client.name ?? 'Sans nom'}
-                    {o.client.phone ? ` · ${formatPhone(o.client.phone)}` : ''}
+                    {o.client.phone ? (
+                      <>
+                        {' · '}
+                        <span className="phone">{formatPhone(o.client.phone)}</span>
+                      </>
+                    ) : null}
                   </div>
                 )}
               </span>
@@ -340,67 +359,73 @@ export function OrderDetailPage() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <h1>
-          Livraison #{o.number} <OrderStatusBadge status={o.status} business={business} />
-          {kind !== 'business' && <Badge tone="grey">{ORDER_KIND_LABEL[kind]}</Badge>}
-        </h1>
+      <PageTitle>
+        Livraison #{o.number} <OrderStatusBadge status={o.status} business={business} />
+        {kind !== 'business' && <Badge tone="grey">{ORDER_KIND_LABEL[kind]}</Badge>}
+      </PageTitle>
+      <div className="page-toolbar">
+        <Link to="/courses" className="back-link">
+          <Icon name="chevronLeft" size={18} />
+          Livraisons
+        </Link>
         <div className="actions">
-          {canAssign && (
-            <button type="button" className="btn btn-primary" onClick={() => setDialog('assign')}>
-              {o.status === 'ASSIGNED' ? 'Réaffecter' : 'Affecter un livreur'}
-            </button>
-          )}
           {o.hasProofPhoto && (
             <button type="button" className="btn btn-ghost" onClick={() => setDialog('proof')}>
+              <Icon name="camera" size={18} />
               Photo de livraison
             </button>
           )}
           {canForceDeliver && (
             <button type="button" className="btn btn-ghost" onClick={() => setDialog('reset-code')}>
+              <Icon name="refresh" size={18} />
               Réinitialiser le code
+            </button>
+          )}
+          {canCancel && (
+            <button type="button" className="btn btn-danger" onClick={() => setDialog('cancel')}>
+              <Icon name="close" size={18} />
+              Annuler la livraison
             </button>
           )}
           {canForceDeliver && (
             <button type="button" className="btn btn-primary" onClick={() => setDialog('force-deliver')}>
+              <Icon name="check" size={18} />
               Valider la livraison
             </button>
           )}
-          {canCancel && (
-            <button type="button" className="btn btn-danger-soft" onClick={() => setDialog('cancel')}>
-              Annuler la livraison
+          {canAssign && (
+            <button type="button" className="btn btn-primary" onClick={() => setDialog('assign')}>
+              <Icon name="user" size={18} />
+              {o.status === 'ASSIGNED' ? 'Réaffecter' : 'Affecter un livreur'}
             </button>
           )}
         </div>
       </div>
       <ErrorBanner message={order.error} />
       {notice && (
-        <div className="alert alert-success" role="status">
+        <Banner tone="success" role="status">
           {notice}
-        </div>
+        </Banner>
       )}
-      <div className="grid-2">
-        <Card title="Trajet" aside={<span className="muted small">{leg.stage}</span>}>
-          <DeliveryMap order={o} />
-          {leg.details.length > 0 && (
-            <ul className="leg-details" aria-label="Étape en cours">
-              {leg.details.map((d) => (
-                <li key={d}>{d}</li>
-              ))}
-            </ul>
-          )}
-          <KeyValue
-            items={[
-              ['Véhicule', <Vehicle key="v" type={o.vehicleType} />],
-              [business ? 'Retrait (entreprise)' : 'Retrait', <Address key="p" a={o.pickup} />],
-              ['Livraison', <Address key="d" a={o.dropoff} />],
-              ['Distance', formatKm(o.distanceKm)],
-              ...(o.parcelDescription ? ([['Colis', o.parcelDescription]] as Array<[string, ReactNode]>) : []),
-              ...(o.notes ? ([['Instructions', o.notes]] as Array<[string, ReactNode]>) : []),
-              ...(o.cancelReason ? ([['Motif d’annulation', o.cancelReason]] as Array<[string, ReactNode]>) : []),
-            ]}
-          />
-        </Card>
+      <DeliveryHero o={o} nowMs={now} stageText={leg.stage} details={leg.details} />
+      <div className="detail-grid">
+        <div className="stack">
+          <Card title="Trajet" aside={o.distanceKm !== null ? <span className="tnum">{formatKm(o.distanceKm)}</span> : undefined}>
+            <DeliveryMap order={o} />
+            <KeyValue
+              items={[
+                ['Véhicule', <Vehicle key="v" type={o.vehicleType} />],
+                [business ? 'Retrait (entreprise)' : 'Retrait', <Address key="p" a={o.pickup} />],
+                ['Livraison', <Address key="d" a={o.dropoff} />],
+                ['Distance', formatKm(o.distanceKm)],
+                ...(o.parcelDescription ? ([['Colis', o.parcelDescription]] as Array<[string, ReactNode]>) : []),
+                ...(o.notes ? ([['Instructions', o.notes]] as Array<[string, ReactNode]>) : []),
+                ...(o.cancelReason ? ([['Motif d’annulation', o.cancelReason]] as Array<[string, ReactNode]>) : []),
+              ]}
+            />
+          </Card>
+          <Card title="Montants">{business ? <BusinessAmounts o={o} /> : <LegacyAmounts o={o} />}</Card>
+        </div>
         <div className="stack">
           <Card title="Intervenants">
             <Parties o={o} />
@@ -420,11 +445,10 @@ export function OrderDetailPage() {
               )}
             </Card>
           )}
+          <Card title="Chronologie" aside={<span className="tnum">Créée le {formatDateTime(o.createdAt)}</span>}>
+            <Timeline events={o.events ?? []} business={business} />
+          </Card>
         </div>
-        <Card title="Montants">{business ? <BusinessAmounts o={o} /> : <LegacyAmounts o={o} />}</Card>
-        <Card title="Chronologie" aside={<span className="muted small">Créée le {formatDateTime(o.createdAt)}</span>}>
-          <Timeline events={o.events ?? []} business={business} />
-        </Card>
       </div>
       {dialog === 'assign' && (
         <AssignDialog

@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+// Police d'abord (seul fichier qui la nomme : --font-sans), puis les jetons et styles Cobalt.
+import './fonts.css';
 import './styles.css';
 import { App } from './App';
 import { AuthProvider } from './auth/AuthContext';

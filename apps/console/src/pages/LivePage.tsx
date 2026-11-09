@@ -7,6 +7,8 @@ import { KpiCards } from '../components/KpiCards';
 import { KycQueuePanel } from '../components/KycQueuePanel';
 import { LiveMap } from '../components/LiveMap';
 import { PendingOrdersPanel } from '../components/PendingOrdersPanel';
+import { Icon, type IconName } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
 import { ErrorBanner, Loading } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useIncidents } from '../hooks/IncidentsContext';
@@ -15,43 +17,69 @@ import { applyDriverLocation, applyDriverStatus, applyIncident, kpiFingerprint, 
 import { MAP_SAFETY_REFRESH_MS, POLL_MS } from '../config';
 import { usePolling, useRealtime, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
-/** Légende de la carte (mêmes formes que les marqueurs, cf. styles.css « Marqueurs des cartes »). */
+/** Goutte du destinataire en petit (mêmes proportions que le marqueur Cobalt de src/lib/map/markers.ts). */
+function PinGlyph() {
+  return (
+    <svg width="14" height="18" viewBox="0 0 36 46" aria-hidden="true" focusable="false">
+      <path d="M18 44.6 5.4 27.03A15.5 15.5 0 1 1 30.6 27.03Z" fill="currentColor" strokeWidth="3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Légende de la carte : mêmes formes que les marqueurs Cobalt (src/lib/map/markers.ts) : livreur en livraison (disque
+ * blanc, véhicule cobalt), livreur libre (véhicule encre atténuée, point menthe), entreprise (carré encre), destinataire
+ * (goutte cobalt), livraison en attente (tirets cobalt), itinéraire (cobalt à liseré blanc), SOS (point corail).
+ */
 export function MapLegend() {
   return (
     <div className="map-legend" aria-label="Légende">
       <span>
-        <i className="lg lg-driver lg-free" aria-hidden="true" /> Livreur libre
+        <i className="lg lg-driver" aria-hidden="true">
+          <Icon name="moto" size={14} strokeWidth={2.6} />
+        </i>
+        En livraison
       </span>
       <span>
-        <i className="lg lg-driver lg-busy" aria-hidden="true" /> En livraison
+        <i className="lg lg-driver lg-free" aria-hidden="true">
+          <Icon name="moto" size={14} strokeWidth={2.6} />
+        </i>
+        Livreur libre
       </span>
       <span>
-        <i className="lg lg-business" aria-hidden="true" /> Entreprise
+        <i className="lg lg-business" aria-hidden="true" />
+        Entreprise
       </span>
       <span>
-        <i className="lg lg-dropoff" aria-hidden="true" /> Destinataire
+        <i className="lg lg-dropoff" aria-hidden="true">
+          <PinGlyph />
+        </i>
+        Destinataire
       </span>
       <span>
-        <i className="lg lg-search" aria-hidden="true" /> En attente d’un livreur
+        <i className="lg lg-search" aria-hidden="true" />
+        En attente d’un livreur
       </span>
       <span>
-        <i className="lg lg-route" aria-hidden="true" /> Itinéraire
+        <i className="lg lg-route" aria-hidden="true" />
+        Itinéraire
       </span>
       <span>
-        <i className="lg lg-sos" aria-hidden="true" /> SOS
+        <i className="lg lg-sos" aria-hidden="true" />
+        SOS
       </span>
     </div>
   );
 }
 
-const FILTERS: Array<{ value: VehicleFilter; label: string }> = [
+const FILTERS: Array<{ value: VehicleFilter; label: string; icon?: IconName }> = [
   { value: 'ALL', label: 'Tous' },
-  { value: 'BIKE', label: '🚲 Vélo' },
-  { value: 'MOTO', label: '🏍️ Moto' },
-  { value: 'CAR', label: '🚗 Voiture' },
+  { value: 'BIKE', label: 'Vélo', icon: 'bike' },
+  { value: 'MOTO', label: 'Moto', icon: 'moto' },
+  { value: 'CAR', label: 'Voiture', icon: 'car' },
 ];
 
-/** « Carte en direct · Ouagadougou » (maquette 2). */
+/** « Carte en direct » : indicateurs, carte de Ouagadougou, livraisons en attente, dossiers KYC et alertes. */
 export function LivePage() {
   const api = useApi();
   const navigate = useNavigate();
@@ -160,20 +188,20 @@ export function LivePage() {
 
   return (
     <div className="page page-live">
-      <h1>Carte en direct · Ouagadougou</h1>
+      <PageTitle>Carte en direct</PageTitle>
       <ErrorBanner message={dashError} />
       {dashboard ? <KpiCards dashboard={dashboard} /> : <Loading label="Chargement des indicateurs…" />}
       <div className="live-grid">
-        <div className="map-wrap">
+        <div className="map-tile">
           <div className="map-filters" role="group" aria-label="Filtrer par véhicule">
             {FILTERS.map((f) => (
               <button
                 key={f.value}
                 type="button"
-                className={`pill ${filter === f.value ? 'pill-active' : ''}`}
                 aria-pressed={filter === f.value}
                 onClick={() => setFilter(f.value)}
               >
+                {f.icon && <Icon name={f.icon} size={18} />}
                 {f.label}
               </button>
             ))}
@@ -197,7 +225,7 @@ export function LivePage() {
             orders={pending.data ?? []}
             fetchedAt={pendingFetchedAt}
             onChanged={onPendingChanged}
-            limit={6}
+            limit={5}
           />
           <ErrorBanner message={kyc.error} />
           <KycQueuePanel

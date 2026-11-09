@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LABELS } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
-import { Card, Empty, ErrorBanner, Loading, Pagination } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PageTitle } from '../components/PageTitle';
+import { Avatar, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, Pagination } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
-import { formatDateTime } from '../lib/format';
 
 /** Libellés des actions auditées (docs/API.md §8.9). */
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -78,47 +79,43 @@ export function AuditPage() {
 
   return (
     <div className="page">
-      <h1>Journal d’audit</h1>
-      <p className="muted">Toutes les actions sensibles du back office, dont chaque consultation de pièce d’identité.</p>
+      <PageTitle>Journal d’audit</PageTitle>
+      <p className="page-lead">Toutes les actions sensibles du back office, dont chaque consultation de pièce d’identité.</p>
       <Card>
         <div className="filters">
-          <label>
-            Action
-            <select
-              value={action}
-              onChange={(e) => {
-                setPage(1);
-                setAction(e.target.value);
-              }}
-            >
-              <option value="">Toutes</option>
-              {Object.entries(AUDIT_ACTION_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Objet
-            <select
-              value={entityType}
-              onChange={(e) => {
-                setPage(1);
-                setEntityType(e.target.value);
-              }}
-            >
-              <option value="">Tous</option>
-              {Object.entries(AUDIT_ENTITY_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterSelect
+            label="Action"
+            value={action}
+            onChange={(v) => {
+              setPage(1);
+              setAction(v);
+            }}
+          >
+            <option value="">Toutes</option>
+            {Object.entries(AUDIT_ACTION_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect
+            label="Objet"
+            value={entityType}
+            onChange={(v) => {
+              setPage(1);
+              setEntityType(v);
+            }}
+          >
+            <option value="">Tous</option>
+            {Object.entries(AUDIT_ENTITY_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </FilterSelect>
           {entityId && (
-            <span className="muted small">
-              Objet n° <span className="mono">{entityId}</span>{' '}
+            <span className="filter-chip">
+              Objet n° <span className="mono">{entityId}</span>
               <button
                 type="button"
                 className="link-btn"
@@ -127,8 +124,14 @@ export function AuditPage() {
                   setEntityId('');
                 }}
               >
+                <Icon name="close" size={14} />
                 Retirer ce filtre
               </button>
+            </span>
+          )}
+          {logs.data && (
+            <span className="filters-note tnum">
+              {logs.data.total} entrée{logs.data.total > 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -136,7 +139,7 @@ export function AuditPage() {
         {logs.loading && !logs.data ? (
           <Loading />
         ) : !logs.data || logs.data.items.length === 0 ? (
-          <Empty>Aucune entrée.</Empty>
+          <Empty icon="shield">Aucune entrée.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="table table-compact">
@@ -153,24 +156,34 @@ export function AuditPage() {
               <tbody>
                 {logs.data.items.map((l) => (
                   <tr key={l.id}>
-                    <td className="nowrap">{formatDateTime(l.createdAt)}</td>
+                    <td>
+                      <DateTimeCell iso={l.createdAt} />
+                    </td>
                     <td>
                       {l.actor ? (
-                        <>
-                          {l.actor.name ?? 'Sans nom'}
-                          <div className="muted small">{LABELS.role[l.actor.role]}</div>
-                        </>
+                        <span className="person">
+                          <Avatar name={l.actor.name} size="sm" />
+                          <span className="person-text">
+                            <span className="person-name">{l.actor.name ?? 'Sans nom'}</span>
+                            <div className="muted small">{LABELS.role[l.actor.role]}</div>
+                          </span>
+                        </span>
                       ) : (
-                        'Système'
+                        <span className="person">
+                          <span className="avatar avatar-small avatar-system" aria-hidden="true">
+                            <Icon name="settings" size={16} />
+                          </span>
+                          <span className="person-name">Système</span>
+                        </span>
                       )}
                     </td>
-                    <td>{auditActionLabel(l.action)}</td>
+                    <td className="strong">{auditActionLabel(l.action)}</td>
                     <td className="small">
                       {auditEntityLabel(l.entityType)}
                       {l.entityId && <div className="muted mono">{l.entityId}</div>}
                     </td>
-                    <td className="small break">{formatMetadata(l.metadata)}</td>
-                    <td className="small mono">{l.ip ?? '-'}</td>
+                    <td className="small break audit-meta">{formatMetadata(l.metadata)}</td>
+                    <td className="small mono muted">{l.ip ?? '-'}</td>
                   </tr>
                 ))}
               </tbody>
