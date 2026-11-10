@@ -27,9 +27,15 @@ export function overlayPadding(frame: HTMLElement | null): MapPadding {
   const filters = tile.querySelector('.map-filters')?.getBoundingClientRect();
   const legend = tile.querySelector('.map-legend')?.getBoundingClientRect();
   const GAP = 20;
+  // Les repères sont ancrés par leur pointe : l'épingle et son étiquette (« SOS · Karim D. ») montent d'environ
+  // 56 px au-dessus du point. Sous la barre de filtres, il faut donc réserver cette hauteur en plus.
+  const MARKER_RISE = 56;
   return {
     ...MIN_PADDING,
-    top: filters && filters.height > 0 ? Math.max(MIN_PADDING.top, Math.round(filters.bottom - box.top) + GAP) : MIN_PADDING.top,
+    top:
+      filters && filters.height > 0
+        ? Math.max(MIN_PADDING.top, Math.round(filters.bottom - box.top) + GAP + MARKER_RISE)
+        : MIN_PADDING.top,
     bottom: legend && legend.height > 0 ? Math.max(MIN_PADDING.bottom, Math.round(box.bottom - legend.top) + GAP) : MIN_PADDING.bottom,
   };
 }

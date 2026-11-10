@@ -597,6 +597,44 @@ h2 {
   box-shadow: var(--sh-coral);
   animation: toast-in 0.25s ease-out, toast-pulse 1.6s ease-in-out 0.25s 2;
 }
+/* Alerte SOS repliée : une pastille en bas à droite, qui ne couvre plus les boutons ni les montants. */
+.toasts {
+  align-items: flex-end;
+  pointer-events: none;
+}
+.toasts > * {
+  pointer-events: auto;
+}
+.toast-sos:not(.toast-pill) {
+  width: 100%;
+}
+.toast-pill {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 6px 6px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  animation: none;
+}
+.toast-pill .toast-icon {
+  width: 28px;
+  height: 28px;
+}
+.toast-pill .toast-title {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.toast-pill:hover {
+  filter: brightness(1.06);
+}
+.toast-pill:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: -4px;
+  box-shadow: 0 0 0 3px var(--coral-fill);
+}
 .toast-head {
   display: flex;
   align-items: center;

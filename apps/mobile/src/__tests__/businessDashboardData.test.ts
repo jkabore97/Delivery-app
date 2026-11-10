@@ -122,7 +122,7 @@ describe('heure mise en avant, progression et montant', () => {
     expect(deliveryTimeline(d, NOW).map((x) => [x.state, x.time])).toEqual([
       ['done', expect.any(String)],
       ['done', '14:05'],
-      ['done', null],
+      ['done', '35\u00A0min'],
       ['done', '14:40'],
     ]);
     expect(deliveryTimeline(delivery({ status: 'CANCELLED' }), NOW)).toEqual([]);

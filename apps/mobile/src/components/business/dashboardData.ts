@@ -177,6 +177,14 @@ export interface TimelineStep {
  * (demande, retrait, livraison), « maintenant » pour l'étape en cours, et l'heure estimée de la suivante. Annulée :
  * liste vide (l'écran dit « Livraison annulée »).
  */
+/** Durée du trajet retrait → livraison, « 12 min » (au moins 1 min), ou null sans les deux heures. */
+function rideMinutes(o: Pick<OrderDto, 'pickedUpAt' | 'deliveredAt'>): string | null {
+  if (!o.pickedUpAt || !o.deliveredAt) return null;
+  const ms = Date.parse(o.deliveredAt) - Date.parse(o.pickedUpAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return `${Math.max(1, Math.round(ms / 60000))}\u00A0min`;
+}
+
 export function deliveryTimeline(o: OrderDto, now: number, eta: LiveEta = liveEta(o, now)): TimelineStep[] {
   if (o.status === 'CANCELLED') return [];
   const delivered = o.status === 'DELIVERED';
@@ -197,7 +205,8 @@ export function deliveryTimeline(o: OrderDto, now: number, eta: LiveEta = liveEt
       key: 'onTheWay',
       label: 'En route',
       state: delivered ? 'done' : picked ? 'current' : 'todo',
-      time: delivered ? null : picked ? 'maintenant' : null,
+      // Livrée : la durée du trajet (retrait → livraison), plutôt qu'une case vide.
+      time: delivered ? rideMinutes(o) : picked ? 'maintenant' : null,
       approx: false,
     },
     {

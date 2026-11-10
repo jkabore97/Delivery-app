@@ -335,34 +335,15 @@ export function Layout() {
         {sosToasts.length > 0 && (
           <div className="toasts" aria-live="assertive">
             {sosToasts.map((i) => (
-              <div key={i.id} className="toast toast-sos" role="alert">
-                <div className="toast-head">
-                  <span className="toast-icon" aria-hidden="true">
-                    <Icon name="alert" size={20} />
-                  </span>
-                  <strong className="toast-title">SOS · {i.reporter.name ?? 'Livreur'}</strong>
-                  <button type="button" className="icon-btn" aria-label="Masquer" title="Masquer" onClick={() => dismissToast(i.id)}>
-                    <Icon name="close" size={18} />
-                  </button>
-                </div>
-                {i.description && <span className="toast-desc">{i.description}</span>}
-                <span className="toast-actions">
-                  <a className="btn btn-small btn-light" href={`tel:${i.reporter.phone}`}>
-                    <Icon name="phone" size={16} />
-                    Appeler
-                  </a>
-                  <button
-                    type="button"
-                    className="btn btn-small btn-on-coral"
-                    onClick={() => {
-                      dismissToast(i.id);
-                      if (location.pathname !== '/incidents') navigate(`/incidents?focus=${i.id}`);
-                    }}
-                  >
-                    Traiter
-                  </button>
-                </span>
-              </div>
+              <SosToast
+                key={i.id}
+                incident={i}
+                onDismiss={() => dismissToast(i.id)}
+                onHandle={() => {
+                  dismissToast(i.id);
+                  if (location.pathname !== '/incidents') navigate(`/incidents?focus=${i.id}`);
+                }}
+              />
             ))}
           </div>
         )}
@@ -372,6 +353,76 @@ export function Layout() {
           </main>
         </PageTitleSlot>
       </div>
+    </div>
+  );
+}
+
+/** Délai avant qu'une alerte SOS se replie en pastille : assez pour la lire, sans cacher la page ensuite. */
+export const SOS_COLLAPSE_MS = 10_000;
+
+/**
+ * Alerte SOS en bas à droite. Elle s'ouvre en grand, puis se replie après SOS_COLLAPSE_MS en une pastille
+ * « SOS · nom » qui reste visible tant que l'alerte n'est pas traitée ou masquée, sans couvrir les boutons
+ * ni les montants de la page. Un clic sur la pastille la rouvre.
+ */
+function SosToast({ incident, onDismiss, onHandle }: { incident: IncidentDto; onDismiss: () => void; onHandle: () => void }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  useEffect(() => {
+    if (collapsed || hovered) return;
+    const t = window.setTimeout(() => setCollapsed(true), SOS_COLLAPSE_MS);
+    return () => window.clearTimeout(t);
+  }, [collapsed, hovered]);
+  const name = incident.reporter.name ?? 'Livreur';
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        className="toast toast-sos toast-pill"
+        aria-label={`SOS · ${name} : afficher l’alerte`}
+        aria-expanded={false}
+        onClick={() => setCollapsed(false)}
+        data-testid="sos-toast-pill"
+      >
+        <span className="toast-icon" aria-hidden="true">
+          <Icon name="alert" size={16} />
+        </span>
+        <strong className="toast-title">SOS · {name}</strong>
+      </button>
+    );
+  }
+  return (
+    <div
+      className="toast toast-sos"
+      role="alert"
+      data-testid="sos-toast"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+    >
+      <div className="toast-head">
+        <span className="toast-icon" aria-hidden="true">
+          <Icon name="alert" size={20} />
+        </span>
+        <strong className="toast-title">SOS · {name}</strong>
+        <button type="button" className="icon-btn" aria-label="Réduire" title="Réduire" onClick={() => setCollapsed(true)}>
+          <Icon name="chevronDown" size={18} />
+        </button>
+        <button type="button" className="icon-btn" aria-label="Masquer" title="Masquer" onClick={onDismiss}>
+          <Icon name="close" size={18} />
+        </button>
+      </div>
+      {incident.description && <span className="toast-desc">{incident.description}</span>}
+      <span className="toast-actions">
+        <a className="btn btn-small btn-light" href={`tel:${incident.reporter.phone}`}>
+          <Icon name="phone" size={16} />
+          Appeler
+        </a>
+        <button type="button" className="btn btn-small btn-on-coral" onClick={onHandle}>
+          Traiter
+        </button>
+      </span>
     </div>
   );
 }

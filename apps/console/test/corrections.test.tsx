@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { App } from '../src/App';
+import { SOS_COLLAPSE_MS } from '../src/components/Layout';
 import { DeliveryHero, deliverySteps } from '../src/components/DeliveryHero';
 import { BizMark, Modal, ReasonDialog, TableWrap } from '../src/components/ui';
 import { buildDeliveryScene, buildLiveScene } from '../src/lib/map/scene';
@@ -168,6 +169,32 @@ describe('Console : « / » et fenêtres', () => {
     expect(await screen.findByText(/SOS · Livreur Karim D\./)).toBeInTheDocument();
     expect(screen.queryByText('SOS · Karim D.')).not.toBeInTheDocument();
     window.sessionStorage.clear();
+  });
+
+  it('l’alerte SOS se replie en pastille après 10 s, et se rouvre au clic', async () => {
+    const routes = {
+      'GET /controller/dashboard': dashboard,
+      'GET /controller/map': mapData,
+      'GET /controller/orders/pending': [],
+      'GET /controller/drivers': page([]),
+      'GET /controller/incidents': page([sos]),
+    };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderWithProviders(<App socketUrl="http://api.test" busOverride={createMemoryBus()} />, { routes });
+      await screen.findByTestId('sos-toast');
+      await act(async () => {
+        vi.advanceTimersByTime(SOS_COLLAPSE_MS + 50);
+      });
+      expect(screen.queryByTestId('sos-toast')).not.toBeInTheDocument();
+      const pill = screen.getByTestId('sos-toast-pill');
+      expect(pill).toHaveAccessibleName('SOS · Karim D. : afficher l’alerte');
+      act(() => pill.click());
+      expect(screen.getByTestId('sos-toast')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      window.sessionStorage.clear();
+    }
   });
 });
 

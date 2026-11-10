@@ -155,6 +155,7 @@ export function BusinessDashboard() {
           setSelectedId(o.id);
           setCameraOn(o.id);
         }}
+        onOpen={openDelivery}
         now={now}
         query={query}
         state={listState}

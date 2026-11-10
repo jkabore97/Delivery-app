@@ -288,10 +288,10 @@ const styles = StyleSheet.create({
 /** Colonnes du tableau : pleine largeur (≥ 1 280 px) et resserré (1 024 à 1 279 px, « Destinataire » garde 200 px). */
 const fullCols = StyleSheet.create({
   num: { width: 72 },
-  state: { width: 150 },
-  date: { width: 150 },
-  amount: { width: 130 },
-  fee: { width: 190 },
+  state: { width: 112 },
+  date: { width: 140 },
+  amount: { width: 120 },
+  fee: { width: 168 },
   go: { width: 36, alignItems: 'flex-end' },
 });
 const compactCols = StyleSheet.create({

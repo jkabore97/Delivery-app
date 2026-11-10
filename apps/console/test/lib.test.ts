@@ -14,7 +14,9 @@ describe('format', () => {
   it('formate les attentes en m:ss', () => {
     expect(formatWaiting(372)).toBe('6:12');
     expect(formatWaiting(20)).toBe('0:20');
-    expect(formatWaiting(3725)).toBe('1:02:05');
+    expect(formatWaiting(3725)).toBe('1\u00A0h 02');
+    expect(formatWaiting(89526)).toBe('1\u00A0j');
+    expect(formatWaiting(97200)).toBe('1\u00A0j 3\u00A0h');
     expect(formatWaiting(-5)).toBe('0:00');
   });
 

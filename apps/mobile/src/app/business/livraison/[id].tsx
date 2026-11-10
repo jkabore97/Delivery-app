@@ -95,6 +95,16 @@ export default function BusinessDeliveryScreen() {
   const scene = useMemo(() => {
     if (!input) return null;
     const s = buildScene(input);
+    // Livraison terminée : le trajet entier (entreprise → destinataire), pas une seule épingle au zoom maximal.
+    if (s.stage === 'delivered' && input.pickup && input.dropoff) {
+      const pickup = { lat: input.pickup.lat, lng: input.pickup.lng };
+      const dropoff = { lat: input.dropoff.lat, lng: input.dropoff.lng };
+      return {
+        ...s,
+        markers: [{ id: 'pickup', kind: 'pickup' as const, ...pickup, title: input.labels?.pickup, ...(input.initials.pickup ? { initials: input.initials.pickup } : {}) }, ...s.markers],
+        fitPoints: [pickup, dropoff],
+      };
+    }
     // Vue de l'entreprise : livreur en route vers elle en disque soleil.
     return s.stage === 'toPickup' ? { ...s, markers: s.markers.map((m) => (m.kind === 'driver' ? { ...m, tone: 'sun' as const } : m)) } : s;
   }, [input]);

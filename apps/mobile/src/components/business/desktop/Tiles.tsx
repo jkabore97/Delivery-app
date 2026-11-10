@@ -501,8 +501,8 @@ function TileHead({ title, count, action }: { title: string; count?: number | st
 }
 
 /**
- * Tuile « En cours » : toutes les livraisons en cours. Une ligne se choisit (la tuile héros et la carte la suivent) ;
- * le suivi complet s'ouvre depuis la tuile héros (« Suivi »), qui montre toujours la livraison choisie. Recherche en
+ * Tuile « En cours » : toutes les livraisons en cours. Un clic sur une ligne la choisit (la tuile héros et la carte la
+ * suivent) ; un clic sur la ligne déjà choisie, ou sur sa flèche, ouvre le suivi complet. Recherche en
  * cours : le compteur dit « 2 / 12 ». `state` : premier chargement ou liste illisible (jamais « aucune » à tort).
  */
 export function LiveListTile({
@@ -510,6 +510,7 @@ export function LiveListTile({
   total,
   selectedId,
   onSelect,
+  onOpen,
   now,
   query,
   state = 'ready',
@@ -519,6 +520,7 @@ export function LiveListTile({
   total: number;
   selectedId: string | null;
   onSelect: (o: OrderDto) => void;
+  onOpen: (o: OrderDto) => void;
   now: number;
   query: string;
   state?: 'ready' | 'loading' | 'error';
@@ -556,8 +558,8 @@ export function LiveListTile({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${name}, ${liveStatusText(o, eta).toLowerCase()}${time ? `, livraison vers ${time}` : ''}${cash.amount > 0 ? `, ${formatFcfa(cash.amount)} à encaisser` : ''}. Afficher sur la carte`}
-                  onPress={() => onSelect(o)}
+                  accessibilityLabel={`${name}, ${liveStatusText(o, eta).toLowerCase()}${time ? `, livraison vers ${time}` : ''}${cash.amount > 0 ? `, ${formatFcfa(cash.amount)} à encaisser` : ''}. ${selected ? 'Ouvrir le suivi' : 'Afficher sur la carte'}`}
+                  onPress={() => (selected ? onOpen(o) : onSelect(o))}
                   style={(s: WebPressState) => [styles.rowMain, POINTER, !selected && (s.hovered || s.pressed) && styles.rowHover]}
                   testID={`live-row-${o.id}`}
                 >
@@ -590,6 +592,15 @@ export function LiveListTile({
                       {cash.amount > 0 ? formatFcfa(cash.amount) : 'Rien à encaisser'}
                     </Text>
                   </View>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Ouvrir le suivi de ${name}`}
+                  onPress={() => onOpen(o)}
+                  style={(s: WebPressState) => [styles.rowOpen, POINTER, FOCUS_RING_INNER, (s.hovered || s.pressed) && styles.rowOpenHover]}
+                  testID={`live-open-${o.id}`}
+                >
+                  <Icon name="chevronRight" size={18} color={selected ? palette.cobalt : palette.inkMuted} strokeWidth={2.4} />
                 </Pressable>
               </View>
             );
@@ -751,6 +762,8 @@ const styles = StyleSheet.create({
   rowOn: { backgroundColor: palette.cobaltTint },
   rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingHorizontal: 12, borderRadius: 18 },
   rowHover: { backgroundColor: palette.raised },
+  rowOpen: { width: 36, height: 48, marginRight: 4, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  rowOpenHover: { backgroundColor: palette.raised },
   rowMid: { flex: 1, minWidth: 0 },
   rowName: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
   rowSub: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },

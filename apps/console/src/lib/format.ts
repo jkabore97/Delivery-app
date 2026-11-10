@@ -35,15 +35,19 @@ export function formatDate(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '-' : dateFmt.format(d);
 }
 
-/** Durée d'attente « m:ss » (ou « h:mm:ss » au-delà d'une heure). */
+/**
+ * Durée d'attente : « m:ss » sous une heure (le chrono qui bouge compte), puis « 1 h 02 », puis « 2 j 3 h »
+ * au-delà d'un jour (une commande oubliée ne doit pas afficher « 24:52:06 »).
+ */
 export function formatWaiting(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  const ss = sec.toString().padStart(2, '0');
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${ss}`;
-  return `${m}:${ss}`;
+  if (d > 0) return h > 0 ? `${d}\u00A0j ${h}\u00A0h` : `${d}\u00A0j`;
+  if (h > 0) return `${h}\u00A0h ${m.toString().padStart(2, '0')}`;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
 /** « il y a 2 min » à partir d'une date ISO. */

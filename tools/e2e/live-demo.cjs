@@ -225,6 +225,8 @@ async function karimToken(page) {
     await demoLogin(bp, 'Entreprise · Le Verdoyant');
     await V(bp.getByTestId('kpi-chips')).waitFor({ timeout: 45000 });
     await bp.getByTestId('live-map').first().waitFor({ timeout: 30000 });
+    // Les tuiles se dessinent après l'apparition de la carte : sans cette attente, la capture montrait une carte vide.
+    await tilesLoaded(bp);
     await shot(bp, 'b10-business-deliveries');
     step('entreprise : connectée (Le Verdoyant), livraisons en cours et carte d’ensemble');
     await V(bp.getByTestId('new-delivery')).click();

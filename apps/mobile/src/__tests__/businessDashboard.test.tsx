@@ -172,6 +172,12 @@ describe('Tableau de bord de l’entreprise (ordinateur, 1 440 × 900)', () => {
     expect(fit.startsWith('12.373,-1.5177')).toBe(true);
     await fireEvent.press(r.getByTestId('hero-open'));
     expect(mockPush).toHaveBeenCalledWith('/business/livraison/o1004');
+    // Un second clic sur la ligne choisie, ou sa flèche, ouvre aussi le suivi.
+    mockPush.mockClear();
+    await fireEvent.press(r.getByTestId('live-row-o1004'));
+    expect(mockPush).toHaveBeenCalledWith('/business/livraison/o1004');
+    await fireEvent.press(r.getByTestId('live-open-o1003'));
+    expect(mockPush).toHaveBeenLastCalledWith('/business/livraison/o1003');
     // « Recentrer » : toutes les livraisons de nouveau.
     await fireEvent.press(r.getByTestId('map-recenter'));
     expect(r.getByTestId('live-map-fit').props.children).toBe(fitAll);
