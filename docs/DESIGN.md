@@ -239,6 +239,14 @@ Marqueurs (`theme.ts`, attributs `data-*` du web, rien en natif) :
 - Mesures : `components/business/desktop/layout.ts` (`DESKTOP_MIN_WIDTH` = 1024, `SIDEBAR_WIDTH` 240, `PAGE_PADDING`
   32, `TILE_GAP` 16).
 
+### Compléments (largeurs intermédiaires et états)
+
+- **1024–1250 px** : le tableau de bord s'empile dans cet ordre : indicateurs, tuile héros, listes, puis la carte (360 px).
+- **Historique sous 1280 px** : colonnes compactes. « Destinataire » fait au moins 200 px, les frais passent en seconde ligne sous « Encaissé », la date est sur deux lignes.
+- **« En cours »** : quand des lignes sont masquées, une dernière ligne « + N autres livraisons en cours » fait défiler la liste.
+- **Tuile d'argent (Sun)** : « Encaissé pour vous aujourd’hui ». C'est le chiffre du jour : le reversement par Yaar n'est pas encore suivi, donc on ne dit jamais « à reverser ».
+- **Liens** (`NavLink`, `Link asChild` d'expo-router) : l'enfant reçoit un style aplati, jamais une fonction de style. Sinon la page web devient blanche (« Failed to set an indexed property on CSSStyleDeclaration »).
+
 ## 7. À faire / à ne pas faire
 
 **À faire**
