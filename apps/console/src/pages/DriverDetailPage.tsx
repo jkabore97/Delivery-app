@@ -4,7 +4,6 @@ import { LABELS, type DriverDocumentDto, type DriverProfileDto } from '@yaar/sha
 import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 import { BlobViewer } from '../components/BlobViewer';
-import { DocumentChips } from '../components/DocumentChips';
 import { Icon } from '../components/Icon';
 import { DocsMeter } from '../components/KycQueuePanel';
 import { PageTitle } from '../components/PageTitle';
@@ -20,6 +19,7 @@ import {
   Modal,
   Rating,
   ReasonDialog,
+  TableWrap,
   Vehicle,
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
@@ -53,8 +53,28 @@ export function DriverDetailPage() {
   /** Pièces ouvertes dans cette session (rappel avant validation). */
   const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
 
-  if (driver.loading && !driver.data) return <Loading />;
-  if (!driver.data) return <ErrorBanner message={driver.error ?? 'Livreur introuvable'} onRetry={() => driver.reload()} />;
+  if (!driver.data) {
+    const notFound = driver.errorStatus === 404;
+    return (
+      <div className="page">
+        <PageTitle docTitle="Livreur">{notFound ? 'Livreur introuvable' : 'Livreur'}</PageTitle>
+        <div className="page-toolbar">
+          <Link to="/livreurs" className="back-link">
+            <Icon name="chevronLeft" size={18} />
+            Livreurs
+          </Link>
+        </div>
+        {driver.loading ? (
+          <Loading label="Chargement du dossier…" />
+        ) : (
+          <ErrorBanner
+            message={notFound ? 'Ce livreur n’existe pas ou n’est plus accessible.' : (driver.error ?? 'Livreur introuvable')}
+            onRetry={notFound ? undefined : () => driver.reload()}
+          />
+        )}
+      </div>
+    );
+  }
   const d = driver.data;
   const actions = kycActions(d);
 
@@ -82,7 +102,7 @@ export function DriverDetailPage() {
 
   return (
     <div className="page">
-      <PageTitle>
+      <PageTitle docTitle={d.name ?? 'Livreur'}>
         <span className="profile-title">
           <Avatar name={d.name} tone="sun" />
           {d.name ?? 'Sans nom'}
@@ -97,13 +117,13 @@ export function DriverDetailPage() {
         </Link>
         <div className="actions">
           {actions.canReject && (
-            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setDialog({ kind: 'reject' })}>
+            <button type="button" className="btn btn-danger-soft" disabled={busy} onClick={() => setDialog({ kind: 'reject' })}>
               <Icon name="close" size={18} />
               Refuser
             </button>
           )}
           {actions.canSuspend && (
-            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setDialog({ kind: 'suspend' })}>
+            <button type="button" className="btn btn-danger-soft" disabled={busy} onClick={() => setDialog({ kind: 'suspend' })}>
               Suspendre
             </button>
           )}
@@ -187,13 +207,12 @@ export function DriverDetailPage() {
           />
         </Card>
         <Card title="Pièces du dossier" aside={<DocsMeter profile={d} />}>
-          <DocumentChips profile={d} />
           <p className="hint">
             Les pièces sont protégées et ne sont jamais préchargées. Chaque consultation est enregistrée dans le{' '}
             <Link to="/audit?action=DRIVER_DOCUMENT_VIEWED&entityType=DriverDocument">journal d’audit</Link> ·{' '}
             <Link to={`/audit?entityType=DriverProfile&entityId=${encodeURIComponent(d.userId)}`}>historique du dossier</Link>.
           </p>
-          <div className="table-wrap">
+          <TableWrap label="Pièces du dossier">
             <table className="table table-compact">
               <thead>
                 <tr>
@@ -252,7 +271,7 @@ export function DriverDetailPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </Card>
       </div>
       {dialog?.kind === 'approve' && (
@@ -319,7 +338,7 @@ export function DriverDetailPage() {
       {dialog?.kind === 'doc' && (
         <BlobViewer
           title={`${documentLabel(dialog.doc.type)} · ${d.name ?? ''}`}
-          notice="Consultation enregistrée dans le journal d'audit (DRIVER_DOCUMENT_VIEWED)."
+          notice="Consultation enregistrée dans le journal d’audit (DRIVER_DOCUMENT_VIEWED)."
           load={() => api.driverDocument(d.userId, dialog.doc.id)}
           onClose={() => setDialog(null)}
         />

@@ -7,7 +7,6 @@ import { palette, shadows, spacing } from '../../theme';
 import { CallRoundButton, WhatsAppRoundButton } from './ContactButtons';
 import { Icon, type IconName } from './Icon';
 import { StatusChip, type ChipTone } from './Pill';
-import type { Surface } from './RoundButton';
 
 export interface PackageCardProps {
   /** Titre : destinataire (« Awa Kaboré ») ou entreprise. */
@@ -42,8 +41,6 @@ export interface PackageCardProps {
   initials?: string | null;
   /** Pictogramme de la pastille à la place des initiales (ex. « package » : colis sans entreprise ni nom). */
   avatarIcon?: IconName;
-  /** @deprecated Cobalt n'a qu'un rendu (carte blanche). */
-  theme?: Surface;
   /**
    * La carte (sauf ses boutons de contact) devient un bouton. Les boutons WhatsApp / Appeler sont alors posés À CÔTÉ de
    * ce bouton (colonne à droite), jamais dedans : un bouton dans un bouton est inaccessible aux lecteurs d'écran.

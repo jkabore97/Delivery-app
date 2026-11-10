@@ -4,7 +4,7 @@ import { LABELS } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
 import { Icon } from '../components/Icon';
 import { PageTitle } from '../components/PageTitle';
-import { Avatar, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, Pagination } from '../components/ui';
+import { Avatar, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, Pagination, TableWrap } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
 
 /** Libellés des actions auditées (docs/API.md §8.9). */
@@ -136,12 +136,12 @@ export function AuditPage() {
           )}
         </div>
         <ErrorBanner message={logs.error} onRetry={() => logs.reload()} />
-        {logs.loading && !logs.data ? (
-          <Loading />
-        ) : !logs.data || logs.data.items.length === 0 ? (
+        {!logs.data ? (
+          logs.loading ? <Loading /> : null
+        ) : logs.data.items.length === 0 ? (
           <Empty icon="shield">Aucune entrée.</Empty>
         ) : (
-          <div className="table-wrap">
+          <TableWrap label="Journal d’audit">
             <table className="table table-compact">
               <thead>
                 <tr>
@@ -188,7 +188,7 @@ export function AuditPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
         {logs.data && (
           <Pagination page={logs.data.page} pageSize={logs.data.pageSize} total={logs.data.total} onPage={setPage} />

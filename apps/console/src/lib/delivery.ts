@@ -76,6 +76,11 @@ export function cashSplit(
   };
 }
 
+/** Espace insécable entre un nombre et son unité (« 2,9 km », « 7 min ») : jamais coupés en fin de ligne. */
+export function nbsp(text: string): string {
+  return text.replace(/(\d) (?=[a-zA-Zµ])/g, '$1\u00a0');
+}
+
 /** Libellé de statut : celui de `LABELS`, sauf l'étape PENDING d'une livraison d'entreprise (il n'y a pas de vendeur). */
 export function statusLabel(status: OrderStatus, business: boolean): string {
   if (business && status === 'PENDING') return 'Demande reçue';
@@ -107,7 +112,7 @@ export function legSummary(o: OrderDto, nowMs: number): { stage: string; details
     pending: business ? 'Demande reçue' : LABELS.orderStatus[o.status],
     searching: 'Recherche d’un livreur',
     toPickup: `Livreur en route vers le retrait (${pickupName})`,
-    toDropoff: 'Colis récupéré : en route vers le destinataire',
+    toDropoff: 'Colis récupéré\u00a0: en route vers le destinataire',
     delivered: 'Livrée',
     cancelled: 'Annulée',
   };
@@ -118,14 +123,14 @@ export function legSummary(o: OrderDto, nowMs: number): { stage: string; details
     const left = routeProgress(route, loc).remainingM;
     details.push(
       route.source === 'osrm'
-        ? `Itinéraire routier : ${formatDistanceFr(left)} restants`
-        : `Ligne droite (itinéraire routier indisponible) : ${formatDistanceFr(left)} environ`,
+        ? `Itinéraire routier\u00a0: ${nbsp(formatDistanceFr(left))} restants`
+        : `Ligne droite (itinéraire routier indisponible)\u00a0: ${nbsp(formatDistanceFr(left))} environ`,
     );
   } else if (stage === 'toPickup' || stage === 'toDropoff') {
-    details.push(loc ? 'Itinéraire en cours de calcul : ligne droite vers la cible' : 'Position du livreur pas encore reçue');
+    details.push(loc ? 'Itinéraire en cours de calcul\u00a0: ligne droite vers la cible' : 'Position du livreur pas encore reçue');
   }
   if ((stage === 'toPickup' || stage === 'toDropoff') && o.etaMinutes !== null && o.etaMinutes !== undefined) {
-    details.push(`Destinataire : ${formatArrivalFr(o.etaMinutes, nowMs)}`);
+    details.push(`Destinataire\u00a0: ${nbsp(formatArrivalFr(o.etaMinutes, nowMs))}`);
   }
   return { stage: stageText[stage], details };
 }

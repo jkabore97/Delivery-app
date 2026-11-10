@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Easing, Platform, StyleSheet, View } from 'react-native';
 import MapView, {
   AnimatedRegion,
@@ -28,6 +28,7 @@ import {
 } from './MarkerViews';
 import {
   DRIVER_NUDGE_PX,
+  type LiveMapHandle,
   type LiveMapProps,
   type MapPadding,
   type MapPoint,
@@ -358,8 +359,8 @@ const NO_ZONES: SceneZone[] = [];
  * Carte de suivi en direct (Android / iOS) : react-native-maps, Google Maps au style Cobalt sur Android, Apple Plans
  * clair sur iOS, marqueurs Cobalt statiques, itinéraire cobalt à liseré blanc rogné au fil de l'avancée du livreur,
  * caméra qui suit jusqu'au premier geste de l'utilisateur. Le logo Google et le lien « Mentions légales » d'Apple
- * restent au-dessus de la feuille (`mapPadding`) ; zones approximatives en cercles natifs (`zones`). `theme` (ancien
- * fond sombre) est accepté et ignoré : fond Cobalt partout.
+ * restent au-dessus de la feuille (`mapPadding`) ; zones approximatives en cercles natifs (`zones`). `zoomRef` : zoom
+ * impératif (`zoomBy`), compté comme un geste de l'utilisateur.
  */
 export function LiveMap({
   markers,
@@ -373,10 +374,30 @@ export function LiveMap({
   bottomInset = 0,
   animationMs = 4000,
   allowRotate = false,
+  zoomRef,
   style,
   testID,
 }: LiveMapProps) {
   const mapRef = useRef<MapView>(null);
+  useImperativeHandle(
+    zoomRef,
+    (): LiveMapHandle => ({
+      zoomBy(delta: number) {
+        const map = mapRef.current;
+        if (!map || !Number.isFinite(delta) || delta === 0) return;
+        gestureRef.current?.();
+        void map
+          .getCamera()
+          .then((cam) => {
+            // Google Maps (Android) : niveau de zoom ; Apple Plans (iOS) : altitude, divisée par deux à chaque niveau.
+            if (typeof cam.zoom === 'number') map.animateCamera({ zoom: cam.zoom + delta }, { duration: 300 });
+            else if (typeof cam.altitude === 'number') map.animateCamera({ altitude: cam.altitude / 2 ** delta }, { duration: 300 });
+          })
+          .catch(() => undefined);
+      },
+    }),
+    [],
+  );
   const [ready, setReady] = useState(false);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const store = useRef(new PositionStore()).current;

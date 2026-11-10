@@ -1,5 +1,5 @@
 import { LABELS, type OrderDto } from '@yaar/shared';
-import { cashSplit, etaCell, FEE_PAYER_LABEL, isBusinessDelivery, statusLabel } from '../lib/delivery';
+import { cashSplit, etaCell, FEE_PAYER_LABEL, isBusinessDelivery, nbsp, statusLabel } from '../lib/delivery';
 import { formatFcfa, formatPhone, formatTime } from '../lib/format';
 import { stageOf } from '../lib/map/scene';
 import { Icon } from './Icon';
@@ -32,6 +32,8 @@ export function deliverySteps(o: OrderDto, nowMs: number): Step[] {
     },
   ];
 }
+
+const STEP_STATE_TEXT: Record<Step['state'], string> = { done: 'faite', now: 'en cours', next: 'à venir' };
 
 /** Minutes écoulées depuis l'entrée en recherche d'un livreur (dernier passage en SEARCHING_DRIVER). */
 function searchingSinceMin(o: OrderDto, nowMs: number): number {
@@ -67,6 +69,7 @@ export function DeliveryHero({
     const cancelled = stage === 'cancelled';
     const at = delivered ? o.deliveredAt : cancelled ? o.cancelledAt : o.createdAt;
     const minutes = delivered && o.deliveredAt ? Math.round((Date.parse(o.deliveredAt) - Date.parse(o.createdAt)) / 60_000) : null;
+    const whenLabel = delivered ? 'Livrée à' : cancelled ? 'Annulée à' : 'Demandée à';
     return (
       <section className="summary-tile" aria-label="Récapitulatif de la livraison">
         <span className={`summary-disc${cancelled ? ' is-cancelled' : delivered ? '' : ' is-pending'}`} aria-hidden="true">
@@ -77,13 +80,16 @@ export function DeliveryHero({
           <span>
             {delivered && o.driver?.name ? `par ${o.driver.name}` : null}
             {delivered && minutes !== null ? ` · ${minutes} min après la demande` : null}
-            {cancelled ? (o.cancelReason ? `Motif : ${o.cancelReason}` : 'Sans motif') : null}
+            {cancelled ? (o.cancelReason ? `Motif\u00a0: ${o.cancelReason}` : 'Sans motif') : null}
             {!delivered && !cancelled ? `Demande reçue · ${status}` : null}
           </span>
         </div>
         {at && (
-          <span className="summary-time" title={delivered ? 'Heure de livraison' : cancelled ? 'Heure d’annulation' : 'Heure de la demande'}>
-            {formatTime(at)}
+          <span className="summary-when">
+            <span className="summary-when-label">{whenLabel}</span>
+            <time className="summary-time" dateTime={at}>
+              {formatTime(at)}
+            </time>
           </span>
         )}
       </section>
@@ -96,15 +102,19 @@ export function DeliveryHero({
   const searching = stage === 'searching';
   const waited = searching ? searchingSinceMin(o, nowMs) : 0;
   const d = o.driver;
+  // L'heure d'arrivée est déjà écrite en très grand : la précision « Destinataire : arrivée vers… » ne la répète pas.
+  const notes = eta?.clock && !searching ? details.filter((t) => !t.startsWith('Destinataire')) : details;
 
   return (
     <section className="hero" aria-label="Livraison en cours">
       <div className="hero-grid">
         <div className="hero-left">
+          {/* Le n° et le statut sont dans le titre de la page : la puce dit que la tuile suit la livraison en direct. */}
           <div className="hero-top">
-            <span className="hero-chip">{status}</span>
+            <span className="hero-chip">En direct</span>
             <span className="hero-id">
-              #{o.number} · {LABELS.vehicleType[o.vehicleType]}
+              {LABELS.vehicleType[o.vehicleType]}
+              <span className="sr-only"> · {status}</span>
             </span>
           </div>
           {searching ? (
@@ -120,7 +130,7 @@ export function DeliveryHero({
               <p className="hero-eta-label">Arrivée chez le destinataire</p>
               <div className="hero-eta">
                 <b>{eta.clock}</b>
-                <span>dans {eta.duration}</span>
+                <span>dans {nbsp(eta.duration)}</span>
               </div>
             </>
           ) : (
@@ -136,7 +146,7 @@ export function DeliveryHero({
               <Icon name="route" size={16} />
               {stageText}
             </li>
-            {details.map((t) => (
+            {notes.map((t) => (
               <li key={t}>
                 <Icon name={t.startsWith('Destinataire') ? 'clock' : 'navigation'} size={16} />
                 {t}
@@ -145,9 +155,12 @@ export function DeliveryHero({
           </ul>
           <ol className="steps" aria-label="Avancement">
             {steps.map((s) => (
-              <li key={s.label} className={s.state}>
+              <li key={s.label} className={s.state} aria-current={s.state === 'now' ? 'step' : undefined}>
                 <span className="seg">{s.state === 'now' && <i />}</span>
-                <b>{s.label}</b>
+                <b>
+                  {s.label}
+                  <span className="sr-only"> ({STEP_STATE_TEXT[s.state]})</span>
+                </b>
                 <span className="tm">
                   {s.approx && <span className="sr-only">environ </span>}
                   {s.approx && <Icon name="approx" size={12} strokeWidth={2.4} />}
@@ -187,7 +200,7 @@ export function DeliveryHero({
           <div className="hero-recipient">
             <b>{o.recipientName ?? o.client?.name ?? 'Destinataire'}</b>
             <span className="hero-meta">{o.dropoff?.address ?? 'Adresse masquée'}</span>
-            {o.dropoff?.landmark ? <span className="hero-meta">Repère « {o.dropoff.landmark} »</span> : null}
+            {o.dropoff?.landmark ? <span className="hero-meta">Repère «{'\u00a0'}{o.dropoff.landmark}{'\u00a0'}»</span> : null}
           </div>
           <div className="hero-hr" />
           <div className="hero-cash">
@@ -196,7 +209,7 @@ export function DeliveryHero({
               <span className="d">
                 {cash.business
                   ? `${cash.goods > 0 ? `marchandise ${formatFcfa(cash.goods)}` : 'pas de marchandise'}${
-                      cash.feePaidBy ? ` · frais : ${FEE_PAYER_LABEL[cash.feePaidBy].toLowerCase()}` : ''
+                      cash.feePaidBy ? ` · frais\u00a0: ${FEE_PAYER_LABEL[cash.feePaidBy].toLowerCase()}` : ''
                     }`
                   : `${LABELS.paymentMethod[o.paymentMethod]}`}
               </span>

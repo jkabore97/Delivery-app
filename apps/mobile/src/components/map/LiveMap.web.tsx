@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { Marker as MlMarker } from 'maplibre-gl';
 import { boundsOf, distanceM, OUAGADOUGOU_CENTER, padBounds } from '@yaar/shared';
@@ -22,6 +22,7 @@ import { MapAttribution } from './MapAttribution';
 import { driverElement, dropoffElement, pickupElement, setDriverHeading } from './markerDom.web';
 import {
   DRIVER_NUDGE_PX,
+  type LiveMapHandle,
   type LiveMapProps,
   type MapPadding,
   type MapPoint,
@@ -222,6 +223,12 @@ class LiveMapController {
     );
   }
 
+  /** Zoom de `delta` niveaux autour du centre, en douceur (borné par le style). */
+  zoomBy(delta: number): void {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    this.map.easeTo({ zoom: this.map.getZoom() + delta, duration: 300 });
+  }
+
   destroy(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
@@ -251,8 +258,8 @@ function linesKey(lines: SceneLine[]): string {
  * Carte de suivi en direct (web) : MapLibre GL JS chargé à la demande, style de secours aussitôt puis fond Cobalt
  * (`/map/cobalt-style.json`) dès qu'il arrive, marqueurs Cobalt entreprise / destinataire / livreur, itinéraire cobalt à
  * liseré blanc et chevrons rogné au fil de l'avancée, livreur qui glisse en continu d'un relevé GPS au suivant, caméra
- * qui suit jusqu'au premier geste de l'utilisateur ; zones approximatives (`zones`). `theme` (ancien fond sombre) est
- * accepté et ignoré : fond Cobalt partout.
+ * qui suit jusqu'au premier geste de l'utilisateur ; zones approximatives (`zones`). `zoomRef` : zoom
+ * impératif (`zoomBy`), compté comme un geste de l'utilisateur.
  */
 export function LiveMap({
   markers,
@@ -267,6 +274,7 @@ export function LiveMap({
   animationMs = 4000,
   allowRotate = false,
   maxZoom = 16.5,
+  zoomRef,
   style,
   testID,
 }: LiveMapProps) {
@@ -277,6 +285,18 @@ export function LiveMap({
   gestureRef.current = onUserGesture;
   const initialCenter = useRef<MapPoint>(fitPoints[0] ?? markers[0] ?? OUAGADOUGOU_CENTER);
   const allowRotateRef = useRef(allowRotate);
+  useImperativeHandle(
+    zoomRef,
+    (): LiveMapHandle => ({
+      zoomBy(delta: number) {
+        const ctrl = ctrlRef.current;
+        if (!ctrl || !delta) return;
+        gestureRef.current?.();
+        ctrl.zoomBy(delta);
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;

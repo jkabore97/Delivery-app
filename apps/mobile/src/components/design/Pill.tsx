@@ -2,32 +2,29 @@ import { isValidElement, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { touchTarget } from '../../lib/touchTarget';
-import { MIN_TOUCH, palette, shadows } from '../../theme';
+import { FOCUS_RING_INNER, FOCUS_SHAPE, MIN_TOUCH, palette, shadows } from '../../theme';
 import { Icon, type IconName } from './Icon';
-import type { Surface } from './RoundButton';
 
 /**
  * Tons Cobalt d'une pastille :
- * - cobalt (alias @deprecated green) : action principale, fond cobalt, texte blanc ;
+ * - neutral (défaut) : étiquette neutre, fond raised, texte encre (blanche si `floating`) ;
+ * - cobalt : action principale, fond cobalt, texte blanc ;
  * - red : action destructive (Refuser), fond rouge plein, texte blanc ;
- * - sun (alias @deprecated amber) : espèces, fond soleil, texte encre ;
+ * - sun : espèces, fond soleil, texte encre ;
  * - tint : choix actif, fond cobaltTint, texte cobaltText ;
  * - outline : action secondaire, blanc à filet fin, texte encre ;
- * - light : blanche (posée sur une carte, avec `floating`) ;
- * - dark (@deprecated, ancienne pastille sombre) : étiquette neutre, fond raised (blanche si `floating`).
+ * - light : blanche (posée sur une carte, avec `floating`).
  */
-export type PillTone = 'cobalt' | 'red' | 'sun' | 'tint' | 'outline' | 'light' | 'dark' | 'green' | 'amber';
+export type PillTone = 'neutral' | 'cobalt' | 'red' | 'sun' | 'tint' | 'outline' | 'light';
 
 const PILL_TONES: Record<PillTone, { bg: string; fg: string; border?: string }> = {
+  neutral: { bg: palette.raised, fg: palette.ink },
   cobalt: { bg: palette.cobalt, fg: palette.onCobalt },
-  green: { bg: palette.cobalt, fg: palette.onCobalt },
   red: { bg: palette.coralFill, fg: palette.white },
   sun: { bg: palette.sun, fg: palette.ink },
-  amber: { bg: palette.sun, fg: palette.ink },
   tint: { bg: palette.cobaltTint, fg: palette.cobaltText },
   outline: { bg: palette.white, fg: palette.ink, border: palette.line },
   light: { bg: palette.white, fg: palette.ink },
-  dark: { bg: palette.raised, fg: palette.ink },
 };
 
 export interface PillProps {
@@ -63,7 +60,7 @@ export interface PillProps {
 export function Pill({
   label,
   icon,
-  tone = 'dark',
+  tone = 'neutral',
   size = 'md',
   onPress,
   disabled,
@@ -79,22 +76,23 @@ export function Pill({
 }: PillProps) {
   const base = PILL_TONES[tone];
   // Étiquette neutre posée sur une carte : blanche (une pastille grise y serait terne).
-  const t = floating && tone === 'dark' ? PILL_TONES.light : base;
+  const t = floating && tone === 'neutral' ? PILL_TONES.light : base;
   const lg = size === 'lg';
   const iconSize = lg ? 20 : 16;
   const iconNode =
     typeof icon === 'string' ? <Icon name={icon as IconName} size={iconSize} color={t.fg} strokeWidth={2.4} /> : isValidElement(icon) ? icon : null;
   const inactive = !!disabled || !!loading;
-  const primary = tone === 'cobalt' || tone === 'green';
+  const primary = tone === 'cobalt';
   const body = (pressed: boolean) => (
     <View
+      {...(onPress ? FOCUS_SHAPE : null)}
       style={[
         styles.pill,
         lg ? styles.lg : styles.md,
         onPress && !lg ? styles.mdAction : null,
         { backgroundColor: t.bg },
         t.border ? { borderColor: t.border, borderWidth: 1 } : null,
-        t.border && !floating ? styles.hairShadow : null,
+        t.border && !floating ? shadows.hairline : null,
         floating && shadows.float,
         primary && lg && onPress && !inactive ? shadows.cobalt : null,
         inactive && styles.inactive,
@@ -137,6 +135,7 @@ export function Pill({
       hitSlop={touch.hitSlop}
       style={touch.style}
       testID={testID}
+      {...FOCUS_RING_INNER}
     >
       {({ pressed }) => body(pressed)}
     </Pressable>
@@ -162,24 +161,8 @@ export function chipLabel(label: string): string {
   return label === label.toUpperCase() && label !== label.toLowerCase() ? label.charAt(0) + label.slice(1).toLowerCase() : label;
 }
 
-/**
- * Puce d'état : pilule de 28 px, 13/700, fond teinté et texte assorti. `surface` : @deprecated (même rendu partout).
- * `dot` : petit point cobalt (recherche d'un livreur).
- */
-export function StatusChip({
-  label,
-  tone = 'grey',
-  dot = false,
-  surface: _surface,
-  testID,
-}: {
-  label: string;
-  tone?: ChipTone;
-  dot?: boolean;
-  /** @deprecated Cobalt n'a qu'un rendu (clair). */
-  surface?: Surface;
-  testID?: string;
-}) {
+/** Puce d'état : pilule de 28 px, 13/700, fond teinté et texte assorti. `dot` : petit point cobalt (recherche d'un livreur). */
+export function StatusChip({ label, tone = 'grey', dot = false, testID }: { label: string; tone?: ChipTone; dot?: boolean; testID?: string }) {
   const t = CHIP_TONES[tone];
   return (
     <View style={[styles.chip, { backgroundColor: t.bg }]} testID={testID}>
@@ -193,21 +176,18 @@ export function StatusChip({
 
 /**
  * Bouton rond posé sur une carte (retour, recentrer) : disque blanc de 48 px à ombre flottante, pictogramme encre ;
- * zone tactile de 56 px (lib/touchTarget.ts). `theme` : @deprecated (même rendu clair partout).
+ * zone tactile de 56 px (lib/touchTarget.ts).
  */
 export function MapIconButton({
   icon,
   onPress,
   accessibilityLabel,
-  theme: _theme,
   color = palette.ink,
   testID,
 }: {
   icon: IconName;
   onPress: () => void;
   accessibilityLabel: string;
-  /** @deprecated Cobalt n'a pas de carte sombre. */
-  theme?: Surface;
   /** Couleur du pictogramme (encre ; cobalt pour « Recentrer »). */
   color?: string;
   testID?: string;
@@ -221,9 +201,10 @@ export function MapIconButton({
       hitSlop={touch.hitSlop}
       style={touch.style}
       testID={testID}
+      {...FOCUS_RING_INNER}
     >
       {({ pressed }) => (
-        <View style={[styles.mapButton, shadows.float, pressed && styles.pressed]}>
+        <View {...FOCUS_SHAPE} style={[styles.mapButton, shadows.float, pressed && styles.pressed]}>
           <Icon name={icon} size={22} color={color} strokeWidth={2.3} />
         </View>
       )}
@@ -239,7 +220,6 @@ const styles = StyleSheet.create({
   text: { fontSize: 14, lineHeight: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
   textLg: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
   textWrap: { flexShrink: 1, paddingVertical: 8, lineHeight: 18 },
-  hairShadow: { boxShadow: '0 1px 2px rgba(12, 18, 34, 0.05)' },
   inactive: { opacity: 0.45 },
   pressed: { opacity: 0.88 },
   chip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, minHeight: 28, borderRadius: 14, paddingHorizontal: 11 },

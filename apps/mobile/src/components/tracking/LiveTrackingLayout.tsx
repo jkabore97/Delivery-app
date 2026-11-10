@@ -4,11 +4,11 @@ import { Text } from '../Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFollowCamera } from '../../hooks/useFollowCamera';
 import { trackingPadding } from '../../lib/mapCamera';
-import { MAP_PALETTES } from '../../lib/map/style';
-import { palette, radii, SHEET_RADIUS, shadows, spacing } from '../../theme';
+import { MAP_PALETTE } from '../../lib/map/style';
+import { alpha, palette, radii, SHEET_RADIUS, shadows, spacing } from '../../theme';
 import { useTabBarInset } from '../design/tabBarInset';
 import { LiveMap } from '../map/LiveMap';
-import type { MapPoint, MapTheme, SceneLine, SceneMarker, SceneZone } from '../map/types';
+import type { MapPoint, SceneLine, SceneMarker, SceneZone } from '../map/types';
 import { TrackingIcon, type IconName } from './TrackingIcon';
 
 /** Au-delà de cette largeur (ordinateur, tablette en paysage), la feuille passe à droite de la carte. */
@@ -23,16 +23,22 @@ const SIDE_SHEET_WIDTH = 420;
  * carte occupe la gauche et la feuille devient un panneau blanc à droite. Sous des onglets, la feuille garde la place de
  * la barre d'onglets flottante (son contenu n'est jamais dessous).
  *
- * Options (toutes facultatives) : `sheetTheme` (@deprecated : Cobalt n'a qu'une feuille, blanche ; 'dark' donne le
- * même rendu), `mapTheme` (transmis à la carte, voir LiveMap), `zones`
- * (cercles approximatifs), `aboveSheet` (élément centré posé sur la carte juste au-dessus de la feuille, ex. grand
+ * Options (toutes facultatives) : `zones` (cercles approximatifs), `aboveSheet` (élément centré posé sur la carte juste au-dessus de la feuille, ex. grand
  * bouton rond ; la caméra le garde dégagé), `insetBottom={false}` (écran au-dessus d'une barre d'onglets : pas de
  * marge de zone sûre sous la feuille), `mapVisible={false}` (carte démontée, ex. écran masqué : une seule carte
  * WebGL à la fois), `sheetHeader` (bloc fixé en haut de la feuille, au-dessus du contenu qui défile : titre et
  * action principale d'une liste), `sheetMaxRatio` (hauteur maximale de la feuille repliée, 0,56 de l'écran par défaut :
  * plus basse pour laisser plus de carte à une vue d'ensemble), `fitBottomMargin` (marge du cadrage au-dessus de la
- * feuille, 90 px par défaut). Sans bouton flottant à gauche ni à droite, `topCenter` dispose de toute la largeur. La
- * poignée de la feuille se touche sur 28 px de haut (32 sur le web) sans changer la place du contenu.
+ * feuille, 90 px par défaut), `fadeBottom` (fondu blanc au bas du contenu qui défile, au-dessus du pied `footer` ou
+ * de la barre d'onglets : rien n'y paraît coupé net ; `true` = 24 px, ou une hauteur ; la place du fondu est ajoutée
+ * sous le contenu), `recenterControl` ('auto' par défaut : pastille « Recentrer » dès que l'utilisateur déplace la
+ * carte ; 'always' : disque blanc « Recentrer » toujours visible en haut à droite, sous `topRight`).
+ *
+ * Barre du haut : `topLeft` / `topCenter` / `topRight`. Avec `topCenter`, les deux côtés ont la même largeur (52 px)
+ * pour que le milieu reste centré ; sans bouton à gauche ni à droite, `topCenter` dispose de toute la largeur. SANS
+ * `topCenter`, `topLeft` est large : il prend toute la place jusqu'au bouton de droite (ex. pastille « 3 en cours »
+ * alignée à gauche). La caméra garde les épingles sous la barre du haut (hauteur mesurée). La poignée de la feuille se
+ * touche sur 28 px de haut (32 sur le web) sans changer la place du contenu.
  */
 export function LiveTrackingLayout({
   markers,
@@ -50,12 +56,12 @@ export function LiveTrackingLayout({
   footer,
   aboveSheet,
   allowWide = false,
-  sheetTheme: _sheetTheme,
-  mapTheme = 'light',
   insetBottom = true,
   mapVisible = true,
   sheetMaxRatio = 0.56,
   fitBottomMargin,
+  fadeBottom = false,
+  recenterControl = 'auto',
   testID,
 }: {
   markers: SceneMarker[];
@@ -79,10 +85,6 @@ export function LiveTrackingLayout({
   aboveSheet?: ReactNode;
   /** Page affichée sur toute la largeur de la fenêtre (page publique) : panneau latéral sur grand écran. */
   allowWide?: boolean;
-  /** @deprecated Cobalt n'a qu'une feuille (blanche) : 'dark' donne le même rendu. */
-  sheetTheme?: 'light' | 'dark';
-  /** Fond de carte clair (défaut) ou sombre. */
-  mapTheme?: MapTheme;
   /** false : pas de marge de zone sûre sous la feuille (l'écran est au-dessus d'une barre d'onglets). */
   insetBottom?: boolean;
   /** false : carte démontée (fond uni à la place), le reste de l'écran reste affiché. */
@@ -94,6 +96,10 @@ export function LiveTrackingLayout({
    * courte au-dessus d'une feuille haute (vue d'ensemble), où les épingles ont besoin de toute la place.
    */
   fitBottomMargin?: number;
+  /** Fondu blanc au bas du contenu qui défile (au-dessus du pied fixé) : true = 24 px, ou sa hauteur en px. */
+  fadeBottom?: boolean | number;
+  /** « Recentrer » : 'auto' (pastille après un geste sur la carte) ou 'always' (disque toujours visible en haut à droite). */
+  recenterControl?: 'auto' | 'always';
   testID?: string;
 }) {
   const insets = useSafeAreaInsets();
@@ -102,25 +108,44 @@ export function LiveTrackingLayout({
   const [expanded, setExpanded] = useState(false);
   const [sheetHeight, setSheetHeight] = useState(Math.round(height * 0.45));
   const [aboveHeight, setAboveHeight] = useState(0);
+  const [topBarHeight, setTopBarHeight] = useState(0);
   const camera = useFollowCamera(stageKey, fitPoints.length);
   const maxSheet = Math.round(height * (expanded ? 0.86 : sheetMaxRatio));
   const wide = allowWide && width >= WIDE_LAYOUT_MIN_WIDTH;
   const mapWidth = wide ? width - SIDE_SHEET_WIDTH : width;
   const above = aboveSheet && !wide ? aboveHeight + ABOVE_SHEET_GAP : 0;
   const basePadding = trackingPadding(sheetHeight + above, insets.top, mapWidth);
+  // Haut du cadrage : sous la barre du haut (pastilles, boutons : hauteur mesurée), plus la hauteur d'une épingle
+  // (posée par sa pointe, son corps monte de ≈ 50 px) : une épingle en haut du cadre n'est jamais cachée.
+  const topPad = Math.max(basePadding.top, insets.top + spacing.sm + topBarHeight + PIN_CLEARANCE);
   const padding = wide
-    ? { top: insets.top + 104, right: 80, bottom: 80, left: 80 }
+    ? { top: Math.max(insets.top + 104, topPad), right: 80, bottom: 80, left: 80 }
     : fitBottomMargin === undefined
-      ? basePadding
-      : { ...basePadding, bottom: sheetHeight + above + fitBottomMargin };
+      ? { ...basePadding, top: topPad }
+      : { ...basePadding, top: topPad, bottom: sheetHeight + above + fitBottomMargin };
   const covered = wide ? 0 : sheetHeight;
-  const darkMap = mapTheme === 'dark';
   // Sous la barre d'onglets flottante : la feuille va jusqu'en bas de l'écran (la pilule flotte sur elle), son contenu
   // s'arrête au-dessus de la barre.
   const tabInset = useTabBarInset();
   const bottomPad = tabInset > 0 ? tabInset : insetBottom ? Math.max(insets.bottom, spacing.sm) : spacing.sm;
-  // Sans bouton à gauche ni à droite, la pastille du milieu dispose de toute la largeur (même centre).
-  const sideWidth = topLeft || topRight ? TOP_SIDE_WIDTH : 0;
+  const recenterAlways = recenterControl === 'always' && mapVisible;
+  const hasRight = !!topRight || recenterAlways;
+  // Sans bouton à gauche ni à droite, la pastille du milieu dispose de toute la largeur (même centre). Sans pastille
+  // du milieu, la place de gauche est large (jusqu'au bouton de droite).
+  const sideWidth = topLeft || hasRight ? TOP_SIDE_WIDTH : 0;
+  const wideLeft = !topCenter && !!topLeft;
+  const fade = fadeBottom === true ? SHEET_FADE : typeof fadeBottom === 'number' && fadeBottom > 0 ? fadeBottom : 0;
+  const recenterDisc = recenterAlways ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Recentrer la carte"
+      onPress={camera.recenter}
+      style={({ pressed }) => [styles.recenterDisc, shadows.float, pressed && styles.pressed]}
+      testID="recenter-button"
+    >
+      <TrackingIcon name="recenter" size={22} color={palette.cobalt} strokeWidth={2.3} />
+    </Pressable>
+  ) : null;
 
   return (
     <View
@@ -146,24 +171,39 @@ export function LiveTrackingLayout({
             animationMs={animationMs}
             allowRotate={allowRotate}
             {...(zones ? { zones } : {})}
-            {...(darkMap ? { theme: 'dark' as const } : {})}
           />
         ) : (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: MAP_PALETTES[mapTheme].background }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: MAP_PALETTE.background }]} />
         )}
       </View>
-      <View style={[styles.topBar, { top: insets.top + spacing.sm }, wide && { right: SIDE_SHEET_WIDTH + spacing.md }]} pointerEvents="box-none">
-        <View style={{ width: sideWidth }} pointerEvents="box-none">
-          {topLeft}
-        </View>
-        <View style={styles.topMiddle} pointerEvents="box-none">
-          {topCenter}
-        </View>
-        <View style={{ width: sideWidth, alignItems: 'flex-end' }} pointerEvents="box-none">
+      <View
+        style={[styles.topBar, { top: insets.top + spacing.sm }, wide && { right: SIDE_SHEET_WIDTH + spacing.md }]}
+        pointerEvents="box-none"
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h !== topBarHeight) setTopBarHeight(h);
+        }}
+      >
+        {wideLeft ? (
+          <View style={styles.topLeftWide} pointerEvents="box-none">
+            {topLeft}
+          </View>
+        ) : (
+          <>
+            <View style={{ width: sideWidth }} pointerEvents="box-none">
+              {topLeft}
+            </View>
+            <View style={styles.topMiddle} pointerEvents="box-none">
+              {topCenter}
+            </View>
+          </>
+        )}
+        <View style={[styles.topRight, { width: sideWidth }]} pointerEvents="box-none">
           {topRight}
+          {recenterDisc}
         </View>
       </View>
-      {camera.showRecenter && mapVisible ? (
+      {camera.showRecenter && mapVisible && !recenterAlways ? (
         <Pressable
           accessibilityRole="button"
           onPress={camera.recenter}
@@ -215,33 +255,25 @@ export function LiveTrackingLayout({
         {sheetHeader ? <View style={styles.sheetHeader}>{sheetHeader}</View> : null}
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, fade ? { paddingBottom: spacing.md + fade - spacing.sm } : null]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {children}
         </ScrollView>
-        {footer ? <View style={styles.footer}>{footer}</View> : null}
+        {footer || fade ? (
+          <View style={footer ? styles.footer : styles.footerEmpty}>
+            {fade ? <View pointerEvents="none" style={[styles.fade, { top: -fade, height: fade }]} testID="sheet-fade" /> : null}
+            {footer}
+          </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
-/**
- * Bouton rond flottant (retour, fermer) : disque blanc à ombre flottante. `icon` (pictogramme Yaar) de préférence ;
- * `label` : @deprecated, texte court affiché à la place (un caractère comme « ← » peut manquer à la police).
- */
-export function FloatingButton({
-  label,
-  icon,
-  onPress,
-  accessibilityLabel,
-}: {
-  label?: string;
-  icon?: IconName;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
+/** Bouton rond flottant (retour, fermer) : disque blanc de 44 px à ombre flottante, pictogramme encre. */
+export function FloatingButton({ icon, onPress, accessibilityLabel }: { icon: IconName; onPress: () => void; accessibilityLabel: string }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -249,7 +281,7 @@ export function FloatingButton({
       onPress={onPress}
       style={({ pressed }) => [styles.fab, shadows.float, pressed && styles.pressed]}
     >
-      {icon ? <TrackingIcon name={icon} size={22} color={palette.ink} strokeWidth={2.3} /> : <Text style={styles.fabText}>{label}</Text>}
+      <TrackingIcon name={icon} size={22} color={palette.ink} strokeWidth={2.3} />
     </Pressable>
   );
 }
@@ -266,7 +298,11 @@ export function FloatingChip({ children, testID }: { children: ReactNode; testID
 /** Écart entre le haut de la feuille et l'élément `aboveSheet` (la mention des données de la carte reste visible dessous). */
 const ABOVE_SHEET_GAP = 30;
 /** Largeur des emplacements des boutons flottants à gauche et à droite (quand il y en a). */
-const TOP_SIDE_WIDTH = 52;
+export const TOP_SIDE_WIDTH = 52;
+/** Hauteur d'une épingle au-dessus de sa pointe (+ marge) : place gardée sous la barre du haut par le cadrage. */
+const PIN_CLEARANCE = 56;
+/** Hauteur par défaut du fondu au bas de la feuille (`fadeBottom`). */
+export const SHEET_FADE = 24;
 /** Place de la poignée en haut de la feuille (8 + 5 + 4 px). */
 const HANDLE_SPACE = 17;
 /** Hauteur de la zone à toucher de la poignée (déborde de 11 px sur le haut du contenu, qui n'y est jamais actif). */
@@ -281,10 +317,13 @@ const styles = StyleSheet.create({
   sideSheet: {
     width: SIDE_SHEET_WIDTH,
     backgroundColor: palette.card,
-    boxShadow: '-8px 0 32px rgba(12, 18, 34, 0.08)',
+    boxShadow: `-8px 0 32px ${alpha(palette.ink, 0.08)}`,
   },
   topBar: { position: 'absolute', left: spacing.md, right: spacing.md, flexDirection: 'row', alignItems: 'center' },
   topMiddle: { flex: 1, alignItems: 'center' },
+  topLeftWide: { flex: 1, minWidth: 0, alignItems: 'flex-start', paddingRight: spacing.sm },
+  topRight: { alignItems: 'flex-end', gap: spacing.sm },
+  recenterDisc: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   fab: {
     width: 44,
     height: 44,
@@ -293,7 +332,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fabText: { fontSize: 20, fontWeight: '800', color: palette.ink },
   chip: {
     backgroundColor: palette.card,
     borderRadius: radii.pill,
@@ -330,11 +368,15 @@ const styles = StyleSheet.create({
     borderTopRightRadius: SHEET_RADIUS,
   },
   handleSpace: { height: HANDLE_SPACE },
-  handleZone: { position: 'absolute', top: 0, left: 0, right: 0, height: HANDLE_TOUCH, zIndex: 2, alignItems: 'center', paddingTop: 8 },
+  // Coins de la feuille : l'anneau de focus du clavier (web) suit le haut arrondi de la feuille.
+  handleZone: { position: 'absolute', top: 0, left: 0, right: 0, height: HANDLE_TOUCH, zIndex: 2, alignItems: 'center', paddingTop: 8, borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS },
   handleZoneWeb: { top: -HANDLE_ABOVE_WEB, height: HANDLE_TOUCH + HANDLE_ABOVE_WEB, paddingTop: 8 + HANDLE_ABOVE_WEB },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: palette.handle },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
+  footerEmpty: { height: 0 },
+  // Fondu blanc (web et nouvelle architecture, Android 9+ : backgroundImage) au-dessus du pied.
+  fade: { position: 'absolute', left: 0, right: 0, backgroundImage: `linear-gradient(to bottom, ${alpha(palette.card, 0)}, ${palette.card})` },
   sheetHeader: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
 });

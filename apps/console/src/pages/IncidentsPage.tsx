@@ -22,6 +22,7 @@ import {
   Loading,
   Pagination,
   ReasonDialog,
+  incidentTypeLabel,
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback } from '../hooks/useAsync';
@@ -98,7 +99,7 @@ export function IncidentsPage() {
             <option value="">Tous</option>
             {INCIDENT_TYPES.map((t) => (
               <option key={t} value={t}>
-                {LABELS.incidentType[t]}
+                {incidentTypeLabel(t)}
               </option>
             ))}
           </FilterSelect>
@@ -109,9 +110,9 @@ export function IncidentsPage() {
           )}
         </div>
         <ErrorBanner message={error ?? incidents.error} />
-        {incidents.loading && !incidents.data ? (
-          <Loading />
-        ) : !incidents.data || incidents.data.items.length === 0 ? (
+        {!incidents.data ? (
+          incidents.loading ? <Loading /> : null
+        ) : incidents.data.items.length === 0 ? (
           <Empty icon="check">Aucun incident.</Empty>
         ) : (
           <ul className="incident-list">
@@ -178,7 +179,7 @@ export function IncidentsPage() {
                           Prendre en charge
                         </button>
                       )}
-                      <button type="button" className="btn btn-small btn-primary" onClick={() => setResolving(i)}>
+                      <button type="button" className="btn btn-small btn-soft" onClick={() => setResolving(i)}>
                         <Icon name="check" size={16} />
                         Marquer résolu
                       </button>
@@ -200,7 +201,7 @@ export function IncidentsPage() {
       </Card>
       {resolving && (
         <ReasonDialog
-          title={`Résoudre : ${LABELS.incidentType[resolving.type]}`}
+          title={`Résoudre\u00a0: ${incidentTypeLabel(resolving.type)}`}
           label="Note de résolution"
           placeholder="Ex. : livreur dépanné, entreprise remboursée"
           confirmLabel="Marquer résolu"

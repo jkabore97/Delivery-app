@@ -91,10 +91,15 @@ export function PendingOrdersPanel({
                       title={`Offre en cours à ${o.currentOffer.driverName ?? 'un livreur'} (${offerLeft} s) · cliquer pour forcer`}
                       onClick={() => setAssigning(o)}
                     >
-                      Auto… {offerLeft}s
+                      Auto… {offerLeft}{'\u00a0'}s
                     </button>
                   ) : (
-                    <button type="button" className="btn btn-small btn-primary" onClick={() => setAssigning(o)}>
+                    // Cobalt plein seulement pour une attente longue (l'urgence de la file) ; sinon bouton doux.
+                    <button
+                      type="button"
+                      className={`btn btn-small ${long ? 'btn-primary' : 'btn-soft'}`}
+                      onClick={() => setAssigning(o)}
+                    >
                       Affecter
                     </button>
                   )}

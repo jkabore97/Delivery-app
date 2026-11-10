@@ -19,6 +19,7 @@ import {
   Loading,
   Modal,
   Pagination,
+  TableWrap,
   Vehicle,
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
@@ -28,6 +29,13 @@ import { POLL_MS } from '../config';
 import { usePolling, useReconnect, useSocketEvent } from '../realtime/RealtimeContext';
 
 type CashDriver = CashOverviewDto['drivers'][number];
+
+/** Montant signé d'un mouvement de caisse : « +12 000 FCFA », « −5 000 FCFA » (vrai signe moins). */
+export function signedFcfa(amount: number): string {
+  if (amount > 0) return `+${formatFcfa(amount)}`;
+  if (amount < 0) return `\u2212${formatFcfa(-amount)}`;
+  return formatFcfa(0);
+}
 
 /** Valide un versement : entier > 0 et pas plus que le cash détenu. */
 export function validateDeposit(amountInput: string, cashHeld: number): string | null {
@@ -76,7 +84,9 @@ function DepositDialog({ driver, onClose, onDone }: { driver: CashDriver; onClos
         <label htmlFor="deposit-amount">Montant versé (FCFA)</label>
         <span className="input-suffix">
           <input id="deposit-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
-          <span>FCFA</span>
+          <label htmlFor="deposit-amount" className="input-unit">
+            FCFA
+          </label>
         </span>
         <label htmlFor="deposit-note">Note</label>
         <input
@@ -147,9 +157,9 @@ export function BusinessBalances({
         rien n’est marqué comme payé. Pour la comptabilité, utilisez l’export des livraisons (colonne « du_entreprise »).
       </Banner>
       <ErrorBanner message={error} onRetry={onReload} />
-      {loading && !rows ? (
-        <Loading />
-      ) : !rows || rows.length === 0 ? (
+      {!rows ? (
+        loading ? <Loading /> : null
+      ) : rows.length === 0 ? (
         <Empty icon="check">Aucun montant dû aux entreprises.</Empty>
       ) : (
         <>
@@ -171,7 +181,7 @@ export function BusinessBalances({
               <div className="kpi-value">{totals.deliveries}</div>
             </article>
           </div>
-          <div className="table-wrap">
+          <TableWrap label="Montants dus par entreprise">
             <table className="table" aria-label="Montants dus par entreprise">
               <thead>
                 <tr>
@@ -208,13 +218,13 @@ export function BusinessBalances({
                       <DateTimeCell iso={r.lastDeliveredAt} />
                     </td>
                     <td className="num">
-                      <span className="sunpill sunpill-sm">{formatFcfa(r.owedTotal)}</span>
+                      <span className="sunpill sunpill-sm sunpill-soft">{formatFcfa(r.owedTotal)}</span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </>
       )}
     </Card>
@@ -323,12 +333,12 @@ export function CashPage() {
           </label>
         }
       >
-        {overview.loading && !overview.data ? (
-          <Loading />
+        {!overview.data ? (
+          overview.loading ? <Loading /> : null
         ) : drivers.length === 0 ? (
           <Empty icon="check">Aucun livreur.</Empty>
         ) : (
-          <div className="table-wrap">
+          <TableWrap label="Soldes des livreurs">
             <table className="table">
               <thead>
                 <tr>
@@ -347,7 +357,7 @@ export function CashPage() {
                     <tr key={d.driverId} className={d.cashBlocked ? 'row-alert' : ''}>
                       <td>
                         <span className="person">
-                          <Avatar name={d.name} size="sm" tone="sun" />
+                          <Avatar name={d.name} size="sm" />
                           <span className="person-text">
                             <Link to={`/livreurs/${d.driverId}`} className="person-name">
                               {d.name ?? 'Sans nom'}
@@ -395,7 +405,7 @@ export function CashPage() {
                           </button>
                           <button
                             type="button"
-                            className="btn btn-small btn-primary"
+                            className={`btn btn-small ${d.cashBlocked ? 'btn-primary' : 'btn-soft'}`}
                             disabled={d.cashHeld <= 0}
                             onClick={() => setDepositFor(d)}
                           >
@@ -408,7 +418,7 @@ export function CashPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
       </Card>
       <BusinessBalances
@@ -437,12 +447,12 @@ export function CashPage() {
         }
       >
         <ErrorBanner message={ledger.error} />
-        {ledger.loading && !ledger.data ? (
-          <Loading />
-        ) : !ledger.data || ledger.data.items.length === 0 ? (
+        {!ledger.data ? (
+          ledger.loading ? <Loading /> : null
+        ) : ledger.data.items.length === 0 ? (
           <Empty icon="history">Aucun mouvement.</Empty>
         ) : (
-          <div className="table-wrap">
+          <TableWrap label="Mouvements de caisse">
             <table className="table table-compact">
               <thead>
                 <tr>
@@ -462,7 +472,7 @@ export function CashPage() {
                     </td>
                     <td className="strong">{e.driverName ?? '-'}</td>
                     <td>
-                      {e.type === 'COLLECTION' ? <Badge tone="sun">Encaissement</Badge> : <Badge tone="green">Versement</Badge>}
+                      {e.type === 'COLLECTION' ? <Badge tone="orange">Encaissement</Badge> : <Badge tone="green">Versement</Badge>}
                     </td>
                     <td>
                       {e.orderId ? (
@@ -473,16 +483,13 @@ export function CashPage() {
                       {e.note ?? ''}
                       {e.recordedBy && <div className="muted small">par {e.recordedBy.name ?? 'contrôleur'}</div>}
                     </td>
-                    <td className={`num ${e.amount < 0 ? 'tone-green' : ''}`}>
-                      {e.amount > 0 ? '+' : ''}
-                      {formatFcfa(e.amount)}
-                    </td>
+                    <td className={`num ${e.amount < 0 ? 'tone-green' : ''}`}>{signedFcfa(e.amount)}</td>
                     <td className="num muted">{formatFcfa(e.balanceAfter)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
         {ledger.data && (
           <Pagination page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} onPage={setPage} />

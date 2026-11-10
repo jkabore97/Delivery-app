@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,6 +15,7 @@ import {
 import { Text, TextInput } from './Text';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { MIN_TOUCH, palette, radii, shadows, spacing, typography } from '../theme';
+import { useFitFontSize } from './design/FitAmount';
 import { useTabBarInset } from './design/tabBarInset';
 import { TrackingIcon, type IconName } from './tracking/TrackingIcon';
 
@@ -202,7 +204,7 @@ export function Button({
         ? { backgroundColor: palette.white, borderColor: palette.line }
         : { backgroundColor: 'transparent', borderColor: 'transparent' };
   const textColor = textColorProp ?? (variant === 'solid' ? palette.white : variant === 'outline' ? palette.ink : color);
-  const glow = variant === 'solid' && color === palette.cobalt && !inactive ? shadows.cobalt : variant === 'outline' ? styles.buttonHairShadow : null;
+  const glow = variant === 'solid' && color === palette.cobalt && !inactive ? shadows.cobalt : variant === 'outline' ? shadows.hairline : null;
   return (
     <Pressable
       testID={testID}
@@ -366,11 +368,18 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
-/** Tuile chiffrée (KPI) : grand nombre 800 tabulaire, libellé 13/600 dessous. */
+/**
+ * Tuile chiffrée (KPI) : grand nombre 800 tabulaire, libellé 13/600 dessous. Le nombre n'est jamais coupé : il
+ * rapetisse (jusqu'à 16 px) pour tenir dans la tuile (`useFitFontSize`).
+ */
 export function Stat({ value, label, color }: { value: string; label: string; color?: string }) {
+  const fit = useFitFontSize(value, 24, 16);
   return (
     <View style={[styles.stat, shadows.tile]}>
-      <Text style={[styles.statValue, color ? { color } : null]} numberOfLines={1} adjustsFontSizeToFit>
+      <Text
+        onLayout={fit.onLayout}
+        style={[styles.statValue, { fontSize: fit.fontSize, lineHeight: Math.round(fit.fontSize * 1.25) }, color ? { color } : null]}
+      >
         {value}
       </Text>
       <Text style={styles.statLabel}>{label}</Text>
@@ -451,7 +460,6 @@ export const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.45 },
   buttonPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
   ghostPressed: { backgroundColor: palette.raised },
-  buttonHairShadow: { boxShadow: '0 1px 2px rgba(12, 18, 34, 0.05)' },
   buttonText: { fontSize: 16, lineHeight: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
   buttonTextSmall: { fontSize: 14, lineHeight: 18 },
   buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
@@ -480,8 +488,9 @@ export const styles = StyleSheet.create({
     backgroundColor: palette.raised,
   },
   inputMultiline: { paddingTop: 14, paddingBottom: 14, minHeight: 96, textAlignVertical: 'top' },
-  // Anneau de focus : la bordure cobalt de 2 px (6,1:1 sur blanc) remplace le contour du navigateur.
-  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0 },
+  // Anneau de focus : la bordure cobalt de 2 px (6,1:1 sur blanc). Web : aucun contour du navigateur (Chrome dessine le
+  // sien en « auto », largeur ignorée) ni l'anneau global de public/index.html : `outlineStyle: 'none'`.
+  inputFocused: { borderColor: palette.cobalt, backgroundColor: palette.white, outlineWidth: 0, ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : null) },
   inputError: { borderColor: palette.coralText },
   badge: { minHeight: 24, paddingHorizontal: 10, borderRadius: 12, alignSelf: 'flex-start', justifyContent: 'center' },
   badgeText: { fontSize: 12, lineHeight: 16, fontWeight: '700' },

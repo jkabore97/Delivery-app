@@ -11,19 +11,16 @@ import { Banner, Button, Field } from './ui';
  * « Signaler un problème » sur une commande (POST /orders/:id/dispute).
  * Utilisable par toute partie qui voit la commande : client, vendeur, livreur affecté. Replié par défaut (un simple
  * lien discret qui déplie le formulaire dans un bloc rempli : il est posé dans une feuille ou une carte blanche, où
- * Cobalt n'empile pas de carte blanche). `tone` : @deprecated (même rendu clair Cobalt).
+ * Cobalt n'empile pas de carte blanche).
  */
 export function DisputeBox({
   orderId,
   color,
   placeholder = 'Décrivez le problème',
-  tone: _tone,
 }: {
   orderId: string;
   color?: string;
   placeholder?: string;
-  /** @deprecated */
-  tone?: 'light' | 'dark';
 }) {
   const api = useApi();
   const [open, setOpen] = useState(false);

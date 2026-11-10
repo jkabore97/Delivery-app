@@ -145,7 +145,7 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
       // testID uniques, montant exact sous `-value` (vérifications de bout en bout).
       expect(ids.filter((id) => id === c.id)).toHaveLength(1);
       expect(ids.filter((id) => id === `${c.id}-value`)).toHaveLength(1);
-      expect((r.getByTestId(`${c.id}-value`).props.children as string).replace(/\D/g, '')).toBe(c.amount);
+      expect(r.getByTestId(`${c.id}-value`)).toHaveTextContent(new RegExp(`^${c.amount.replace(/\B(?=(\d{3})+$)/g, '\u202f')}\u202fFCFA$`), { normalizer: (t: string) => t });
       await r.unmount();
     }
   });

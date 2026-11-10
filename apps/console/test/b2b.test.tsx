@@ -76,7 +76,13 @@ describe('Fiche d’une livraison d’entreprise', () => {
     expect(screen.getByText('Livreur en route vers le retrait (Tech Plus Électronique)')).toBeInTheDocument();
     const leg = screen.getByRole('list', { name: 'Étape en cours' });
     expect(norm(leg.textContent)).toMatch(/Itinéraire routier : 2,6 km restants/);
-    expect(norm(leg.textContent)).toMatch(/Destinataire : Arrivée vers \d{2}:\d{2} · dans 49 min/);
+    // L'heure d'arrivée est écrite en très grand : aucune précision ne la répète.
+    expect(norm(leg.textContent)).not.toMatch(/Destinataire : Arrivée/);
+    expect(screen.getByText('dans 49 min')).toBeInTheDocument();
+    // Le n° et le statut sont dans le titre : la puce de la tuile héros dit « En direct » ; l'étape en cours est annoncée.
+    const hero = screen.getByRole('region', { name: 'Livraison en cours' });
+    expect(within(hero).getByText('En direct')).toHaveClass('hero-chip');
+    expect(within(hero).getByRole('list', { name: 'Avancement' }).querySelector('[aria-current="step"]')).toHaveTextContent('Colis récupéré (en cours)');
 
     // Montants : frais payés par l'entreprise au retrait, marchandise encaissée pour elle à la livraison.
     expect(kv('Frais de livraison')).toBe('5 800 FCFA · payés par : Entreprise au retrait');
@@ -152,7 +158,9 @@ describe('Fiche d’une livraison d’entreprise', () => {
     await u.click(screen.getByRole('button', { name: 'Annuler la livraison' }));
     dialog = screen.getByRole('dialog');
     expect(norm(dialog.textContent)).toContain('Les frais encaissés au retrait (5 800 FCFA) restent dans la caisse du livreur');
-    await u.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    // « Retour » ferme sans annuler (pas deux boutons « Annuler… » côte à côte).
+    expect(within(dialog).queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
+    await u.click(within(dialog).getByRole('button', { name: 'Retour' }));
     await u.click(screen.getByRole('button', { name: 'Réinitialiser le code' }));
     await u.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Réinitialiser' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -206,7 +214,8 @@ describe('Liste des livraisons', () => {
     expect(cells[1]).toBe('Tech Plus Électronique');
     expect(cells[2]).toBe('Bureau Faso Conseil entrepriseDassasgho, route de Fada');
     expect(cells[3]).toBe('Livreur en routeAbdoul T.');
-    expect(cells[5]).toBe('90 800 FCFAfrais 5 800 FCFA · marchandise 85 000 FCFA');
+    // Détail sur une seule ligne, sans répéter l'unité du total.
+    expect(cells[5]).toBe('90 800 FCFAfrais 5 800 · marchandise 85 000');
     expect(cells[6]).toMatch(/^49 minvers \d{2}:\d{2}$/);
     const legacy = screen.getByRole('link', { name: '#990' }).closest('tr') as HTMLElement;
     expect(norm(legacy.textContent)).toContain('commande repas (ancien)');

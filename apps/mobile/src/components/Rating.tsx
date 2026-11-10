@@ -50,19 +50,16 @@ export function Stars({
 
 /**
  * Carte de notation après livraison (client → livreur, livreur → client) : carte blanche Cobalt, étoiles, commentaire,
- * « Envoyer ma note ». `tone` : @deprecated (même rendu clair).
+ * « Envoyer ma note ».
  */
 export function RatingCard({
   title,
   onSubmit,
   color = palette.cobalt,
-  tone: _tone,
 }: {
   title: string;
   onSubmit: (score: number, comment: string) => Promise<void>;
   color?: string;
-  /** @deprecated */
-  tone?: 'light' | 'dark';
 }) {
   const [score, setScore] = useState(5);
   const [comment, setComment] = useState('');

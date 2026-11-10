@@ -49,22 +49,13 @@ export function formatWaiting(totalSeconds: number): string {
 /** « il y a 2 min » à partir d'une date ISO. */
 export function formatRelative(iso: string, now: Date = new Date()): string {
   const diffSec = Math.round((now.getTime() - new Date(iso).getTime()) / 1000);
-  if (diffSec < 45) return "à l'instant";
+  if (diffSec < 45) return 'à l’instant';
   const min = Math.round(diffSec / 60);
   if (min < 60) return `il y a ${min} min`;
   const h = Math.round(min / 60);
   if (h < 24) return `il y a ${h} h`;
   const days = Math.round(h / 24);
   return `il y a ${days} j`;
-}
-
-/** Montant compact pour les cartes KPI : 1 840 000 -> « 1,84 M F », 90 500 -> « 90 500 F ». */
-export function formatFcfaCompact(amount: number): string {
-  if (Math.abs(amount) >= 1_000_000) {
-    const v = (amount / 1_000_000).toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
-    return `${v} M F`;
-  }
-  return formatFcfa(amount).replace(' FCFA', ' F');
 }
 
 /**
@@ -98,5 +89,5 @@ export function formatPhone(phone: string | null | undefined): string {
 
 export function formatKm(km: number | null | undefined): string {
   if (km === null || km === undefined) return '-';
-  return `${km.toFixed(1).replace('.', ',')} km`;
+  return `${km.toFixed(1).replace('.', ',')}\u00a0km`;
 }

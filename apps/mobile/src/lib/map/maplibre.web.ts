@@ -1,5 +1,4 @@
 import type { GeoJSONSource, Map as MlMap, StyleSpecification } from 'maplibre-gl';
-import type { MapTheme } from '../../components/map/types';
 import { CHEVRON_IMAGE_ID, CHEVRON_SPACING_PX, chevronImage } from './chevron';
 import { MAP_PALETTE, mapThemeConfig, MAX_PIXEL_RATIO, resolveMapStyleUrl } from './style';
 import { initialMapStyle, RemoteStyleLoader, sessionStyleCache, type StyleJson } from './styleLoader';
@@ -82,8 +81,6 @@ export interface BaseMapOptions {
   allowRotate?: boolean;
   /** Style prêt (secours au premier affichage, puis distant dès qu'il arrive) : (ré)ajouter les couches de l'application. */
   onStyleReady?: (map: MlMap, fallback: boolean) => void;
-  /** @deprecated Plus de fond sombre : accepté, ignoré (fond Cobalt). */
-  theme?: MapTheme;
   /** Remplace l'URL du style distant (défaut : style Cobalt, MAP_STYLE_URL). */
   styleUrl?: string;
 }
@@ -91,8 +88,6 @@ export interface BaseMapOptions {
 export interface BaseMap {
   map: MlMap;
   usingFallback(): boolean;
-  /** @deprecated Plus de fond sombre : sans effet (une seule apparence, Cobalt). */
-  setTheme(theme: MapTheme): void;
   destroy(): void;
 }
 
@@ -187,9 +182,6 @@ export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMa
   return {
     map,
     usingFallback: () => !remote,
-    setTheme() {
-      /* une seule apparence (Cobalt) : rien à changer */
-    },
     destroy() {
       destroyed = true;
       loader?.dispose();
@@ -237,9 +229,8 @@ const width = (at14: number) => ['interpolate', ['linear'], ['zoom'], 10, at14 *
  * - étape à venir (`pending`) : encre à 30 % en pointillés ronds ;
  * - lignes droites (`dashed`) : cobalt en tirets de 2,5 px ;
  * - itinéraire (`route`) : ombre douce, liseré blanc de 2 px, ligne cobalt de 6 px, petits chevrons blancs.
- * `theme` est accepté pour compatibilité et ignoré.
  */
-export function ensureLineLayers(map: MlMap, _theme?: MapTheme): void {
+export function ensureLineLayers(map: MlMap): void {
   const c = MAP_PALETTE;
   if (!map.getSource(ZONES_SOURCE)) map.addSource(ZONES_SOURCE, { type: 'geojson', data: EMPTY_ZONES });
   if (!map.getSource(LINES_SOURCE)) map.addSource(LINES_SOURCE, { type: 'geojson', data: EMPTY });

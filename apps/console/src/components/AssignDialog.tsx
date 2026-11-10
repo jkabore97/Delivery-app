@@ -4,7 +4,7 @@ import { errorMessage } from '../api/client';
 import { useApi } from '../auth/AuthContext';
 import { useAsync } from '../hooks/useAsync';
 import { formatKm, formatPhone } from '../lib/format';
-import { Avatar, Badge, Empty, ErrorBanner, Loading, Modal } from './ui';
+import { Avatar, Badge, Empty, ErrorBanner, Loading, Modal, TableWrap } from './ui';
 
 /** Raison pour laquelle un livreur ne peut pas être affecté (null = affectable). */
 export function candidateBlocker(c: DriverCandidateDto): string | null {
@@ -58,7 +58,7 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
       ) : candidates.data && candidates.data.length === 0 ? (
         <Empty icon="users">Aucun livreur {LABELS.vehicleType[vehicleType].toLowerCase()} approuvé disponible.</Empty>
       ) : (
-        <div className="table-wrap">
+        <TableWrap label="Livreurs candidats">
         <table className="table">
           <thead>
             <tr>
@@ -76,7 +76,7 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
                 <tr key={c.id}>
                   <td>
                     <span className="person">
-                      <Avatar name={c.name} size="sm" tone="sun" />
+                      <Avatar name={c.name} size="sm" />
                       <span className="person-name">{c.name ?? 'Sans nom'}</span>
                     </span>
                   </td>
@@ -98,13 +98,18 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
                       {c.isBusy && <Badge tone="blue">En course</Badge>}
                       {c.cashBlocked && <Badge tone="red">Plafond cash</Badge>}
                     </span>
+                    {blocker && (
+                      <span className="blocker" id={`blocker-${c.id}`}>
+                        {blocker}
+                      </span>
+                    )}
                   </td>
                   <td className="cell-action">
                     <button
                       type="button"
                       className="btn btn-small btn-primary"
                       disabled={blocker !== null || busyId !== null}
-                      title={blocker ?? undefined}
+                      aria-describedby={blocker ? `blocker-${c.id}` : undefined}
                       onClick={() => void assign(c.id)}
                     >
                       {busyId === c.id ? 'Affectation…' : 'Affecter'}
@@ -115,11 +120,11 @@ export function AssignDialog({ orderId, orderNumber, vehicleType, reassign, onCl
             })}
           </tbody>
         </table>
-        </div>
+        </TableWrap>
       )}
       <p className="hint">
-        Un livreur hors ligne peut être affecté si vous l’avez joint par téléphone. Les offres automatiques en cours sont
-        retirées.
+        Seul un livreur en ligne, libre et sous le plafond de cash peut être affecté : un livreur hors ligne doit d’abord se
+        connecter (appelez-le). Les offres automatiques en cours sont retirées.
       </p>
     </Modal>
   );

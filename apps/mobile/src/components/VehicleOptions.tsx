@@ -5,9 +5,6 @@ import { palette, spacing } from '../theme';
 import { Text } from './Text';
 import { TrackingIcon, type IconName } from './tracking/TrackingIcon';
 
-/** @deprecated Émojis des véhicules : remplacés par les pictogrammes dessinés `VEHICLE_ICON` (Cobalt n'a pas d'émoji). */
-export const VEHICLE_EMOJI: Record<VehicleType, string> = { BIKE: '🚲', MOTO: '🏍️', CAR: '🚗' };
-
 /** Pictogramme de chaque véhicule (vélo, moto, voiture de profil). */
 export const VEHICLE_ICON: Record<VehicleType, IconName> = { BIKE: 'bike', MOTO: 'moto', CAR: 'car' };
 

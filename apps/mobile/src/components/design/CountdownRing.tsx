@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useNow } from '../../hooks/useNow';
 import { COUNTDOWN_WARNING_SECONDS, countdownColor, isCountdownWarning, remainingFraction, ringArcPath, secondsLeft } from '../../lib/countdown';
-import { palette } from '../../theme';
+import { alpha, palette } from '../../theme';
 
 export interface CountdownState {
   /** Secondes restantes (arrondi supérieur, 0 à la fin). */
@@ -57,7 +57,7 @@ export function CountdownRing({
   strokeWidth = 8,
   color = palette.cobalt,
   warningColor = palette.coralFill,
-  trackColor = 'rgba(12, 18, 34, 0.10)',
+  trackColor = alpha(palette.ink, 0.1),
   warningSeconds = COUNTDOWN_WARNING_SECONDS,
   fps = 15,
   children,

@@ -94,7 +94,10 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
               setDraft((d) => ({ ...d, [key]: e.target.value }));
             }}
           />
-          <span>{suffix}</span>
+          {/* Second libellé du champ : lu avec lui (« Prise en charge FCFA »), un clic sur l'unité y place le curseur. */}
+          <label htmlFor={id} className="input-unit">
+            {suffix}
+          </label>
         </span>
         {err && <span className="field-error">{err}</span>}
       </div>
@@ -129,7 +132,7 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
       }
       aside={<span className="tnum">Modifié le {formatDateTime(rule.updatedAt)}</span>}
     >
-      <form className="form" onSubmit={submit} aria-label={`Tarif ${LABELS.vehicleType[rule.vehicleType]}`}>
+      <form className="form rule-form" onSubmit={submit} aria-label={`Tarif ${LABELS.vehicleType[rule.vehicleType]}`}>
         <div className="rule-fields">
           {field('baseFare', 'Prise en charge', 'FCFA')}
           {field('perKm', 'Prix par km', 'FCFA/km')}
@@ -155,7 +158,7 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
                 const p = computeDeliveryPrice({ vehicleType: rule.vehicleType, ...parsed.value }, km);
                 return (
                   <li key={km} title={previewLine(rule.vehicleType, parsed.value, km)}>
-                    <span className="tnum">{km} km</span>
+                    <span className="tnum">{km}\u00a0km</span>
                     <span>
                       <b>{formatFcfa(p.deliveryFee)}</b>
                       <span className="tnum"> · livreur {formatFcfa(p.driverEarning)}</span>
@@ -196,8 +199,8 @@ export function PricingPage() {
         supérieurs. Les changements s’appliquent aux nouveaux devis et livraisons.
       </p>
       <ErrorBanner message={rules.error} onRetry={() => rules.reload()} />
-      {rules.loading && !rules.data ? (
-        <Loading />
+      {!rules.data ? (
+        rules.loading ? <Loading /> : null
       ) : (
         <div className="grid-3">
           {(rules.data ?? []).map((r) => (

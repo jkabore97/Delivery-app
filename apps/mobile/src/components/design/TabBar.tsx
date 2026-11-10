@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Keyboard, Platform, Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { Text } from '../Text';
-import { palette } from '../../theme';
+import { alpha, palette } from '../../theme';
 import { Icon, type IconName } from './Icon';
 import { TAB_BAR_HEIGHT, tabBarBottom } from './tabBarInset';
 
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     padding: 6,
     flexDirection: 'row',
     gap: 4,
-    boxShadow: '0 0 0 1px rgba(12, 18, 34, 0.04), 0 10px 30px rgba(12, 18, 34, 0.16)',
+    boxShadow: `0 0 0 1px ${alpha(palette.ink, 0.04)}, 0 10px 30px ${alpha(palette.ink, 0.16)}`,
     ...(Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version < 28 ? { elevation: 10 } : null),
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 26, minWidth: 0 },

@@ -1,14 +1,13 @@
 import { Linking, StyleSheet } from 'react-native';
 import { Text } from '../components/Text';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { BUSINESS_ACCENT, ORANGE_INK, ORANGE_TEXT } from '../components/business/accent';
 import { CountdownRing } from '../components/design/CountdownRing';
 import { PackageCard } from '../components/design/PackageCard';
 import { Pill } from '../components/design/Pill';
 import { RoundButton } from '../components/design/RoundButton';
 import { AmountRow } from '../components/design/Surfaces';
 import { touchTarget } from '../lib/touchTarget';
-import { colors, dark, MIN_TOUCH, palette } from '../theme';
+import { alpha, MIN_TOUCH, palette } from '../theme';
 
 /** Contraste WCAG entre deux couleurs #RRGGBB. */
 function contrast(a: string, b: string): number {
@@ -49,26 +48,22 @@ describe('couleurs Cobalt : petits textes à 4,5:1 au moins là où ils sont pos
     expect(contrast(palette.white, palette.coral)).toBeLessThan(4.5);
   });
 
-  it('anciens jetons (écrans pas encore redessinés) : remappés en Cobalt clair, toujours lisibles', () => {
-    for (const bg of [dark.background, dark.surface, dark.raised]) {
-      for (const fg of [dark.text, dark.textMuted, dark.textFaint, dark.green, dark.amber, dark.red]) {
-        expect([fg, bg, contrast(fg, bg) >= 4.5]).toEqual([fg, bg, true]);
-      }
-    }
-    // Textes posés sur les fonds doux de leur famille, et sur les fonds pleins.
-    expect(contrast(dark.green, dark.greenSoft)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(dark.red, dark.redSoft)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(dark.amber, dark.amberSoft)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(dark.greenInk, dark.green)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast('#FFFFFF', dark.redFill)).toBeGreaterThanOrEqual(4.5);
-    for (const fg of [colors.text, colors.textMuted, colors.green, colors.red, colors.orange, colors.blue]) {
-      for (const bg of [colors.white, colors.background]) expect([fg, bg, contrast(fg, bg) >= 4.5]).toEqual([fg, bg, true]);
-    }
-    expect(contrast(colors.red, colors.redLight)).toBeGreaterThanOrEqual(4.5);
-    // Accent de l'entreprise : cobalt, texte blanc dessus.
-    expect(BUSINESS_ACCENT).toBe(palette.cobalt);
-    expect(contrast(ORANGE_INK, BUSINESS_ACCENT)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(ORANGE_TEXT, colors.white)).toBeGreaterThanOrEqual(4.5);
+  it('anneau de focus du clavier (public/index.html) : cobalt sur blanc et canvas, blanc sur cobalt (3:1 au moins)', () => {
+    expect(contrast(palette.cobalt, palette.card)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(palette.cobalt, palette.canvas)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(palette.cobalt, palette.raised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(palette.white, palette.cobalt)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('alpha() : voiles et ombres tirés des jetons', () => {
+  it('#RRGGBB / #RGB + opacité → rgba, opacité bornée ; autre valeur rendue telle quelle', () => {
+    expect(alpha(palette.ink, 0.08)).toBe('rgba(12, 18, 34, 0.08)');
+    expect(alpha('#FFF', 0.16)).toBe('rgba(255, 255, 255, 0.16)');
+    expect(alpha('#2448ff', 2)).toBe('rgba(36, 72, 255, 1)');
+    expect(alpha('#2448FF', -1)).toBe('rgba(36, 72, 255, 0)');
+    expect(alpha('transparent', 0.5)).toBe('transparent');
+    expect(palette.overlay).toBe('rgba(12, 18, 34, 0.45)');
   });
 });
 

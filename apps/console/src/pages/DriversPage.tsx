@@ -1,13 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DRIVER_STATUSES,
   LABELS,
   VEHICLE_TYPES,
 } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
-import { DocumentChips } from '../components/DocumentChips';
 import { Icon } from '../components/Icon';
+import { DocumentChips } from '../components/DocumentChips';
 import { DocsMeter } from '../components/KycQueuePanel';
 import { PageTitle } from '../components/PageTitle';
 import {
@@ -21,6 +21,7 @@ import {
   Loading,
   Pagination,
   Rating,
+  TableWrap,
   Vehicle,
 } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
@@ -110,24 +111,23 @@ export function DriversPage() {
                 onChange={(e) => setQInput(e.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-ghost">
               <Icon name="search" size={18} />
               Rechercher
             </button>
           </form>
         </div>
         <ErrorBanner message={drivers.error} onRetry={() => drivers.reload()} />
-        {drivers.loading && !drivers.data ? (
-          <Loading />
-        ) : !drivers.data || drivers.data.items.length === 0 ? (
+        {!drivers.data ? (
+          drivers.loading ? <Loading /> : null
+        ) : drivers.data.items.length === 0 ? (
           <Empty icon="search">Aucun livreur.</Empty>
         ) : (
-          <div className="table-wrap">
+          <TableWrap label="Livreurs">
             <table className="table table-clickable">
               <thead>
                 <tr>
                   <th>Livreur</th>
-                  <th>Téléphone</th>
                   <th>Véhicule</th>
                   <th>Dossier</th>
                   <th>Disponibilité</th>
@@ -140,12 +140,17 @@ export function DriversPage() {
                 {drivers.data.items.map((d) => (
                   <tr key={d.userId} onClick={() => navigate(`/livreurs/${d.userId}`)}>
                     <td>
+                      {/* Le nom est un vrai lien (clavier, lecteur d'écran, nouvel onglet) ; toute la ligne reste cliquable. */}
                       <span className="person">
-                        <Avatar name={d.name} size="sm" tone="sun" />
-                        <span className="person-name">{d.name ?? 'Sans nom'}</span>
+                        <Avatar name={d.name} size="sm" />
+                        <span className="person-text">
+                          <Link to={`/livreurs/${d.userId}`} className="person-name" onClick={(e) => e.stopPropagation()}>
+                            {d.name ?? 'Sans nom'}
+                          </Link>
+                          <span className="muted small phone">{formatPhone(d.phone)}</span>
+                        </span>
                       </span>
                     </td>
-                    <td className="phone">{formatPhone(d.phone)}</td>
                     <td>
                       {d.plate ? (
                         <span className="vehicle-plate">
@@ -158,7 +163,7 @@ export function DriversPage() {
                     </td>
                     <td>
                       <span className="inline-badges">
-                        <DriverStatusBadge status={d.status} />
+                        <DriverStatusBadge status={d.status} short />
                         {d.isSuspendedUser && <Badge tone="red">Compte suspendu</Badge>}
                       </span>
                     </td>
@@ -183,7 +188,7 @@ export function DriversPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
         {drivers.data && (
           <Pagination
@@ -213,9 +218,9 @@ export function KycQueuePage() {
         d’audit.
       </p>
       <ErrorBanner message={queue.error} onRetry={() => queue.reload()} />
-      {queue.loading && !queue.data ? (
-        <Loading />
-      ) : !queue.data || queue.data.items.length === 0 ? (
+      {!queue.data ? (
+        queue.loading ? <Loading /> : null
+      ) : queue.data.items.length === 0 ? (
         <Card>
           <Empty icon="check">Aucun dossier en attente de validation.</Empty>
         </Card>
@@ -224,7 +229,7 @@ export function KycQueuePage() {
           {queue.data.items.map((d) => (
             <article key={d.userId} className="card kyc-card">
               <div className="kyc-card-head">
-                <Avatar name={d.name} size="lg" tone="sun" />
+                <Avatar name={d.name} size="lg" />
                 <div className="person-text">
                   <div className="strong">{d.name ?? 'Sans nom'}</div>
                   <div className="muted small">
@@ -237,7 +242,7 @@ export function KycQueuePage() {
               <DocumentChips profile={d} />
               <div className="kyc-card-foot">
                 <span className="muted small tnum">Déposé le {formatDate(d.createdAt)}</span>
-                <button type="button" className="btn btn-small btn-primary" onClick={() => navigate(`/kyc/${d.userId}`)}>
+                <button type="button" className="btn btn-small btn-soft" onClick={() => navigate(`/kyc/${d.userId}`)}>
                   Examiner le dossier
                   <Icon name="chevronRight" size={16} />
                 </button>

@@ -2,7 +2,7 @@ import { isValidElement, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { touchTarget } from '../../lib/touchTarget';
-import { palette, shadows } from '../../theme';
+import { FOCUS_RING_INNER, FOCUS_RING_INNER_ON_COBALT, FOCUS_SHAPE, palette, shadows } from '../../theme';
 import { Icon, type IconName } from './Icon';
 
 /**
@@ -20,10 +20,10 @@ export type RoundButtonSize = keyof typeof ROUND_BUTTON_SIZES;
 export type RoundButtonTone = 'primary' | 'danger' | 'neutral' | 'light';
 
 /**
- * Fond sur lequel le bouton est posé. 'light' et 'dark' (@deprecated : Cobalt n'a plus de fond sombre) donnent le même
- * rendu clair ; 'cobalt' : posé sur la tuile héros cobalt (libellé en blanc cassé).
+ * Fond sur lequel le bouton est posé : 'light' (blanc, canvas) ; 'cobalt' : posé sur la tuile héros cobalt (libellé en
+ * blanc cassé, anneau de focus du clavier blanc).
  */
-export type Surface = 'dark' | 'light' | 'cobalt';
+export type Surface = 'light' | 'cobalt';
 
 const TONES: Record<RoundButtonTone, { bg: string; fg: string; float: boolean }> = {
   primary: { bg: palette.cobalt, fg: palette.onCobalt, float: false },
@@ -108,11 +108,13 @@ export function RoundButton({
       hitSlop={touch.hitSlop}
       style={[styles.column, touch.style, style]}
       testID={testID}
+      {...(surface === 'cobalt' ? FOCUS_RING_INNER_ON_COBALT : FOCUS_RING_INNER)}
     >
       {({ pressed }) => (
         <>
           <View style={[styles.slot, { height: Math.max(slot ?? d, d) }]}>
             <View
+              {...FOCUS_SHAPE}
               style={[
                 styles.disc,
                 { width: d, height: d, borderRadius: d / 2, backgroundColor: t.bg },

@@ -10,20 +10,15 @@
  * aussitôt au retour du réseau (voir styleLoader.ts). Natif : Google Maps (Android) avec un style Cobalt
  * (`ANDROID_MAP_STYLE`), Apple Plans clair (iOS).
  *
- * Plus de fond sombre : l'ancien `theme="dark"` (offre de course du livreur) affiche aussi le fond Cobalt.
+ * Pas de fond sombre : l'offre de course du livreur a aussi le fond Cobalt.
  */
-import type { MapTheme } from '../../components/map/types';
 import { COBALT_MAP, rgba } from './palette';
 
 /** Style Cobalt servi par la version web elle-même (copie de public/map/cobalt-style.json). */
 export const DEFAULT_MAP_STYLE_URL = '/map/cobalt-style.json';
-/** @deprecated Plus de fond sombre : même style Cobalt que les autres cartes. */
-export const DEFAULT_MAP_STYLE_DARK_URL = DEFAULT_MAP_STYLE_URL;
 
 /** Remplacé au build par Expo (variables EXPO_PUBLIC_*). */
 export const MAP_STYLE_URL: string = process.env.EXPO_PUBLIC_MAP_STYLE_URL || DEFAULT_MAP_STYLE_URL;
-/** @deprecated EXPO_PUBLIC_MAP_STYLE_DARK_URL n'est plus lue : toutes les cartes utilisent MAP_STYLE_URL. */
-export const MAP_STYLE_DARK_URL: string = MAP_STYLE_URL;
 
 export const MAP_ATTRIBUTION = '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
 export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
@@ -121,14 +116,6 @@ export const MAP_PALETTE: MapPalette = {
   zoneStroke: { pickup: rgba(COBALT_MAP.ink, 0.42), dropoff: rgba(COBALT_MAP.cobalt, 0.62) },
 };
 
-/**
- * @deprecated Une seule palette (Cobalt) : `light` et `dark` sont la même. Utiliser MAP_PALETTE.
- */
-export const MAP_PALETTES: Record<MapTheme, MapPalette> = {
-  light: MAP_PALETTE,
-  dark: MAP_PALETTE,
-};
-
 /** Style MapLibre minimal embarqué (aucune requête réseau) : la terre du fond Cobalt. */
 export const FALLBACK_STYLE = {
   version: 8 as const,
@@ -137,15 +124,8 @@ export const FALLBACK_STYLE = {
   layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': COBALT_MAP.land } }],
 };
 
-/** @deprecated Plus de fond sombre : même style de secours que les autres cartes. */
-export const FALLBACK_STYLE_DARK = FALLBACK_STYLE;
-
-/**
- * Style distant, style de secours et couleurs d'une carte web. Le paramètre `theme` est accepté pour compatibilité
- * (ancien fond sombre de l'offre de course) mais ignoré : le fond Cobalt partout, une seule entrée dans le cache des
- * styles (styleLoader.ts).
- */
-export function mapThemeConfig(_theme: MapTheme = 'light'): {
+/** Style distant, style de secours et couleurs d'une carte web (fond Cobalt partout : une entrée dans le cache des styles). */
+export function mapThemeConfig(): {
   styleUrl: string;
   fallback: typeof FALLBACK_STYLE;
   palette: MapPalette;

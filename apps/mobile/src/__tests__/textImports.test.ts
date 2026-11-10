@@ -5,11 +5,13 @@ import path from 'node:path';
  * Garde-fous de la police (src/fonts.ts, components/Text.tsx) :
  * - tous les textes passent par le `Text` / `TextInput` de l'application (dessinés dans la police de l'application) :
  *   aucun fichier ne les importe de 'react-native', sauf l'enveloppe elle-même et les dossiers de la carte ;
- * - la police n'est nommée que dans src/fonts.ts (changer de police = changer ce fichier et le paquet).
+ * - la police n'est nommée que dans src/fonts.ts et ses tableaux de fichiers fontFiles(.web).ts (changer de police =
+ *   changer ces fichiers, le paquet et les sous-ensembles WOFF2 du web).
  */
 const SRC = path.resolve(__dirname, '..');
 const WRAPPER = path.join(SRC, 'components', 'Text.tsx');
-const FONTS = path.join(SRC, 'fonts.ts');
+/** Module de la police et ses tableaux de fichiers (Android / iOS, web). */
+const FONT_MODULES = ['fonts.ts', 'fontFiles.ts', 'fontFiles.web.ts'].map((f) => path.join(SRC, f));
 /** Dossiers de la carte : ils ont leur propre rythme (marqueurs, mentions des données). */
 const MAP_DIRS = [path.join(SRC, 'components', 'map') + path.sep, path.join(SRC, 'lib', 'map') + path.sep];
 
@@ -61,9 +63,9 @@ describe('police de l’application : garde-fous', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('la police n’est nommée que dans src/fonts.ts (aucun fontFamily ailleurs, hors dossiers de la carte)', () => {
+  it('la police n’est nommée que dans src/fonts.ts et ses tableaux de fichiers (aucun fontFamily ailleurs, hors dossiers de la carte)', () => {
     const offenders = files
-      .filter((f) => f !== FONTS && f !== __filename && !MAP_DIRS.some((d) => f.startsWith(d)) && !f.includes(`${path.sep}__tests__${path.sep}`))
+      .filter((f) => !FONT_MODULES.includes(f) && f !== __filename && !MAP_DIRS.some((d) => f.startsWith(d)) && !f.includes(`${path.sep}__tests__${path.sep}`))
       .flatMap((f) => {
         const src = fs.readFileSync(f, 'utf8');
         const hits = [/Jakarta/i.test(src) ? 'nom de la police' : null, /fontFamily\s*:/.test(src) ? 'fontFamily' : null].filter(Boolean);

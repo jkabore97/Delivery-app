@@ -41,8 +41,8 @@ const realFetch = global.fetch;
 /** Laisse le chargement du style distant (fetch, json) aller au bout. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-function newMap(theme: 'light' | 'dark' = 'light', onStyleReady?: (map: unknown, fallback: boolean) => void) {
-  const base = createBaseMap(ml, {} as HTMLElement, { center: { lat: 12.37, lng: -1.52 }, zoom: 13, theme, ...(onStyleReady ? { onStyleReady } : {}) });
+function newMap(onStyleReady?: (map: unknown, fallback: boolean) => void) {
+  const base = createBaseMap(ml, {} as HTMLElement, { center: { lat: 12.37, lng: -1.52 }, zoom: 13, ...(onStyleReady ? { onStyleReady } : {}) });
   return { base, map: FakeMap.instances.at(-1)! };
 }
 
@@ -62,7 +62,7 @@ describe('carte web : style distant mis en cache seulement une fois chargé par 
 
   it('style accepté : appliqué, mis en cache à « style.load », puis réutilisé aussitôt par la carte suivante', async () => {
     const ready = jest.fn();
-    const { base, map } = newMap('light', ready);
+    const { base, map } = newMap(ready);
     expect(map.styles[0]).toBe(FALLBACK_STYLE);
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ describe('carte web : style distant mis en cache seulement une fois chargé par 
     await flush();
     expect(base.usingFallback()).toBe(false);
 
-    const second = newMap('light');
+    const second = newMap();
     expect(second.map.styles[0]).toMatchObject({ layers: [{ id: 'fond' }] });
     expect(second.base.usingFallback()).toBe(false);
     await flush();
@@ -88,7 +88,7 @@ describe('carte web : style distant mis en cache seulement une fois chargé par 
 
   it('style refusé à la validation (« error » au lieu de « style.load ») : secours, rien en cache, nouvel essai à la carte suivante', async () => {
     // L'ancien fond sombre est accepté et donne la même carte Cobalt.
-    const { base, map } = newMap('dark');
+    const { base, map } = newMap();
     await flush();
     expect(map.styles).toHaveLength(2);
     map.fire('error', { error: new Error('layers.0.type: expected one of […]') });
@@ -100,14 +100,14 @@ describe('carte web : style distant mis en cache seulement une fois chargé par 
     map.fire('style.load');
     expect(sessionStyleCache.has(STYLE_KEY)).toBe(false);
 
-    const next = newMap('dark');
+    const next = newMap();
     expect(next.map.styles[0]).toBe(FALLBACK_STYLE);
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('style refusé par setStyle (exception) : secours aussitôt, rien en cache', async () => {
-    const { base, map } = newMap('light');
+    const { base, map } = newMap();
     map.throwOnSetStyle = true;
     await flush();
     expect(map.styles.at(-1)).toBe(FALLBACK_STYLE);
@@ -129,15 +129,11 @@ describe('fond Cobalt : une seule apparence', () => {
     global.fetch = realFetch;
   });
 
-  it('style Cobalt demandé pour toutes les cartes ; setTheme (ancien fond sombre) ne change rien', async () => {
+  it('style Cobalt demandé pour toutes les cartes', async () => {
     fetchMock.mockClear();
-    const { base, map } = newMap('dark');
+    newMap();
     await flush();
     expect(fetchMock).toHaveBeenCalledWith(STYLE_KEY, expect.anything());
-    const count = map.styles.length;
-    base.setTheme('light');
-    base.setTheme('dark');
-    expect(map.styles).toHaveLength(count);
   });
 });
 

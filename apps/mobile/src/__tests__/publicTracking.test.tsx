@@ -258,10 +258,11 @@ describe('page publique sur un petit téléphone (360 × 640) et sur une page cl
   });
 
   it('taille de l’heure : tient avec sa pastille, de 30 (24 sur une feuille claire) à 20 px', () => {
-    // 360 px (contenu 328) : 22 px ; 390 (358) : 25 ; panneau latéral d'un ordinateur (388) : 29.
-    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 328, 30)).toBe(22);
-    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 358, 30)).toBe(25);
-    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 388, 30)).toBe(29);
+    // Largeur estimée d'après les avances de la police (src/fonts.ts) : 360 px (contenu 328) : 23 px ; 390 (358) : 27 ;
+    // panneau latéral d'un ordinateur (388) : 30.
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 328, 30)).toBe(23);
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 358, 30)).toBe(27);
+    expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 388, 30)).toBe(30);
     expect(headlineFontSize('Arrivée vers 14:29', 'dans 8 min', 358, 24)).toBe(24);
     expect(headlineFontSize('Arrivée imminente', null, 328, 30)).toBe(30);
     expect(headlineFontSize('Au retrait vers 14:24', 'dans 1 h 05', 200, 30)).toBe(20);

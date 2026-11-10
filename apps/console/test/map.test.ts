@@ -4,7 +4,16 @@ import { CHEVRON_IMAGE_ID, chevronImage } from '../src/lib/map/chevron';
 import { MapSceneController } from '../src/lib/map/controller';
 import { ensureLineLayers, type BaseMap, type Maplibre } from '../src/lib/map/engine';
 import { markerInitials } from '../src/lib/map/initials';
-import { COBALT_MAP_CLASS, createMarkerElement, ensureCobaltMapCss, setDriverHeading, updateMarkerElement } from '../src/lib/map/markers';
+import {
+  COBALT_MAP_CLASS,
+  MARKER_Z,
+  createMarkerElement,
+  ensureCobaltMapCss,
+  markerAnchor,
+  markerOffset,
+  setDriverHeading,
+  updateMarkerElement,
+} from '../src/lib/map/markers';
 import { COBALT_MAP } from '../src/lib/map/palette';
 import { DEFAULT_MAP_STYLE_URL, FALLBACK_STYLE, MAP_COLORS, MAP_STYLE_URL, resolveMapStyleUrl } from '../src/lib/map/style';
 import {
@@ -45,8 +54,14 @@ describe('Carte en direct : marqueurs', () => {
 
   it('livraison en attente : radar au retrait, numéro cliquable et ligne droite en tirets cobalt vers le destinataire', () => {
     expect(scene.markers.filter((m) => m.kind === 'search')).toEqual([
-      expect.objectContaining({ id: 'search:ord-1005', lat: 12.3805, lng: -1.4975, label: '#1005', orderId: 'ord-1005' }),
+      expect.objectContaining({ id: 'search:ord-1005', lat: 12.3805, lng: -1.4975, orderId: 'ord-1005' }),
     ]);
+    // L'étiquette « #1005 » est un marqueur à part, au-dessus des gouttes et des carrés (jamais cachée dessous).
+    expect(scene.markers.filter((m) => m.kind === 'tag')).toEqual([
+      expect.objectContaining({ id: 'tag:ord-1005', lat: 12.3805, lng: -1.4975, label: '#1005', orderId: 'ord-1005' }),
+    ]);
+    expect(MARKER_Z.tag).toBeGreaterThan(Math.max(MARKER_Z.dropoff, MARKER_Z.business, MARKER_Z.driver));
+    expect(MARKER_Z.sos).toBeGreaterThan(MARKER_Z.tag);
     expect(lineById(scene, 'next:ord-1005')).toEqual({
       id: 'next:ord-1005',
       kind: 'dashed',
@@ -104,7 +119,8 @@ describe('Carte en direct : marqueurs', () => {
   });
 
   it('cadrage : tous les marqueurs ; clé de scène stable pour des données identiques', () => {
-    expect(scenePoints(scene)).toHaveLength(scene.markers.length);
+    // Les étiquettes « #1005 » sont à la même place que leur radar : pas de point de plus.
+    expect(scenePoints(scene)).toHaveLength(scene.markers.filter((m) => m.kind !== 'tag').length);
     expect(sceneKey(buildLiveScene(structuredClone(b2bMapData), 'ALL'))).toBe(sceneKey(scene));
     const moved = structuredClone(b2bMapData);
     moved.drivers[0]!.lat += 0.001;
@@ -269,9 +285,19 @@ describe('Marqueurs DOM', () => {
     expect(injected.querySelector('.ycm-initials')?.textContent).toBe('<b>');
     // Sans initiales : pictogramme boutique.
     expect(createMarkerElement({ id: 'y', kind: 'business', lat: 0, lng: 0, title: 'y' }).querySelector('.ycm-square svg')).not.toBeNull();
-    const search = createMarkerElement({ id: 's', kind: 'search', lat: 0, lng: 0, title: 't', label: '#1005', orderId: 'o' });
+    const search = createMarkerElement({ id: 's', kind: 'search', lat: 0, lng: 0, title: 't', orderId: 'o' });
     expect(search.querySelectorAll('.ycm-radar')).toHaveLength(3);
-    expect(search.querySelector('.ycm-search-label')?.textContent).toBe('#1005');
+    expect(search.getAttribute('role')).toBe('button');
+    // Étiquette : cliquable à la souris, sans arrêt de tabulation ni lecture en double (le radar est le bouton).
+    const tag = createMarkerElement({ id: 't', kind: 'tag', lat: 0, lng: 0, title: 't', label: '#1005', orderId: 'o' });
+    expect(tag.textContent).toBe('#1005');
+    expect(tag.classList.contains('is-clickable')).toBe(true);
+    expect(tag.getAttribute('aria-hidden')).toBe('true');
+    expect(tag.tabIndex).toBe(-1);
+    expect(markerAnchor('tag')).toBe('left');
+    // Goutte d'un destinataire situé à une entreprise : posée sur le haut du carré.
+    expect(markerOffset({ kind: 'dropoff', onBusiness: true })).toEqual([0, -16]);
+    expect(markerOffset({ kind: 'dropoff' })).toEqual([0, 0]);
     const sos = createMarkerElement({ id: 'x', kind: 'sos', lat: 0, lng: 0, title: 'SOS', label: 'SOS · Karim D.' });
     expect(sos.textContent).toBe('SOS · Karim D.');
     expect(neighbourhoodLabels().map((l) => l.label)).toContain('Zogona');

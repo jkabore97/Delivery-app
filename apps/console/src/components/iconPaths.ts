@@ -8,14 +8,9 @@ export type IconName =
   | 'alert'
   | 'alertCircle'
   | 'approx'
-  | 'arrowRight'
-  | 'back'
-  | 'bell'
   | 'bike'
   | 'camera'
   | 'car'
-  | 'cash'
-  | 'chart'
   | 'check'
   | 'checkCircle'
   | 'chevronDown'
@@ -24,27 +19,21 @@ export type IconName =
   | 'clock'
   | 'close'
   | 'copy'
-  | 'document'
   | 'download'
   | 'external'
   | 'eye'
   | 'flag'
-  | 'grid'
   | 'history'
-  | 'home'
   | 'id'
   | 'info'
-  | 'link'
   | 'list'
   | 'logout'
   | 'map'
   | 'menu'
-  | 'minus'
   | 'moto'
   | 'navigation'
   | 'package'
   | 'phone'
-  | 'pin'
   | 'plus'
   | 'recenter'
   | 'refresh'
@@ -67,12 +56,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   alertCircle: [{ c: [12, 12, 8.6] }, { p: 'M12 7.6v5.2' }, { c: [12, 16.2, 1.15], fill: true }],
   // « ≈ » (environ) : la police ne l'a pas dans son jeu latin.
   approx: [{ p: 'M5 9.6c1.4-1.5 2.9-1.5 4.4 0s2.9 1.5 4.4 0 2.9-1.5 4.4 0M5 14.6c1.4-1.5 2.9-1.5 4.4 0s2.9 1.5 4.4 0 2.9-1.5 4.4 0' }],
-  arrowRight: [{ p: 'M5 12h13.5M12.6 5.8 18.8 12l-6.2 6.2' }],
-  back: [{ p: 'M19 12H5.5M11.5 5.8 5.3 12l6.2 6.2' }],
-  bell: [
-    { p: 'M12 3.8a5.7 5.7 0 0 0-5.7 5.7v3.4c0 1-.4 2-1.1 2.7l-.7.7h15l-.7-.7c-.7-.7-1.1-1.7-1.1-2.7V9.5A5.7 5.7 0 0 0 12 3.8z' },
-    { p: 'M9.9 19.6a2.4 2.4 0 0 0 4.2 0' },
-  ],
   // Vélo de profil (même famille que moto et car).
   bike: [
     { c: [5.6, 15.4, 3.4] },
@@ -93,12 +76,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
     { c: [7.1, 16.2, 2.2] },
     { c: [16.9, 16.2, 2.2] },
   ],
-  cash: [
-    { p: 'M3.5 7h17a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z' },
-    { c: [12, 12, 2.6] },
-    { p: 'M6 10v4M18 10v4' },
-  ],
-  chart: [{ p: 'M4 19.5h16' }, { p: 'M7.5 15.5v-4M12 15.5V6.5M16.5 15.5v-7' }],
   check: [{ p: 'M5 12.5 9.6 17.1 19.2 7.4' }],
   checkCircle: [{ c: [12, 12, 8.6] }, { p: 'M8.2 12.3l2.6 2.6 5.1-5.2' }],
   chevronDown: [{ p: 'M6.5 9.5 12 15l5.5-5.5' }],
@@ -110,11 +87,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
     { p: 'M9.6 8.5h8.6c.7 0 1.3.6 1.3 1.3v8.6c0 .7-.6 1.3-1.3 1.3H9.6c-.7 0-1.3-.6-1.3-1.3V9.8c0-.7.6-1.3 1.3-1.3z' },
     { p: 'M15.5 8.4V5.8c0-.7-.6-1.3-1.3-1.3H5.8c-.7 0-1.3.6-1.3 1.3v8.4c0 .7.6 1.3 1.3 1.3h2.4' },
   ],
-  document: [
-    { p: 'M6.5 3.5h7.5l4.5 4.5v11.2c0 .7-.6 1.3-1.3 1.3H6.5c-.7 0-1.3-.6-1.3-1.3V4.8c0-.7.6-1.3 1.3-1.3z' },
-    { p: 'M13.5 3.7v4.8h4.8' },
-    { p: 'M8.8 13h6.4M8.8 16.5h6.4' },
-  ],
   download: [{ p: 'M12 4v11' }, { p: 'M7.4 10.6 12 15.2l4.6-4.6' }, { p: 'M4.5 19.5h15' }],
   // Ouvrir dans un nouvel onglet.
   external: [
@@ -124,14 +96,7 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   ],
   eye: [{ p: 'M2.6 12S6 5.6 12 5.6 21.4 12 21.4 12 18 18.4 12 18.4 2.6 12 2.6 12z' }, { c: [12, 12, 2.9] }],
   flag: [{ p: 'M5.5 21V4.5' }, { p: 'M5.5 4.5h11.8l-2.4 4.3 2.4 4.3H5.5' }],
-  grid: [
-    { p: 'M6 4.5h2.8c.8 0 1.5.7 1.5 1.5v2.8c0 .8-.7 1.5-1.5 1.5H6c-.8 0-1.5-.7-1.5-1.5V6c0-.8.7-1.5 1.5-1.5z' },
-    { p: 'M15.2 4.5H18c.8 0 1.5.7 1.5 1.5v2.8c0 .8-.7 1.5-1.5 1.5h-2.8c-.8 0-1.5-.7-1.5-1.5V6c0-.8.7-1.5 1.5-1.5z' },
-    { p: 'M6 13.7h2.8c.8 0 1.5.7 1.5 1.5V18c0 .8-.7 1.5-1.5 1.5H6c-.8 0-1.5-.7-1.5-1.5v-2.8c0-.8.7-1.5 1.5-1.5z' },
-    { p: 'M15.2 13.7H18c.8 0 1.5.7 1.5 1.5V18c0 .8-.7 1.5-1.5 1.5h-2.8c-.8 0-1.5-.7-1.5-1.5v-2.8c0-.8.7-1.5 1.5-1.5z' },
-  ],
   history: [{ p: 'M6.2 17.8a8.2 8.2 0 1 0-2.4-5.8' }, { p: 'M1.4 9.8l2.4 2.6 2.4-2.6' }, { p: 'M12 7.6V12l3 2' }],
-  home: [{ p: 'M3.8 11.2 12 4.2l8.2 7' }, { p: 'M6 9.6v9.9h12V9.6' }, { p: 'M10 19.5v-5h4v5' }],
   // Pièce d'identité (validation KYC).
   id: [
     { p: 'M5 5.5h14c.8 0 1.5.7 1.5 1.5v10c0 .8-.7 1.5-1.5 1.5H5c-.8 0-1.5-.7-1.5-1.5V7c0-.8.7-1.5 1.5-1.5z' },
@@ -140,10 +105,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
     { p: 'M14.6 10h3.2M14.6 13.6h3.2' },
   ],
   info: [{ c: [12, 12, 8.6] }, { p: 'M12 11v5.5' }, { c: [12, 7.9, 1.15], fill: true }],
-  link: [
-    { p: 'M10.2 13.8a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4' },
-    { p: 'M13.8 10.2a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4' },
-  ],
   list: [
     { p: 'M9 6.5h11M9 12h11M9 17.5h11' },
     { c: [4.7, 6.5, 1.25], fill: true },
@@ -153,7 +114,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
   logout: [{ p: 'M14 4.5h3.5c.8 0 1.5.7 1.5 1.5v12c0 .8-.7 1.5-1.5 1.5H14' }, { p: 'M9.5 16.5 5 12l4.5-4.5M5 12h9.5' }],
   map: [{ p: 'M9 4.5 3.5 6.7v12.8L9 17.3l6 2.2 5.5-2.2V4.5L15 6.7 9 4.5z' }, { p: 'M9 4.5v12.8M15 6.7v12.8' }],
   menu: [{ p: 'M4 6.8h16M4 12h16M4 17.2h16' }],
-  minus: [{ p: 'M5 12h14' }],
   // Moto de profil (le pictogramme du livreur sur la carte Cobalt).
   moto: [
     { c: [6, 15.2, 2.7] },
@@ -173,7 +133,6 @@ export const ICON_PARTS: Record<IconName, IconPart[]> = {
       p: 'M8.3 3.6H6.1c-1.2 0-2.1 1-2 2.2.5 7.4 6.7 13.6 14.1 14.1 1.2.1 2.2-.8 2.2-2v-2.2c0-.5-.3-.9-.8-1l-3.2-.8c-.4-.1-.9.1-1.1.4l-1.1 1.5c-2.6-1.2-4.8-3.4-6-6l1.5-1.1c.3-.2.5-.7.4-1.1l-.8-3.2c-.1-.5-.5-.8-1-.8z',
     },
   ],
-  pin: [{ p: 'M12 21c-.4 0-6.8-5.9-6.8-11a6.8 6.8 0 0 1 13.6 0c0 5.1-6.4 11-6.8 11z' }, { c: [12, 10, 2.5] }],
   plus: [{ p: 'M12 5v14M5 12h14' }],
   recenter: [{ c: [12, 12, 6.5] }, { c: [12, 12, 2.2], fill: true }, { p: 'M12 2.8v2.7M12 18.5v2.7M2.8 12h2.7M18.5 12h2.7' }],
   refresh: [{ p: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }, { p: 'M17.3 3.1v3.6h-3.6' }],

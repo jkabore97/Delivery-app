@@ -40,10 +40,12 @@ export function LoginPage() {
       setStep('code');
       // Démo publique : les comptes de console n'acceptent pas le code 123456 des applications ; rien n'est
       // pré-rempli, le code d'accès démo est communiqué par Yaar.
+      // Numéro lisible et insécable (« +226 70 00 00 02 », jamais coupé en fin de ligne).
+      const shown = formatPhone(parsed.data.phone).replace(/ /g, '\u00a0');
       setInfo(
         demo
-          ? `Mode démo : saisissez le code d’accès démo fourni par Yaar pour le ${parsed.data.phone}.`
-          : `Code envoyé par ${channel} au ${parsed.data.phone}. Valable ${Math.round(res.expiresInSeconds / 60)} min.`,
+          ? `Mode démo\u00a0: saisissez le code d’accès démo fourni par Yaar pour le ${shown}.`
+          : `Code envoyé par ${channel} au ${shown}. Valable ${Math.round(res.expiresInSeconds / 60)}\u00a0min.`,
       );
     } catch (err) {
       setError(errorMessage(err));

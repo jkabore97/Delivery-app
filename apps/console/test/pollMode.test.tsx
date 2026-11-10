@@ -294,7 +294,7 @@ describe('Console en mode poll', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
-    const deliveredKpi = () => within(screen.getByRole('article', { name: "Livrées aujourd'hui" })).getByText(/^\d+$/).textContent;
+    const deliveredKpi = () => within(screen.getByRole('article', { name: 'Livrées aujourd’hui' })).getByText(/^\d+$/).textContent;
     expect(count(calls, '/controller/dashboard')).toBe(1);
     expect(deliveredKpi()).toBe('1');
     // Carte inchangée au rafraîchissement suivant : pas de requête de plus.

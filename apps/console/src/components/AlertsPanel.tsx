@@ -2,16 +2,20 @@ import { Link } from 'react-router-dom';
 import type { IncidentDto } from '@yaar/shared';
 import { formatRelative } from '../lib/format';
 import { Icon } from './Icon';
-import { Card, Empty } from './ui';
+import { Card, Empty, incidentTypeLabel } from './ui';
 
 export function alertText(i: IncidentDto): string {
   const who = i.reporter.name ?? 'Inconnu';
   if (i.type === 'SOS') return `SOS · Livreur ${who}${i.description ? ` · ${i.description}` : ''}`;
   const order = i.orderNumber ? ` #${i.orderNumber}` : '';
-  return `${i.type === 'DISPUTE' ? 'Litige' : 'Incident'}${order} : ${i.description}`;
+  // Espace insécable avant « : » (typographie française : jamais de deux-points en début de ligne).
+  return `${incidentTypeLabel(i.type)}${order}\u00a0: ${i.description}`;
 }
 
-/** Alertes ouvertes : SOS en premier (fond corail pâle, bouton d'appel corail), puis litiges. */
+/**
+ * Alertes ouvertes : SOS en premier (fond corail pâle, bouton d'appel corail, description en entier), puis litiges.
+ * Premier panneau de la carte en direct (classe `alerts-card`, `has-sos` quand un SOS est ouvert).
+ */
 export function AlertsPanel({ incidents, now }: { incidents: IncidentDto[]; now?: Date }) {
   const sorted = incidents
     .filter((i) => i.status !== 'RESOLVED')
@@ -20,6 +24,7 @@ export function AlertsPanel({ incidents, now }: { incidents: IncidentDto[]; now?
   const sos = sorted.filter((i) => i.type === 'SOS').length;
   return (
     <Card
+      className={`alerts-card${sos ? ' has-sos' : ''}`}
       title={
         <>
           Alertes

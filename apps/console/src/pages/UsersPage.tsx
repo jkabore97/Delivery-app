@@ -23,6 +23,7 @@ import {
   Loading,
   Pagination,
   ReasonDialog,
+  TableWrap,
   type Tone,
 } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
@@ -98,19 +99,19 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
             Recherche
             <input type="search" placeholder="Nom ou téléphone" value={qInput} onChange={(e) => setQInput(e.target.value)} />
           </label>
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" className="btn btn-ghost">
             <Icon name="search" size={18} />
             Rechercher
           </button>
         </form>
       </div>
       <ErrorBanner message={error ?? users.error} />
-      {users.loading && !users.data ? (
-        <Loading />
-      ) : !users.data || users.data.items.length === 0 ? (
+      {!users.data ? (
+        users.loading ? <Loading /> : null
+      ) : users.data.items.length === 0 ? (
         <Empty icon="users">Aucun compte.</Empty>
       ) : (
-        <div className="table-wrap">
+        <TableWrap label={title}>
           <table className="table">
             <thead>
               <tr>
@@ -165,7 +166,7 @@ export function UsersTable({ role, title }: { role: Role; title: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {users.data && (
         <Pagination page={users.data.page} pageSize={users.data.pageSize} total={users.data.total} onPage={setPage} />
@@ -294,14 +295,14 @@ export function StoresTable() {
         </Banner>
       )}
       <ErrorBanner message={error ?? stores.error} />
-      {stores.loading && !stores.data ? (
-        <Loading />
-      ) : !stores.data || stores.data.items.length === 0 ? (
+      {!stores.data ? (
+        stores.loading ? <Loading /> : null
+      ) : stores.data.items.length === 0 ? (
         <Empty icon={approval === 'PENDING' ? 'check' : 'store'}>
           {approval === 'PENDING' ? 'Aucune entreprise en attente de validation.' : 'Aucune entreprise.'}
         </Empty>
       ) : (
-        <div className="table-wrap">
+        <TableWrap label="Profils d’entreprise">
           <table className="table">
             <thead>
               <tr>
@@ -349,7 +350,7 @@ export function StoresTable() {
                         {status !== 'APPROVED' && (
                           <button
                             type="button"
-                            className="btn btn-small btn-primary"
+                            className="btn btn-small btn-soft"
                             disabled={busyId === s.id}
                             onClick={() => void approve(s)}
                           >
@@ -359,7 +360,7 @@ export function StoresTable() {
                         {status !== 'SUSPENDED' && (
                           <button
                             type="button"
-                            className={`btn btn-small ${status === 'PENDING' ? 'btn-danger' : 'btn-danger-soft'}`}
+                            className="btn btn-small btn-danger-soft"
                             disabled={busyId === s.id}
                             onClick={() => {
                               setNotice(null);
@@ -376,7 +377,7 @@ export function StoresTable() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {stores.data && (
         <Pagination page={stores.data.page} pageSize={stores.data.pageSize} total={stores.data.total} onPage={setPage} />

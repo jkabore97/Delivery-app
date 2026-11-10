@@ -7,17 +7,9 @@ import { TrackingIcon } from './tracking/TrackingIcon';
 
 /**
  * Statut de validation de la boutique par Yaar (rien si elle est validée) : bandeau Cobalt teinté, pictogramme à gauche
- * (horloge en attente : soleil doux ; alerte si suspendue : corail doux), titre et explication. `tone` : @deprecated
- * (même rendu clair).
+ * (horloge en attente : soleil doux ; alerte si suspendue : corail doux), titre et explication.
  */
-export function StoreApprovalBanner({
-  store,
-  tone: _tone,
-}: {
-  store: Pick<StoreDto, 'approvalStatus' | 'approvalNote'> | null;
-  /** @deprecated */
-  tone?: 'light' | 'dark';
-}) {
+export function StoreApprovalBanner({ store }: { store: Pick<StoreDto, 'approvalStatus' | 'approvalNote'> | null }) {
   const notice = storeApprovalNotice(store);
   if (!notice) return null;
   const red = notice.tone === 'red';

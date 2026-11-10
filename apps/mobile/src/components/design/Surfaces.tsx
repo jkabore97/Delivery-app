@@ -1,29 +1,24 @@
-import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { ScrollView, StyleSheet, useWindowDimensions, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { Text } from '../Text';
-import { formatFcfa } from '../../lib/format';
 import { palette, SHEET_RADIUS, shadows, spacing, typography } from '../../theme';
 import { MapIconButton } from './Pill';
-import type { Surface } from './RoundButton';
+import { FitAmount } from './FitAmount';
 import { useTabBarInset } from './tabBarInset';
 
 /**
  * Feuille du bas Cobalt : blanche, coins supérieurs de 32 px, ombre de feuille, poignée facultative (40 × 5). Pour une
  * feuille posée sur une carte plein écran avec caméra et « Recentrer », préférer `LiveTrackingLayout`.
- * `theme` : @deprecated (Cobalt n'a pas de feuille sombre : même rendu).
  */
 export function SheetSurface({
   children,
-  theme: _theme,
   handle = false,
   style,
   onLayout,
   testID,
 }: {
   children: ReactNode;
-  /** @deprecated */
-  theme?: Surface;
   handle?: boolean;
   style?: StyleProp<ViewStyle>;
   onLayout?: (e: LayoutChangeEvent) => void;
@@ -79,9 +74,6 @@ export function SurfaceScreen({
   );
 }
 
-/** @deprecated Nom d'origine de `SurfaceScreen` (écran autrefois sombre) : même composant. */
-export const DarkScreen = SurfaceScreen;
-
 /** Barre du haut d'un écran : retour (disque blanc), titre 20/800, sous-titre discret. */
 export function ScreenHeader({ title, subtitle, onBack, right }: { title: string; subtitle?: string | null; onBack?: () => void; right?: ReactNode }) {
   return (
@@ -102,9 +94,6 @@ export function ScreenHeader({ title, subtitle, onBack, right }: { title: string
   );
 }
 
-/** @deprecated Nom d'origine de `ScreenHeader`. */
-export const DarkHeader = ScreenHeader;
-
 /**
  * Tons des montants : amber = espèces à encaisser (tuile SOLEIL, texte encre), green = gain (mint), text = neutre.
  */
@@ -117,18 +106,21 @@ const AMOUNT_TONES: Record<AmountTone, { bg: string; label: string; detail: stri
   text: { bg: palette.raised, label: palette.ink, detail: palette.inkMuted, figure: palette.ink },
 };
 
+/** Part de la ligne qu'un montant peut prendre à côté de son libellé (le libellé garde le reste, 40 % au moins). */
+const ROW_AMOUNT_SHARE = 0.6;
+
 /**
- * Ligne de montant : libellé (et détail) à gauche, montant en chiffres tabulaires à droite ; `hero` : montant en
- * très grand sous le libellé (ex. « Encaissez 16 500 FCFA » avant le code). Espèces : tuile soleil, texte encre.
- * Comme AmountBox, l'élément du montant porte le testID `<testID>-value` (vérifications exactes des montants).
- * `theme` : @deprecated (même rendu clair).
+ * Ligne de montant : libellé (et détail) à gauche, montant en chiffres tabulaires à droite (« FCFA » plus petit) ;
+ * `hero` : montant en très grand sous le libellé (ex. « Encaissez 16 500 FCFA » avant le code). Espèces : tuile soleil,
+ * texte encre. Le montant n'est JAMAIS coupé (`FitAmount`) : il rapetisse pour tenir (dans 60 % de la ligne, ou toute
+ * la largeur en `hero`), puis « FCFA » passe à la ligne. Comme AmountBox, l'élément du montant porte le testID
+ * `<testID>-value` (vérifications exactes des montants : son texte est `formatFcfa`).
  */
 export function AmountRow({
   label,
   amount,
   detail,
   tone = 'amber',
-  theme: _theme,
   hero = false,
   testID,
 }: {
@@ -136,19 +128,36 @@ export function AmountRow({
   amount: number;
   detail?: string | null;
   tone?: AmountTone;
-  /** @deprecated */
-  theme?: Surface;
   hero?: boolean;
   testID?: string;
 }) {
   const t = AMOUNT_TONES[tone];
-  const value = (
-    <Text style={[hero ? styles.amountHero : styles.amountValue, { color: t.figure }]} testID={testID ? `${testID}-value` : undefined} numberOfLines={1} adjustsFontSizeToFit>
-      {formatFcfa(amount)}
-    </Text>
+  const { width: windowWidth } = useWindowDimensions();
+  // Largeur intérieure de la ligne (mesurée ; avant la mesure : feuille de téléphone moins les marges).
+  const [inner, setInner] = useState<number | null>(null);
+  const rowInner = inner ?? Math.min(windowWidth, 440) - 32 - 2 * spacing.lg;
+  const value = hero ? (
+    <FitAmount amount={amount} size={40} minSize={24} color={t.figure} testID={testID ? `${testID}-value` : undefined} style={styles.amountHeroValue} />
+  ) : (
+    <FitAmount
+      amount={amount}
+      size={22}
+      unitScale={0.6}
+      color={t.figure}
+      align="end"
+      width={Math.floor((rowInner - spacing.md) * ROW_AMOUNT_SHARE)}
+      testID={testID ? `${testID}-value` : undefined}
+    />
   );
   return (
-    <View style={[styles.amount, { backgroundColor: t.bg }, hero && styles.amountHeroBox, tone === 'amber' && shadows.sun]} testID={testID}>
+    <View
+      style={[styles.amount, { backgroundColor: t.bg }, hero && styles.amountHeroBox, tone === 'amber' && shadows.sun]}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width) - 2 * spacing.lg;
+        if (w > 0 && w !== inner) setInner(w);
+      }}
+      testID={testID}
+    >
       {hero ? (
         <>
           <Text style={[styles.amountLabel, { color: t.label }]}>{label}</Text>
@@ -176,14 +185,6 @@ export function ProgressTrack({ value, color = palette.sun }: { value: number; c
       <View style={[styles.fill, { width: `${pct}%`, backgroundColor: color }]} />
     </View>
   );
-}
-
-/**
- * @deprecated Nom d'origine de `ProgressTrack`. L'ancien ambre des espèces (`dark.amber`, devenu un TEXTE brun) est
- * dessiné en soleil : la barre reste une barre d'espèces.
- */
-export function DarkProgress({ value, color }: { value: number; color?: string }) {
-  return <ProgressTrack value={value} color={color === undefined || color === palette.amberText ? palette.sun : color} />;
 }
 
 const styles = StyleSheet.create({
@@ -215,8 +216,7 @@ const styles = StyleSheet.create({
   amountHeroBox: { flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: 20, borderRadius: 24 },
   amountLabel: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   amountDetail: { fontSize: 12.5, lineHeight: 17, fontWeight: '600' },
-  amountValue: { fontSize: 22, lineHeight: 26, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
-  amountHero: { fontSize: 40, lineHeight: 46, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -1.2 },
+  amountHeroValue: { alignSelf: 'stretch' },
   track: { height: 8, borderRadius: 4, backgroundColor: palette.raisedHigh, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
 });

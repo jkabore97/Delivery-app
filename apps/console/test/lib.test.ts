@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFcfaCompact, formatPhone, formatRelative, formatWaiting, initials } from '../src/lib/format';
+import { formatKm, formatPhone, formatRelative, formatWaiting, initials, splitFcfaCompact } from '../src/lib/format';
 import { applyDriverLocation, applyDriverStatus, applyIncident, filterDrivers, kpiFingerprint } from '../src/lib/mapState';
 import { chipText, documentChips, kycActions } from '../src/lib/kyc';
 import { candidateBlocker } from '../src/components/AssignDialog';
@@ -18,10 +18,20 @@ describe('format', () => {
     expect(formatWaiting(-5)).toBe('0:00');
   });
 
-  it('formate les montants compacts des KPI', () => {
-    expect(formatFcfaCompact(1_840_000)).toBe('1,84 M F');
-    expect(formatFcfaCompact(2_000_000)).toBe('2 M F');
-    expect(formatFcfaCompact(90_500).replace(/\u202f/g, ' ')).toBe('90 500 F');
+  it('sépare nombre et unité des montants des tuiles (compact au-delà du million)', () => {
+    expect(splitFcfaCompact(1_840_000)).toEqual({ value: '1,84 M', unit: 'FCFA' });
+    expect(splitFcfaCompact(2_000_000)).toEqual({ value: '2 M', unit: 'FCFA' });
+    expect(splitFcfaCompact(-1_500_000)).toEqual({ value: '-1,5 M', unit: 'FCFA' });
+    const plain = splitFcfaCompact(90_500);
+    expect(plain.unit).toBe('FCFA');
+    expect(plain.value.replace(/\u202f/g, ' ')).toBe('90 500');
+    // Sans compactage (caisse) : le montant entier.
+    expect(splitFcfaCompact(1_840_000, false).value.replace(/\u202f/g, ' ')).toBe('1 840 000');
+  });
+
+  it('distance insécable', () => {
+    expect(formatKm(2)).toBe('2,0\u00a0km');
+    expect(formatKm(null)).toBe('-');
   });
 
   it('calcule les initiales et formate les téléphones', () => {
@@ -33,7 +43,7 @@ describe('format', () => {
   it('affiche une date relative', () => {
     const now = new Date('2026-11-06T19:25:16.215Z');
     expect(formatRelative('2026-11-06T19:23:16.215Z', now)).toBe('il y a 2 min');
-    expect(formatRelative('2026-11-06T19:25:00.000Z', now)).toBe("à l'instant");
+    expect(formatRelative('2026-11-06T19:25:00.000Z', now)).toBe('à l’instant');
   });
 });
 

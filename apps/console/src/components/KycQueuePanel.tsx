@@ -54,7 +54,7 @@ export function KycQueuePanel({ drivers, total }: { drivers: DriverProfileDto[];
             return (
               <li key={d.userId} className="row row-grid kyc-item">
                 <span className="row-lead">
-                  <Avatar name={d.name} tone="sun" />
+                  <Avatar name={d.name} />
                 </span>
                 <div className="row-head">
                   <div className="row-main">
@@ -70,7 +70,7 @@ export function KycQueuePanel({ drivers, total }: { drivers: DriverProfileDto[];
                 <div className="row-end">
                   <Link
                     to={`/kyc/${d.userId}`}
-                    className={`btn btn-small ${actions.approveDisabledReason ? 'btn-ghost' : 'btn-primary'}`}
+                    className={`btn btn-small ${actions.approveDisabledReason ? 'btn-ghost' : 'btn-soft'}`}
                     title={actions.approveDisabledReason ?? 'Vérifier les pièces puis valider ou refuser'}
                   >
                     {actions.approveDisabledReason ? 'Examiner' : 'Vérifier'}

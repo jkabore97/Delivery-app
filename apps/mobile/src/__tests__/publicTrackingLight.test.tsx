@@ -6,8 +6,6 @@ import { ApiError } from '../lib/api';
 import PublicTrackingScreen from '../app/suivi/[token]';
 import { tracking } from './fixtures';
 
-// L'interrupteur du thème de la page publique, en clair (Cobalt n'a plus que ce rendu).
-jest.mock('../components/tracking/recipientSheetTheme', () => ({ RECIPIENT_SHEET_THEME: 'light' }));
 jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ token: 'tok-abc' }), Stack: { Screen: () => null } }));
 jest.mock('expo-router/head', () => ({ __esModule: true, default: () => null }));
 jest.mock('../state/config', () => ({ useAppConfig: () => ({ config: { realtime: 'poll', pollIntervalMs: 4000, demoMode: false, otpChannel: 'sms' } }) }));
@@ -29,7 +27,7 @@ async function show(data: TrackingDto | Error) {
   return r;
 }
 
-describe('page publique de suivi : Cobalt (RECIPIENT_SHEET_THEME = « light »)', () => {
+describe('page publique de suivi : Cobalt clair', () => {
   beforeEach(() => jest.useFakeTimers({ now: Date.parse('2026-11-08T14:20:10.000Z') }));
   afterEach(() => jest.useRealTimers());
 

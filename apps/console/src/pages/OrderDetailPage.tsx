@@ -15,7 +15,7 @@ import { DeliveryHero } from '../components/DeliveryHero';
 import { DeliveryMap } from '../components/DeliveryMap';
 import { Icon } from '../components/Icon';
 import { PageTitle } from '../components/PageTitle';
-import { Badge, Banner, Card, ErrorBanner, KeyValue, Loading, OrderStatusBadge, ReasonDialog, Vehicle } from '../components/ui';
+import { Badge, Banner, Card, ErrorBanner, KeyValue, Loading, OrderStatusBadge, ReasonDialog, TableWrap, Vehicle } from '../components/ui';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useAsync, useDebouncedCallback, useNow } from '../hooks/useAsync';
 import {
@@ -181,6 +181,7 @@ function LegacyAmounts({ o }: { o: OrderDto }) {
   return (
     <>
       {o.type === 'FOOD' && o.items.length > 0 && (
+        <TableWrap label="Articles">
         <table className="table table-compact">
           <thead>
             <tr>
@@ -201,6 +202,7 @@ function LegacyAmounts({ o }: { o: OrderDto }) {
             ))}
           </tbody>
         </table>
+        </TableWrap>
       )}
       <KeyValue
         items={[
@@ -340,8 +342,29 @@ export function OrderDetailPage() {
   const finished = order.data?.status === 'DELIVERED' || order.data?.status === 'CANCELLED';
   usePolling(() => order.reload(true), POLL_MS.order, !finished);
 
-  if (order.loading && !order.data) return <Loading />;
-  if (!order.data) return <ErrorBanner message={order.error ?? 'Livraison introuvable'} onRetry={() => order.reload()} />;
+  // Chargement ou erreur : titre et retour à la liste toujours là ; « Réessayer » seulement si réessayer peut servir.
+  if (!order.data) {
+    const notFound = order.errorStatus === 404;
+    return (
+      <div className="page">
+        <PageTitle docTitle="Livraison">{notFound ? 'Livraison introuvable' : 'Livraison'}</PageTitle>
+        <div className="page-toolbar">
+          <Link to="/courses" className="back-link">
+            <Icon name="chevronLeft" size={18} />
+            Livraisons
+          </Link>
+        </div>
+        {order.loading ? (
+          <Loading label="Chargement de la livraison…" />
+        ) : (
+          <ErrorBanner
+            message={notFound ? 'Cette livraison n’existe pas ou n’est plus accessible.' : (order.error ?? 'Livraison introuvable')}
+            onRetry={notFound ? undefined : () => order.reload()}
+          />
+        )}
+      </div>
+    );
+  }
   const o = order.data;
   const business = isBusinessDelivery(o);
   const kind = orderKind(o);
@@ -359,7 +382,7 @@ export function OrderDetailPage() {
 
   return (
     <div className="page">
-      <PageTitle>
+      <PageTitle docTitle={`Livraison #${o.number}`}>
         Livraison #{o.number} <OrderStatusBadge status={o.status} business={business} />
         {kind !== 'business' && <Badge tone="grey">{ORDER_KIND_LABEL[kind]}</Badge>}
       </PageTitle>
@@ -369,6 +392,13 @@ export function OrderDetailPage() {
           Livraisons
         </Link>
         <div className="actions">
+          {/* Une seule action en cobalt (affecter) ; annuler et valider sans code sont des exceptions, en secondaire. */}
+          {canCancel && (
+            <button type="button" className="btn btn-danger-soft" onClick={() => setDialog('cancel')}>
+              <Icon name="close" size={18} />
+              Annuler la livraison
+            </button>
+          )}
           {o.hasProofPhoto && (
             <button type="button" className="btn btn-ghost" onClick={() => setDialog('proof')}>
               <Icon name="camera" size={18} />
@@ -381,14 +411,8 @@ export function OrderDetailPage() {
               Réinitialiser le code
             </button>
           )}
-          {canCancel && (
-            <button type="button" className="btn btn-danger" onClick={() => setDialog('cancel')}>
-              <Icon name="close" size={18} />
-              Annuler la livraison
-            </button>
-          )}
           {canForceDeliver && (
-            <button type="button" className="btn btn-primary" onClick={() => setDialog('force-deliver')}>
+            <button type="button" className="btn btn-ghost" onClick={() => setDialog('force-deliver')}>
               <Icon name="check" size={18} />
               Valider la livraison
             </button>
@@ -464,6 +488,7 @@ export function OrderDetailPage() {
         <ReasonDialog
           title={`Annuler la livraison #${o.number}`}
           confirmLabel="Annuler la livraison"
+          cancelLabel="Retour"
           required={false}
           placeholder="Ex. : destinataire injoignable"
           description={
@@ -520,7 +545,7 @@ export function OrderDetailPage() {
       {dialog === 'proof' && (
         <BlobViewer
           title={`Photo de livraison · #${o.number}`}
-          notice="Consultation enregistrée dans le journal d'audit."
+          notice="Consultation enregistrée dans le journal d’audit."
           load={() => api.proofPhoto(o.id)}
           onClose={() => setDialog(null)}
         />

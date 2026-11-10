@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import type { VehicleType } from '@yaar/shared';
 
@@ -11,12 +12,6 @@ export interface MapPoint {
  * initiales ou maison) ; driver = livreur (disque blanc, véhicule cobalt, encoche de cap).
  */
 export type MarkerKind = 'pickup' | 'dropoff' | 'driver';
-
-/**
- * @deprecated Plus de fond sombre : toutes les cartes ont le fond Cobalt. Les deux valeurs sont acceptées (props
- * `theme` / `mapTheme`) et donnent la même carte.
- */
-export type MapTheme = 'light' | 'dark';
 
 export interface SceneMarker extends MapPoint {
   id: string;
@@ -87,16 +82,20 @@ export interface MapPadding {
   left: number;
 }
 
+/** Commandes impératives d'une carte de suivi (`zoomRef` de LiveMap), web et Android / iOS. */
+export interface LiveMapHandle {
+  /**
+   * Zoom de `delta` niveaux (+1 : deux fois plus près ; −1 : deux fois plus loin), en douceur. Compte comme un geste de
+   * l'utilisateur : la caméra cesse de suivre (`onUserGesture`), « Recentrer » la remet.
+   */
+  zoomBy(delta: number): void;
+}
+
 export interface LiveMapProps {
   markers: SceneMarker[];
   lines: SceneLine[];
   /** Zones approximatives (cercles) ; aucune par défaut. */
   zones?: SceneZone[];
-  /**
-   * @deprecated Plus de fond sombre : accepté pour compatibilité, la carte a toujours le fond Cobalt (web : style
-   * `/map/cobalt-style.json` ; Android : style Google Maps Cobalt ; iOS : Apple Plans clair).
-   */
-  theme?: MapTheme;
   /** Points à garder visibles (livreur + cible en cours, ou retrait + livraison). */
   fitPoints: MapPoint[];
   /** La caméra suit (recadre à chaque nouvelle position) ; false après un geste de l'utilisateur. */
@@ -120,6 +119,8 @@ export interface LiveMapProps {
   /** Rotation et inclinaison de la carte (livreur uniquement). */
   allowRotate?: boolean;
   maxZoom?: number;
+  /** Commandes impératives (boutons « + » / « − » d'une tuile de carte) : `const zoom = useRef<LiveMapHandle>(null)`. */
+  zoomRef?: Ref<LiveMapHandle>;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }

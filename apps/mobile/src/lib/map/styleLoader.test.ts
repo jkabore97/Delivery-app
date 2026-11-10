@@ -1,18 +1,4 @@
-import {
-  ANDROID_MAP_STYLE,
-  DEFAULT_MAP_STYLE_DARK_URL,
-  DEFAULT_MAP_STYLE_URL,
-  FALLBACK_STYLE,
-  FALLBACK_STYLE_DARK,
-  MAP_COLORS,
-  MAP_PALETTE,
-  MAP_PALETTES,
-  MAP_STYLE_DARK_URL,
-  MAP_STYLE_URL,
-  mapThemeConfig,
-  resolveMapStyleUrl,
-} from './style';
-import { ANDROID_MAP_STYLE_DARK } from './androidDarkStyle';
+import { ANDROID_MAP_STYLE, DEFAULT_MAP_STYLE_URL, FALLBACK_STYLE, MAP_COLORS, MAP_PALETTE, MAP_STYLE_URL, mapThemeConfig, resolveMapStyleUrl } from './style';
 import { COBALT_MAP, rgba } from './palette';
 import {
   absolutizeStyle,
@@ -146,14 +132,8 @@ describe('fond Cobalt partout (plus de fond sombre) et cache des styles', () => 
     expect(resolveMapStyleUrl('/map/cobalt-style.json')).toBe('/map/cobalt-style.json');
   });
 
-  it('l’ancien fond sombre donne exactement la carte Cobalt (même style, même secours, mêmes couleurs)', () => {
-    expect(mapThemeConfig('dark')).toEqual(mapThemeConfig('light'));
+  it('une seule carte, Cobalt : style, secours et couleurs', () => {
     expect(mapThemeConfig()).toEqual({ styleUrl: MAP_STYLE_URL, fallback: FALLBACK_STYLE, palette: MAP_PALETTE });
-    expect(MAP_PALETTES.dark).toBe(MAP_PALETTES.light);
-    expect(FALLBACK_STYLE_DARK).toBe(FALLBACK_STYLE);
-    expect(MAP_STYLE_DARK_URL).toBe(MAP_STYLE_URL);
-    expect(DEFAULT_MAP_STYLE_DARK_URL).toBe(DEFAULT_MAP_STYLE_URL);
-    expect(ANDROID_MAP_STYLE_DARK).toBe(ANDROID_MAP_STYLE);
   });
 
   it('style de secours : la terre du fond Cobalt, sans source', () => {
@@ -199,7 +179,6 @@ describe('fond Cobalt partout (plus de fond sombre) et cache des styles', () => 
     expect(initialMapStyle(url, FALLBACK_STYLE, cache)).toEqual({ style: FALLBACK_STYLE, remote: false });
     cache.set(url, cobalt);
     expect(initialMapStyle(url, FALLBACK_STYLE, cache)).toEqual({ style: cobalt, remote: true });
-    expect(initialMapStyle(mapThemeConfig('dark').styleUrl, FALLBACK_STYLE_DARK, cache)).toEqual({ style: cobalt, remote: true });
     // Une autre URL (variable d'environnement) a sa propre entrée.
     expect(initialMapStyle('https://tiles.example.org/autre', FALLBACK_STYLE, cache).remote).toBe(false);
   });

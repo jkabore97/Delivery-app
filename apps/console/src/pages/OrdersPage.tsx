@@ -5,7 +5,7 @@ import { useApi } from '../auth/AuthContext';
 import { CsvExport } from '../components/CsvExport';
 import { Icon } from '../components/Icon';
 import { PageTitle } from '../components/PageTitle';
-import { Badge, BizMark, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, OrderStatusBadge, Pagination, Vehicle } from '../components/ui';
+import { Badge, BizMark, Card, DateTimeCell, Empty, ErrorBanner, FilterSelect, Loading, OrderStatusBadge, Pagination, TableWrap, Vehicle } from '../components/ui';
 import { useAsync, useDebouncedCallback, useNow } from '../hooks/useAsync';
 import { etaCell, isBusinessDelivery, orderKind } from '../lib/delivery';
 import { formatFcfa } from '../lib/format';
@@ -61,14 +61,18 @@ function RecipientCell({ o }: { o: OrderDto }) {
   );
 }
 
+/** « 1 950 » : montant sans l'unité (déjà écrite sur le total au-dessus). */
+const bare = (n: number) => formatFcfa(n).replace(/\s*FCFA$/, '');
+
+/** Total, puis le détail sur une seule ligne (frais, marchandise) : la ligne du tableau garde deux niveaux. */
 function AmountCell({ o }: { o: OrderDto }) {
   const goods = o.cashToCollect ?? 0;
   return (
     <span>
       <span className="money">{formatFcfa(o.total)}</span>
-      <div className="muted small">
-        frais {formatFcfa(o.deliveryFee)}
-        {goods > 0 ? ` · marchandise ${formatFcfa(goods)}` : ''}
+      <div className="muted small nowrap">
+        frais {bare(o.deliveryFee)}
+        {goods > 0 ? ` · marchandise ${bare(goods)}` : ''}
       </div>
     </span>
   );
@@ -153,7 +157,7 @@ export function OrdersPage() {
                 onChange={(e) => setQInput(e.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-ghost">
               <Icon name="search" size={18} />
               Rechercher
             </button>
@@ -166,12 +170,12 @@ export function OrdersPage() {
           )}
         </div>
         <ErrorBanner message={orders.error} onRetry={() => orders.reload()} />
-        {orders.loading && !orders.data ? (
-          <Loading />
-        ) : !orders.data || orders.data.items.length === 0 ? (
+        {!orders.data ? (
+          orders.loading ? <Loading /> : null
+        ) : orders.data.items.length === 0 ? (
           <Empty icon="search">Aucune livraison ne correspond à ces critères.</Empty>
         ) : (
-          <div className="table-wrap">
+          <TableWrap label="Livraisons">
             <table className="table table-clickable">
               <thead>
                 <tr>
@@ -229,7 +233,7 @@ export function OrdersPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
         {orders.data && (
           <Pagination

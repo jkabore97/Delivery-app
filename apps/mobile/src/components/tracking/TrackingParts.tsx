@@ -2,11 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { Linking, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { arrivalClockFr, formatDurationFr, LABELS, type VehicleType } from '@yaar/shared';
 import { Text } from '../Text';
-import { formatFcfa } from '../../lib/format';
+import { estimateTextWidth } from '../../fonts';
 import { telUrl, whatsappUrl } from '../../lib/tel';
 import { touchTarget } from '../../lib/touchTarget';
 import type { Headline, TrackingStep } from '../../lib/trackingSteps';
-import { palette, shadows, spacing } from '../../theme';
+import { alpha, FOCUS_RING_INNER, FOCUS_SHAPE, palette, shadows, spacing } from '../../theme';
+import { FitAmount } from '../design/FitAmount';
 import { avatarInitials } from '../map/markerArt';
 import { TrackingIcon, type IconName } from './TrackingIcon';
 
@@ -17,58 +18,8 @@ import { TrackingIcon, type IconName } from './TrackingIcon';
  * ouverte depuis un SMS en 3G, reste légère ; ses pictogrammes passent par `TrackingIcon` (SVG du navigateur sur le
  * web).
  */
-/** @deprecated Cobalt n'a qu'un thème (clair) : 'dark' donne le même rendu. */
-export type TrackingTheme = 'light' | 'dark';
-
-interface Palette {
-  text: string;
-  muted: string;
-  faint: string;
-  /** Action principale, étape en cours, ligne d'état. */
-  accent: string;
-  /** Texte posé sur `accent`. */
-  accentInk: string;
-  /** Cartes posées dans la feuille (fond rempli, sans ombre). */
-  card: string;
-  border: string;
-  stepTodo: string;
-  codeBg: string;
-  amountBg: string;
-  amountText: string;
-  discBg: string;
-  discFg: string;
-  discBorder: string;
-  star: string;
-  danger: string;
-  dangerSoft: string;
-  successSoft: string;
-  warning: string;
-}
-
-const COBALT_PALETTE: Palette = {
-  text: palette.ink,
-  muted: palette.inkMuted,
-  faint: palette.inkMuted,
-  accent: palette.cobalt,
-  accentInk: palette.onCobalt,
-  card: palette.raised,
-  border: palette.line,
-  stepTodo: palette.raisedHigh,
-  codeBg: palette.cobalt,
-  amountBg: palette.sun,
-  amountText: palette.ink,
-  discBg: palette.white,
-  discFg: palette.cobalt,
-  discBorder: palette.line,
-  star: '#E0A400',
-  danger: palette.coralText,
-  dangerSoft: palette.coralTint,
-  successSoft: palette.mintTint,
-  warning: palette.amberText,
-};
-
-/** Couleurs des éléments de suivi (les deux entrées sont la palette Cobalt : plus de thème sombre). */
-export const TRACKING_PALETTES: Record<TrackingTheme, Palette> = { light: COBALT_PALETTE, dark: COBALT_PALETTE };
+/** Étoile de la note du livreur (jaune foncé, pictogramme seulement : jamais de texte jaune). */
+const STAR = '#E0A400';
 
 /** Ouvre un lien (appel, WhatsApp) sans jamais lever d'erreur (application absente : rien ne se passe). */
 export function openLink(url: string): void {
@@ -84,17 +35,18 @@ const SHEET_CONTENT_GUESS = (windowWidth: number) => Math.min(windowWidth, 440) 
 
 /**
  * Taille d'un texte pour qu'il tienne sur la même ligne que sa pastille (« dans 12 min ») dans `width` px : de `max`
- * à 20 px. Estimation prudente de la largeur des caractères (`charWidth` × la taille ; 0,52 pour un titre très gras,
- * davantage pour des chiffres tabulaires ; pastille : 8,4 px par caractère + 24 px) ; si la police du téléphone est
- * plus large ou agrandie, la pastille passe simplement à la ligne.
+ * à 20 px. Largeur estimée d'après les avances de la police (`estimateTextWidth` de src/fonts.ts) ; pastille : 8,4 px
+ * par caractère + 24 px (+ 8 d'écart). Si la police du téléphone est plus large ou agrandie, la pastille passe
+ * simplement à la ligne.
  */
-export function headlineFontSize(text: string, pill: string | null, width: number, max: number, charWidth = 0.52): number {
-  const room = width - (pill ? 24 + pill.length * 8.4 + 8 : 0);
-  return Math.max(20, Math.min(max, Math.floor(room / (charWidth * Math.max(1, text.length)))));
+export function headlineFontSize(text: string, pill: string | null, width: number, max: number, pillCharWidth = 8.4, pillPad = 24): number {
+  const room = width - (pill ? pillPad + pill.length * pillCharWidth + 8 : 0);
+  for (let s = Math.floor(max); s > 20; s--) if (estimateTextWidth(text, s, -s * 0.04) <= room) return s;
+  return Math.min(max, 20);
 }
 
-/** Largeur moyenne des chiffres tabulaires 800 et du « : » de l'heure (part de la taille). */
-const CLOCK_CHAR_WIDTH = 0.62;
+/** Écran court (téléphone d'entrée de gamme, 360 × 640) : heure, code et montant visibles sans faire défiler. */
+const SHORT_SCREEN_MAX_HEIGHT = 700;
 
 /**
  * Titre de la feuille : pendant la course, l'heure d'arrivée en très grand (800, chiffres tabulaires) sous son
@@ -102,6 +54,14 @@ const CLOCK_CHAR_WIDTH = 0.62;
  * pastille sur la même ligne (l'heure rapetisse sur un petit écran), puis l'état de la livraison en cobalt ; sinon
  * l'état en titre. `secondary` : seconde estimation plus discrète (heure de livraison pendant le retrait). Lu par les
  * lecteurs d'écran en une phrase : « Arrivée vers 14:32 · dans 12 min ».
+ *
+ * `size` :
+ * - 'standard' (défaut) : heure jusqu'à 48 px (34 sur écran court, libellé alors sur la ligne de l'heure), pastille
+ *   14/700 ;
+ * - 'hero' : la grande heure de la page publique (et du détail entreprise) : jusqu'à 64 px (48 sur écran court),
+ *   pastille 16/800, libellé 14/700 au-dessus, état 16/800 ; sur écran court, la phrase du livreur cède sa place quand
+ *   l'heure est affichée (son nom est sur sa carte) : heure, code et montant restent visibles à 360 × 640.
+ * `widthGuess` : largeur du contenu avant sa mesure (évite un saut au premier affichage, ex. panneau de 388 px).
  */
 export function ArrivalHeadline({
   etaMinutes,
@@ -109,8 +69,9 @@ export function ArrivalHeadline({
   label = 'Arrivée vers',
   imminentLabel = 'Arrivée imminente',
   secondary,
+  size = 'standard',
+  widthGuess,
   now = Date.now(),
-  theme: _theme,
   testID = 'tracking-headline',
 }: {
   etaMinutes: number | null;
@@ -118,26 +79,32 @@ export function ArrivalHeadline({
   label?: string;
   imminentLabel?: string;
   secondary?: string | null;
+  size?: 'standard' | 'hero';
+  widthGuess?: number;
   now?: number;
-  /** @deprecated */
-  theme?: TrackingTheme;
   testID?: string;
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [boxWidth, setBoxWidth] = useState<number | null>(null);
-  // Petit téléphone (hauteur < 700 px) : libellé sur la ligne de l'heure et heure moins grande, pour que le code et
-  // le montant restent visibles sans faire défiler la feuille.
-  const short = windowHeight < 700;
-  const clockMax = short ? 34 : 48;
+  const hero = size === 'hero';
+  const short = windowHeight < SHORT_SCREEN_MAX_HEIGHT;
+  const clockMax = hero ? (short ? 48 : 64) : short ? 34 : 48;
   const imminent = etaMinutes !== null && (!Number.isFinite(etaMinutes) || etaMinutes < 1);
   const clock = etaMinutes !== null && !imminent ? arrivalClockFr(Math.round(etaMinutes), now) : null;
   const eta = etaMinutes === null ? null : imminent ? imminentLabel : `${label} ${clock} · dans ${formatDurationFr(etaMinutes)}`;
   const pill = etaMinutes !== null && !imminent ? `dans ${formatDurationFr(etaMinutes)}` : null;
-  const width = boxWidth ?? SHEET_CONTENT_GUESS(windowWidth);
-  const labelInline = short && !!clock;
-  // Libellé en ligne (15/700) : environ 7,6 px par caractère.
+  const width = boxWidth ?? widthGuess ?? SHEET_CONTENT_GUESS(windowWidth);
+  // Standard, écran court : libellé sur la ligne de l'heure (15/700 : environ 7,6 px par caractère).
+  const labelInline = !hero && short && !!clock;
   const labelWidth = labelInline ? Math.ceil(label.length * 7.6) + 8 : 0;
-  const fontSize = clock ? headlineFontSize(clock, pill, width - labelWidth, clockMax, CLOCK_CHAR_WIDTH) : headlineFontSize(imminentLabel, null, width, 30);
+  const fontSize = clock
+    ? Math.max(hero ? 36 : 20, headlineFontSize(clock, pill, width - labelWidth, clockMax, hero ? 9 : 8.4, hero ? 28 : 24))
+    : hero
+      ? 32
+      : headlineFontSize(imminentLabel, null, width, 30);
+  const clockStyle = clock
+    ? { fontSize, lineHeight: Math.round(fontSize * (hero ? 1.04 : 1.08)), letterSpacing: -Math.round(fontSize * 0.04 * 10) / 10 }
+    : { fontSize, lineHeight: Math.round(fontSize * 1.2), letterSpacing: -0.8 };
   return (
     <View
       style={styles.headline}
@@ -151,38 +118,31 @@ export function ArrivalHeadline({
         <>
           {/* « Arrivée vers » / « 14:32 » en très grand / « dans 12 min » en pastille : lu en une phrase. */}
           <View accessible accessibilityRole="header" accessibilityLabel={eta}>
-            {clock && !labelInline ? <Text style={styles.etaLabel}>{label}</Text> : null}
-            <View style={styles.etaRow}>
+            {clock && !labelInline ? <Text style={hero ? styles.etaLabelHero : styles.etaLabel}>{label}</Text> : null}
+            <View style={[styles.etaRow, hero && styles.etaRowHero]}>
               {labelInline ? <Text style={styles.etaInlineLabel}>{label}</Text> : null}
-              <Text
-                style={[
-                  styles.eta,
-                  { fontSize, lineHeight: Math.round(fontSize * 1.08), letterSpacing: clock ? -Math.round(fontSize * 0.04 * 10) / 10 : -0.6 },
-                ]}
-              >
-                {clock ?? imminentLabel}
-              </Text>
+              <Text style={[styles.eta, clockStyle]}>{clock ?? imminentLabel}</Text>
               {pill ? (
-                <View style={styles.etaPill}>
-                  <Text style={styles.etaPillText}>{pill}</Text>
+                <View style={[styles.etaPill, hero && styles.etaPillHero]}>
+                  <Text style={[styles.etaPillText, hero && styles.etaPillTextHero]}>{pill}</Text>
                 </View>
               ) : null}
             </View>
           </View>
-          <Text style={styles.headlineState}>{headline.title}</Text>
+          <Text style={hero ? styles.headlineStateHero : styles.headlineState}>{headline.title}</Text>
           {secondary ? (
             <Text style={styles.secondary} testID="eta-secondary">
               {secondary}
             </Text>
           ) : null}
-          {headline.subtitle ? <Text style={styles.muted}>{headline.subtitle}</Text> : null}
+          {headline.subtitle && !(hero && short && clock) ? <Text style={hero ? styles.subtitleHero : styles.muted}>{headline.subtitle}</Text> : null}
         </>
       ) : (
         <>
           <Text style={styles.title} accessibilityRole="header">
             {headline.title}
           </Text>
-          {headline.subtitle ? <Text style={styles.muted}>{headline.subtitle}</Text> : null}
+          {headline.subtitle ? <Text style={hero ? styles.subtitleHero : styles.muted}>{headline.subtitle}</Text> : null}
         </>
       )}
     </View>
@@ -193,7 +153,7 @@ export function ArrivalHeadline({
  * Progression en 4 étapes : pilules segmentées (faites en cobalt, en cours remplie à moitié, à venir en gris clair) et
  * libellés dessous. `color` : couleur des étapes faites (cobalt par défaut).
  */
-export function StepsProgress({ steps, color = palette.cobalt, theme: _theme }: { steps: TrackingStep[]; color?: string; /** @deprecated */ theme?: TrackingTheme }) {
+export function StepsProgress({ steps, color = palette.cobalt }: { steps: TrackingStep[]; color?: string }) {
   const index = steps.findIndex((s) => s.state === 'current');
   const current = index >= 0 ? steps[index] : null;
   const done = steps.filter((s) => s.state === 'done').length;
@@ -235,7 +195,6 @@ export function TrackingRoundButton({
   onPress,
   size = 52,
   tone = 'neutral',
-  theme: _theme,
   showLabel = true,
   disabled,
   accessibilityLabel,
@@ -246,8 +205,6 @@ export function TrackingRoundButton({
   onPress: () => void;
   size?: number;
   tone?: 'primary' | 'neutral' | 'danger';
-  /** @deprecated */
-  theme?: TrackingTheme;
   showLabel?: boolean;
   disabled?: boolean;
   accessibilityLabel?: string;
@@ -265,10 +222,12 @@ export function TrackingRoundButton({
       hitSlop={touch.hitSlop}
       style={[styles.roundColumn, touch.style]}
       testID={testID}
+      {...FOCUS_RING_INNER}
     >
       {({ pressed }) => (
         <>
           <View
+            {...FOCUS_SHAPE}
             style={[
               styles.roundDisc,
               { width: size, height: size, borderRadius: size / 2, backgroundColor: t.bg },
@@ -291,7 +250,7 @@ export function TrackingRoundButton({
 }
 
 /** Grand disque d'état (livrée, annulée, lien expiré…) en tête de feuille ou de carte. */
-export function StateDisc({ icon, tone, theme: _theme, size = 56 }: { icon: IconName; tone: 'success' | 'danger' | 'neutral'; /** @deprecated */ theme?: TrackingTheme; size?: number }) {
+export function StateDisc({ icon, tone, size = 56 }: { icon: IconName; tone: 'success' | 'danger' | 'neutral'; size?: number }) {
   const bg = tone === 'success' ? palette.mintTint : tone === 'danger' ? palette.coralTint : palette.raised;
   const fg = tone === 'success' ? palette.mintText : tone === 'danger' ? palette.coralText : palette.inkMuted;
   return (
@@ -334,7 +293,6 @@ export function DriverCard({
   ratingAvg,
   phone,
   whatsappText,
-  theme: _theme,
 }: {
   name: string | null;
   vehicleType: VehicleType;
@@ -343,8 +301,6 @@ export function DriverCard({
   /** Numéro du livreur : boutons « Appeler » (testID call-driver) et « WhatsApp » (whatsapp-driver). */
   phone?: string | null;
   whatsappText?: string | null;
-  /** @deprecated */
-  theme?: TrackingTheme;
 }) {
   return (
     <View style={styles.driverCard} testID="driver-card">
@@ -358,7 +314,7 @@ export function DriverCard({
             </Text>
             {ratingAvg !== null ? (
               <View style={styles.rating} accessible accessibilityLabel={`Note ${ratingAvg.toFixed(1).replace('.', ',')} sur 5`}>
-                <TrackingIcon name="star" size={14} color={COBALT_PALETTE.star} />
+                <TrackingIcon name="star" size={14} color={STAR} />
                 <Text style={styles.ratingText}>{ratingAvg.toFixed(1).replace('.', ',')}</Text>
               </View>
             ) : null}
@@ -404,7 +360,7 @@ export function DriverCard({
  * `compact` (écran court, ex. 360 × 640) : chiffres plus petits et marges réduites, pour que le montant à payer reste
  * visible sans faire défiler la feuille.
  */
-export function DeliveryCodeChip({ code, theme: _theme, compact = false }: { code: string; /** @deprecated */ theme?: TrackingTheme; compact?: boolean }) {
+export function DeliveryCodeChip({ code, compact = false }: { code: string; compact?: boolean }) {
   const spaced = code.split('').join(' ');
   return (
     <View style={[styles.code, shadows.hero, compact && styles.codeCompact]} accessibilityLabel={`Code de livraison ${spaced}`} testID="delivery-code">
@@ -419,15 +375,20 @@ export function DeliveryCodeChip({ code, theme: _theme, compact = false }: { cod
 }
 
 /**
- * Montant à payer / à encaisser : tuile soleil, texte encre (espèces) ; tuile verte (reversé à l'entreprise).
- * L'élément du montant porte le testID `<testID>-value` (vérifications exactes).
+ * Montant à payer / à encaisser : tuile soleil, texte encre (espèces) ; tuile verte (reversé à l'entreprise). Le
+ * montant est en chiffres 800 tabulaires avec « FCFA » plus petit, jamais coupé (`FitAmount` : il rapetisse pour
+ * tenir dans 60 % de la ligne, puis « FCFA » passe à la ligne). `icon` : pastille à gauche (ex. « cash »).
+ * `compact` (par défaut sur un écran court, 360 × 640) : tuile basse d'une ligne, sans pastille, pour que le montant
+ * reste visible sous le code sans faire défiler. L'élément du montant porte le testID `<testID>-value` (son texte est
+ * `formatFcfa` : vérifications exactes).
  */
 export function AmountBox({
   label,
   amount,
   detail,
   tone = 'amber',
-  theme: _theme,
+  icon,
+  compact,
   testID,
 }: {
   label: string;
@@ -435,22 +396,47 @@ export function AmountBox({
   detail?: string | null;
   /** amber = espèces à payer / encaisser (soleil) ; green = reversé à l'entreprise. */
   tone?: 'amber' | 'green';
-  /** @deprecated */
-  theme?: TrackingTheme;
+  /** Pastille à gauche (masquée en `compact`). */
+  icon?: IconName;
+  /** Tuile basse d'une ligne ; par défaut sur un écran court (hauteur < 700 px). */
+  compact?: boolean;
   testID?: string;
 }) {
   const green = tone === 'green';
-  // Petit téléphone : tuile plus basse (le montant reste visible sous le code sans faire défiler).
-  const short = useWindowDimensions().height < 700;
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const low = compact ?? windowHeight < SHORT_SCREEN_MAX_HEIGHT;
+  const [inner, setInner] = useState<number | null>(null);
+  const padding = low ? 14 : spacing.lg;
+  const rowInner = inner ?? SHEET_CONTENT_GUESS(windowWidth) - 2 * padding;
+  const iconRoom = icon && !low ? 40 + spacing.md : 0;
+  const amountWidth = Math.floor((rowInner - iconRoom - spacing.md) * 0.6);
   return (
-    <View style={[styles.amount, short && styles.amountShort, green ? styles.amountGreen : [styles.amountSun, shadows.sun]]} testID={testID}>
+    <View
+      style={[styles.amount, low && styles.amountCompact, green ? styles.amountGreen : [styles.amountSun, shadows.sun]]}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width) - 2 * padding;
+        if (w > 0 && w !== inner) setInner(w);
+      }}
+      testID={testID}
+    >
+      {icon && !low ? (
+        <View style={[styles.amountIcon, green && styles.amountIconGreen]}>
+          <TrackingIcon name={icon} size={22} color={green ? palette.mintText : palette.ink} strokeWidth={2.2} />
+        </View>
+      ) : null}
       <View style={styles.amountText}>
         <Text style={styles.amountLabel}>{label}</Text>
         {detail ? <Text style={[styles.amountDetail, green && { color: palette.mintText }]}>{detail}</Text> : null}
       </View>
-      <Text style={[styles.amountValue, green && { color: palette.mintText }]} testID={testID ? `${testID}-value` : undefined}>
-        {formatFcfa(amount)}
-      </Text>
+      <FitAmount
+        amount={amount}
+        size={low ? 22 : 24}
+        unitScale={0.58}
+        color={green ? palette.mintText : palette.ink}
+        align="end"
+        width={amountWidth}
+        testID={testID ? `${testID}-value` : undefined}
+      />
     </View>
   );
 }
@@ -461,15 +447,12 @@ export function InfoRow({
   title,
   subtitle,
   right,
-  theme: _theme,
   testID,
 }: {
   icon: IconName;
   title: string;
   subtitle?: string | null;
   right?: ReactNode;
-  /** @deprecated */
-  theme?: TrackingTheme;
   testID?: string;
 }) {
   return (
@@ -487,7 +470,7 @@ export function InfoRow({
 }
 
 /** Bloc qui regroupe des lignes d'information (fond rempli, coins de 20 px, sans bordure). */
-export function InfoBlock({ children, theme: _theme, testID }: { children: ReactNode; /** @deprecated */ theme?: TrackingTheme; testID?: string }) {
+export function InfoBlock({ children, testID }: { children: ReactNode; testID?: string }) {
   return (
     <View style={styles.block} testID={testID}>
       {children}
@@ -498,12 +481,18 @@ export function InfoBlock({ children, theme: _theme, testID }: { children: React
 const styles = StyleSheet.create({
   headline: { gap: 4 },
   etaLabel: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.inkMuted },
+  etaLabelHero: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.inkMuted },
   etaInlineLabel: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.ink },
   // Sur une ligne (taille de l'heure calculée) ; à la ligne seulement si la police du téléphone est bien plus large.
   etaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 4 },
   eta: { fontWeight: '800', color: palette.ink, fontVariant: ['tabular-nums'] },
   etaPill: { borderRadius: 999, minHeight: 32, paddingHorizontal: 12, justifyContent: 'center', backgroundColor: palette.cobaltTint, flexShrink: 0 },
   etaPillText: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.cobaltText, fontVariant: ['tabular-nums'] },
+  etaRowHero: { columnGap: 12 },
+  etaPillHero: { minHeight: 36, paddingHorizontal: 14 },
+  etaPillTextHero: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  headlineStateHero: { fontSize: 16, lineHeight: 21, fontWeight: '800', color: palette.cobalt },
+  subtitleHero: { fontSize: 14, lineHeight: 19, fontWeight: '500', color: palette.inkMuted },
   headlineState: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.cobalt },
   title: { fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.6, color: palette.ink },
   secondary: { fontSize: 14, lineHeight: 19, fontWeight: '600', color: palette.ink, fontVariant: ['tabular-nums'] },
@@ -540,15 +529,15 @@ const styles = StyleSheet.create({
   codeDigits: { fontSize: 50, lineHeight: 58, fontWeight: '800', letterSpacing: 2, color: palette.onCobalt, fontVariant: ['tabular-nums'] },
   codeDigitsCompact: { fontSize: 44, lineHeight: 50 },
   codeHint: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.onCobalt2, textAlign: 'center' },
-  amount: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: 20, paddingVertical: 14, paddingHorizontal: spacing.lg },
-  amountShort: { paddingVertical: 10 },
+  amount: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 72, borderRadius: 20, paddingVertical: 12, paddingHorizontal: spacing.lg },
+  amountCompact: { minHeight: 60, paddingVertical: 8, paddingHorizontal: 14, gap: 10 },
+  amountIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(palette.ink, 0.08) },
+  amountIconGreen: { backgroundColor: palette.white },
   amountSun: { backgroundColor: palette.sun },
   amountGreen: { backgroundColor: palette.mintTint },
   amountText: { flex: 1, gap: 2 },
-  amountLabel: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
+  amountLabel: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: palette.ink, letterSpacing: -0.1 },
   amountDetail: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.onSun2 },
-  // Chiffres tabulaires : les espaces fines des milliers restent visibles (« 1 000 », pas « 1000 »).
-  amountValue: { fontSize: 22, lineHeight: 27, fontWeight: '800', letterSpacing: -0.5, color: palette.ink, fontVariant: ['tabular-nums'] },
   info: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   infoIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.white },
   infoText: { flex: 1, gap: 1 },

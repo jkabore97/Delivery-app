@@ -189,6 +189,10 @@ export const FOCUS_RING_INNER = webData({ focusRing: 'inner' });
 export const FOCUS_SHAPE = webData({ focusShape: 'true' });
 /**
  * Surface cobalt pleine (tuile héros, bouton posé sur elle) : l'anneau de ses éléments focalisables y devient blanc
- * (6,1:1 sur cobalt) avec un halo cobalt, visible aussi là où il déborde sur du blanc. À poser sur le conteneur cobalt.
+ * (6,1:1 sur cobalt) avec un halo cobalt, visible aussi là où il déborde sur du blanc. À poser sur le conteneur cobalt
+ * (ou sur l'élément focalisable lui-même).
  */
 export const ON_COBALT_SURFACE = webData({ surface: 'cobalt' });
+
+/** Les deux marqueurs à la fois sur un élément focalisable (bouton rond posé sur la tuile héros cobalt). */
+export const FOCUS_RING_INNER_ON_COBALT = webData({ focusRing: 'inner', surface: 'cobalt' });

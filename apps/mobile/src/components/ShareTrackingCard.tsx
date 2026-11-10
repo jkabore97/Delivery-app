@@ -22,9 +22,9 @@ export interface ShareNotice {
 
 /**
  * Message de partage : pictogramme du système de design (coche ou alerte) et texte, annoncé aux lecteurs d'écran
- * (réussite en vert, échec en brun lisible). `tone` : @deprecated (même rendu clair).
+ * (réussite en vert, échec en brun lisible).
  */
-export function ShareFeedback({ notice, tone: _tone, testID }: { notice: ShareNotice; /** @deprecated */ tone?: 'light' | 'dark'; testID?: string }) {
+export function ShareFeedback({ notice, testID }: { notice: ShareNotice; testID?: string }) {
   const color = notice.ok ? palette.mintText : palette.amberText;
   return (
     <View style={styles.feedbackRow} testID={testID}>
@@ -61,7 +61,6 @@ export function ShareTrackingCard({
   businessName,
   prominent,
   shortLabel,
-  tone,
 }: {
   url: string | null | undefined;
   recipientName: string | null;
@@ -73,12 +72,10 @@ export function ShareTrackingCard({
   prominent?: boolean;
   /** Libellé court du bouton. */
   shortLabel?: boolean;
-  /** @deprecated Ancien nom de `shortLabel` ('dark' = libellé court) ; même rendu clair. */
-  tone?: 'light' | 'dark';
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useShareNotice();
-  const short = shortLabel ?? tone === 'dark';
+  const short = !!shortLabel;
   if (!url) {
     return (
       <View style={styles.box}>

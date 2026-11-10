@@ -40,13 +40,13 @@ describe('KpiCards', () => {
     expect(document.querySelectorAll('.kpi-cobalt')).toHaveLength(1);
     expect(screen.getByRole('article', { name: 'Livraisons en cours' })).toHaveClass('kpi-cobalt');
     expect(cash).toHaveClass('kpi-sun');
-    expect(screen.getByRole('article', { name: "En attente d'un livreur" })).toHaveClass('kpi-alert');
+    expect(screen.getByRole('article', { name: 'En attente d’un livreur' })).toHaveClass('kpi-alert');
   });
 
   it('gère l’absence de livraison du jour', () => {
     render(<KpiCards dashboard={{ ...dashboard, avgDeliveryMinutesToday: null, waitingOver5Min: 0 }} />);
     expect(screen.getByText('aucune attente longue')).toHaveClass('tone-green');
-    expect(screen.getByRole('article', { name: "En attente d'un livreur" })).not.toHaveClass('kpi-alert');
+    expect(screen.getByRole('article', { name: 'En attente d’un livreur' })).not.toHaveClass('kpi-alert');
     expect(screen.getByRole('article', { name: 'Délai moyen' }).querySelector('.kpi-number')?.textContent).toBe('-');
   });
 });
@@ -153,7 +153,7 @@ describe('PendingOrdersPanel + affectation manuelle', () => {
         onChanged={() => undefined}
       />,
     );
-    expect(screen.getByRole('button', { name: /Auto… 1[45]s/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Auto… 1[45]\u00a0s$/ })).toBeInTheDocument();
     expect(screen.getByTestId('wait-1052')).not.toHaveClass('tone-red');
   });
 });

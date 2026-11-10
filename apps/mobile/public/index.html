@@ -24,6 +24,39 @@
       }
     </style>
     <!--
+      Anneau de focus du clavier (système Cobalt, docs/DESIGN.md) pour toute l'application : 2 px cobalt détachés de 2 px,
+      qui suivent les coins de l'élément (6,1:1 sur blanc, 5,4:1 sur canvas). :where() ne compte pas : un composant qui
+      dessine son propre anneau (champ à bordure cobalt : outlineStyle « none ») l'emporte toujours.
+      - data-focus-ring="inner" + data-focus-shape (src/theme.ts : FOCUS_RING_INNER, FOCUS_SHAPE) : la forme visible est
+        un enfant (disque d'un bouton rond, pastille) ; l'anneau l'entoure au lieu du rectangle de la colonne.
+      - data-surface="cobalt" (ON_COBALT_SURFACE) : sur une surface cobalt, anneau blanc (6,1:1) à halo cobalt.
+    -->
+    <style id="yaar-focus-css">
+      :where(:focus-visible) {
+        outline: 2px solid #2448ff;
+        outline-offset: 2px;
+      }
+      [data-focus-ring='inner']:focus-visible {
+        outline: none;
+      }
+      [data-focus-ring='inner']:focus-visible [data-focus-shape] {
+        outline: 2px solid #2448ff;
+        outline-offset: 2px;
+      }
+      [data-surface='cobalt'] :focus-visible,
+      [data-surface='cobalt']:focus-visible:not([data-focus-ring='inner']),
+      [data-surface='cobalt'] [data-focus-ring='inner']:focus-visible [data-focus-shape],
+      [data-surface='cobalt'][data-focus-ring='inner']:focus-visible [data-focus-shape] {
+        outline: 2px solid #ffffff;
+        outline-offset: 2px;
+        box-shadow: 0 0 0 6px #2448ff !important;
+      }
+      [data-surface='cobalt'] [data-focus-ring='inner']:focus-visible {
+        outline: none;
+        box-shadow: none !important;
+      }
+    </style>
+    <!--
       Écran de démarrage (Yaar Livraison) : affiché dès les premiers octets de la page, sans attendre le JavaScript
       (≈ 1 Mo compressé, plusieurs secondes en 3G). L'application le retire dès qu'un écran est prêt
       (src/lib/webShell.ts) ; filet de sécurité ci-dessous au bout de 20 s.
