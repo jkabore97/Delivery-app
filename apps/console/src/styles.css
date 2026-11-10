@@ -363,6 +363,10 @@ h2 {
   height: 24px;
   flex: none;
 }
+/* Voile du menu des petits écrans (≤ 820 px) seulement. */
+.menu-backdrop {
+  display: none;
+}
 
 /* ---------------------------------------------------------------- Coque : zone principale et barre du haut */
 .main {
@@ -399,8 +403,14 @@ h2 {
   font-weight: 500;
   color: var(--ink-muted);
 }
-.live-dot {
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-left: 6px;
+  white-space: nowrap;
+}
+.live-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -452,6 +462,8 @@ h2 {
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);
+  /* Pilule étroite : « N° de livraison, com… » plutôt qu'un mot coupé net. */
+  text-overflow: ellipsis;
 }
 .search-pill input:focus {
   outline: none;
@@ -563,7 +575,8 @@ h2 {
 /* ---------------------------------------------------------------- Alertes SOS (toasts) */
 .toasts {
   position: fixed;
-  top: 24px;
+  /* Sous la barre du haut (28 + 60 px) : l'alerte ne couvre ni la recherche ni le badge « Démo ». */
+  top: 96px;
   right: 24px;
   z-index: 1500;
   display: flex;
@@ -907,6 +920,49 @@ h2 {
 .kpi-sun .kpi-sub .alert-dot {
   background: var(--coral-fill);
 }
+/* Tuiles d'attente : mêmes hauteurs de ligne que les vraies tuiles (rien ne bouge à leur arrivée). */
+.kpi-skeleton .kpi-icon {
+  background: var(--raised);
+}
+.sk {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.sk::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 64%;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: var(--raised);
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+.sk-value {
+  height: 36px;
+}
+.sk-value::before {
+  width: 46%;
+}
+.sk-label {
+  height: 18px;
+}
+.sk-label::before {
+  width: 72%;
+}
+.sk-sub {
+  height: 16px;
+}
+.sk-sub::before {
+  width: 56%;
+}
+@keyframes sk-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
 /* Petites tuiles dans une carte (« À reverser aux entreprises ») */
 .kpis-inline {
   margin: 4px 0 16px;
@@ -1099,7 +1155,11 @@ h2 {
 .btn-danger:hover:not(:disabled) {
   background: var(--coral-text);
 }
-/* Destructif atténué (dans les listes) : rouge sur rouge pâle */
+/*
+ * Destructif atténué : le bouton qui OUVRE une action destructive (annuler, refuser, suspendre). Rouge sur rouge pâle
+ * dans une carte, pilule blanche à texte corail sur le fond de page ; le corail plein est réservé au bouton qui confirme,
+ * dans la fenêtre.
+ */
 .btn-danger-soft {
   background: var(--coral-tint);
   color: var(--coral-text);
@@ -1107,6 +1167,15 @@ h2 {
 .btn-danger-soft:hover:not(:disabled) {
   background: var(--coral-fill);
   color: var(--white);
+}
+.page-toolbar .btn-danger-soft {
+  background: var(--card);
+  color: var(--coral-text);
+  box-shadow: var(--sh-subtle);
+}
+.page-toolbar .btn-danger-soft:hover:not(:disabled) {
+  background: var(--coral-tint);
+  color: var(--coral-text);
 }
 /* Sur un fond corail (alerte SOS) */
 .btn-light {
@@ -1288,6 +1357,9 @@ input[type='checkbox'] {
   font-weight: 600;
   color: var(--ink);
 }
+.form .input-unit {
+  color: var(--ink-muted);
+}
 .form > label {
   margin-top: 6px;
 }
@@ -1309,6 +1381,7 @@ input[type='checkbox'] {
 .form-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
@@ -1322,25 +1395,57 @@ input[type='checkbox'] {
   font-size: 12px;
   font-weight: 600;
 }
+/*
+ * Champ avec unité (« 1000 FCFA ») : le fond, l'anneau de focus et l'erreur sont sur l'enveloppe ; l'unité est une
+ * voisine du champ (pas posée dessus) : le nombre garde toute la place restante, quelle que soit la largeur.
+ */
 .input-suffix {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 44px;
+  padding-right: 14px;
+  border-radius: var(--r-input);
+  background: var(--raised);
+  transition:
+    box-shadow 0.15s,
+    background-color 0.15s;
+  cursor: text;
+}
+.input-suffix:hover {
+  background: var(--raised-high);
+}
+.input-suffix:focus-within {
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--cobalt);
+}
+.input-suffix:has(input[aria-invalid='true']) {
+  box-shadow: 0 0 0 2px var(--coral-text);
 }
 .input-suffix input {
   flex: 1;
   width: 100%;
-  padding-right: 76px;
+  min-width: 0;
+  height: 100%;
+  padding-right: 0;
+  background: transparent;
+  box-shadow: none;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
-.input-suffix span {
-  position: absolute;
-  right: 14px;
+.input-suffix input:hover,
+.input-suffix input:focus {
+  background: transparent;
+  box-shadow: none;
+}
+.input-unit {
+  flex: none;
   color: var(--ink-muted);
   font-size: 13px;
   font-weight: 600;
-  pointer-events: none;
+  white-space: nowrap;
+  cursor: text;
 }
 .inline-form {
   display: inline-flex;
@@ -1430,6 +1535,20 @@ input[type='checkbox'] {
 .table-wrap {
   margin: 0 -8px;
 }
+/* Tableau plus large que sa carte (TableWrap) : il défile dans la carte, jamais la page. */
+.table-wrap.is-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--handle) transparent;
+}
+.table-wrap.is-scroll:focus-visible {
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+.table + .kv {
+  margin-top: 16px;
+}
 .table {
   width: 100%;
   border-collapse: separate;
@@ -1473,6 +1592,16 @@ input[type='checkbox'] {
 }
 .table tbody tr:hover td {
   background: var(--raised);
+}
+/* Survol : un livreur au plafond garde son fond corail (plus soutenu), les puces grises restent visibles. */
+.table tbody tr.row-alert:hover td {
+  background: var(--coral-tint);
+}
+.table tbody tr:hover .badge-grey,
+.table tbody tr:hover .badge-search,
+.table tbody tr:hover .plate,
+.table tbody tr:hover .chip-missing {
+  background: var(--raised-high);
 }
 .table tbody tr:hover td:first-child {
   border-radius: 12px 0 0 12px;
@@ -1628,6 +1757,7 @@ a.person-name:hover {
   height: 30px;
   border-radius: 10px;
   background: var(--ink);
+  color: var(--white);
 }
 .biz-mark::before {
   content: attr(data-initials);
@@ -1689,15 +1819,6 @@ a.person-name:hover {
 .avatar-mint {
   background: var(--mint-tint);
   color: var(--mint-text);
-}
-/* Entreprise : carré encre arrondi aux initiales blanches */
-.avatar-biz {
-  border-radius: 12px;
-  background: var(--ink);
-  color: var(--white);
-}
-.avatar-small.avatar-biz {
-  border-radius: 10px;
 }
 
 /* Liste « clé : valeur » */
@@ -1835,6 +1956,7 @@ a.person-name:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 12px;
   padding-top: 12px;
@@ -1843,6 +1965,15 @@ a.person-name:hover {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+/* Pagination hors d'une carte (file KYC en tuiles) : sa propre barre blanche. */
+.page > .pagination {
+  margin-top: 0;
+  padding: 10px 12px 10px 20px;
+  border-top: 0;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow: var(--sh-tile);
 }
 
 /* ---------------------------------------------------------------- Fenêtres */
@@ -1869,6 +2000,18 @@ a.person-name:hover {
 }
 .modal-wide {
   max-width: 840px;
+}
+.modal:focus {
+  outline: none;
+}
+/* Fenêtre d'affectation : pourquoi un livreur ne peut pas être affecté, en clair (pas dans une info-bulle). */
+.blocker {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
 }
 .modal-head {
   display: flex;
@@ -1932,11 +2075,33 @@ a.person-name:hover {
 }
 
 /* ---------------------------------------------------------------- Carte en direct */
+/*
+ * Les panneaux (alertes, file d'attente, dossiers) précèdent la carte dans le document : lecteurs d'écran et Tab
+ * atteignent les urgences d'abord. Grand écran : colonne de droite à la hauteur de la carte, défilante.
+ */
 .live-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 372px;
   gap: var(--gap);
-  align-items: start;
+  align-items: stretch;
+}
+.live-grid > .map-tile {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+}
+.live-grid > .side-panels {
+  grid-column: 2;
+  grid-row: 1;
+  /* Aucune hauteur propre (contain: size) : la ligne prend la hauteur de la carte, la colonne défile au-delà. */
+  contain: size;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Marges intérieures compensées : le défilement ne coupe pas les ombres des tuiles. */
+  margin: -8px -12px -28px;
+  padding: 8px 12px 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--handle) transparent;
 }
 .map-tile {
   position: relative;
@@ -1948,16 +2113,49 @@ a.person-name:hover {
   box-shadow: var(--sh-tile);
   isolation: isolate;
 }
-.map-tile > .loading {
+.map-tile > .loading,
+.map-placeholder {
   height: calc(100vh - 318px);
   min-height: 440px;
 }
+/* Rafraîchissement en échec sur une carte déjà affichée : bandeau posé sur la carte. */
 .map-tile > .alert {
   position: absolute;
   z-index: 5;
   top: 72px;
   left: 16px;
   right: 16px;
+}
+/* Carte jamais chargée : emplacement à la hauteur de la carte, bandeau et « Réessayer » dans le flux. */
+.map-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.map-placeholder-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--card);
+  color: var(--ink-muted);
+  box-shadow: var(--sh-subtle);
+}
+.map-placeholder-title {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.map-placeholder .alert {
+  width: 100%;
+  max-width: 520px;
+  text-align: left;
 }
 .map-filters {
   position: absolute;
@@ -1994,18 +2192,63 @@ a.person-name:hover {
   background: var(--raised);
 }
 .map-filters button[aria-pressed='true'] {
-  background: var(--cobalt);
-  color: var(--on-cobalt);
+  /* Choix actif en capsule encre : le cobalt plein reste à la tuile héros de l'écran. */
+  background: var(--ink);
+  color: var(--white);
 }
 .map-filters button[aria-pressed='true'] .icon {
-  color: var(--on-cobalt);
+  color: var(--white);
 }
-/* Légende : mêmes formes que les marqueurs Cobalt (src/lib/map/markers.ts) */
+/*
+ * Légende repliée par défaut en une pastille « Légende » (elle ne cache aucun marqueur) ; ouverte, la liste s'affiche
+ * au-dessus de la pastille, avec les mêmes formes que les marqueurs Cobalt (src/lib/map/markers.ts).
+ */
 .map-legend {
   position: absolute;
   z-index: 4;
   left: 16px;
   bottom: 16px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+.map-legend > * {
+  pointer-events: auto;
+}
+.map-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--sh-float);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.map-legend-toggle .icon {
+  color: var(--ink-muted);
+}
+.map-legend-toggle:hover {
+  background: var(--raised);
+}
+.map-legend-chevron {
+  transform: rotate(180deg);
+  transition: transform 0.15s;
+}
+.map-legend.is-open .map-legend-chevron {
+  transform: none;
+}
+.map-legend-list {
+  list-style: none;
+  margin: 0;
   display: grid;
   grid-template-columns: repeat(2, auto);
   gap: 6px 20px;
@@ -2018,7 +2261,10 @@ a.person-name:hover {
   font-weight: 600;
   color: var(--ink);
 }
-.map-legend > span {
+.map-legend-list[hidden] {
+  display: none;
+}
+.map-legend-list > li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2030,9 +2276,9 @@ a.person-name:hover {
     bottom: 36px;
   }
 }
-/* Carte large : légende sur deux lignes */
+/* Carte large : légende ouverte sur deux lignes */
 @container map-tile (min-width: 1000px) {
-  .map-legend {
+  .map-legend-list {
     grid-template-columns: repeat(4, auto);
   }
 }
@@ -2338,6 +2584,11 @@ a.person-name:hover {
   grid-area: extra;
   min-width: 0;
 }
+/* Trajet d'une livraison en attente : en entier, sur deux lignes s'il le faut. */
+.row-grid > .row-extra.row-sub {
+  white-space: normal;
+  overflow: visible;
+}
 .row-grid .row-sub {
   margin-top: 0;
 }
@@ -2479,10 +2730,16 @@ a.person-name:hover {
 .alert-row .alert-text a {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
   color: var(--ink);
   font-weight: 700;
+}
+/* SOS : la description du livreur en entier. */
+.alert-row.alert-sos .alert-text a {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
 }
 .alert-row .alert-text a:hover {
   color: var(--cobalt-text);
@@ -2549,7 +2806,8 @@ a.person-name:hover {
 .hero-grid {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  /* Panneau (livreur, destinataire, espèces) presque à moitié : pas de grand vide cobalt sur les écrans larges. */
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr);
   gap: 24px;
 }
 .hero-left {
@@ -2570,7 +2828,8 @@ a.person-name:hover {
   height: 28px;
   padding: 0 12px 0 10px;
   border-radius: 14px;
-  background: var(--white-16);
+  /* Fond plus sombre que le cobalt : texte blanc ≥ 7:1 (le blanc à 16 % ne donnait que 4,3:1). */
+  background: var(--hero-panel);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -2806,6 +3065,11 @@ a.person-name:hover {
   border-radius: 13px;
   font-size: 13px;
 }
+/* Montant à reverser dans une liste : soleil pâle (le soleil plein reste au total, une seule fois par écran). */
+.sunpill-soft {
+  background: var(--sun-tint);
+  color: var(--ink);
+}
 .cash-meter {
   display: block;
   width: 96px;
@@ -2873,6 +3137,18 @@ a.person-name:hover {
 }
 .summary-main span {
   color: var(--ink-muted);
+  font-weight: 600;
+}
+.summary-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+}
+.summary-when-label {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 18px;
   font-weight: 600;
 }
 .summary-time {
@@ -3095,10 +3371,19 @@ a.person-name:hover {
   background: var(--cobalt-tint);
   color: var(--cobalt);
 }
+.rule-form {
+  container: rule-form / inline-size;
+}
 .rule-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+/* Carte étroite (moins de 290 px de contenu) : un champ par ligne, chaque montant reste lisible en entier. */
+@container rule-form (max-width: 290px) {
+  .rule-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .preview-list {
   list-style: none;
@@ -3112,11 +3397,18 @@ a.person-name:hover {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-muted);
+}
+.preview-list li > :first-child {
+  flex: none;
+  white-space: nowrap;
+}
+.preview-list li > :last-child {
+  text-align: right;
 }
 .preview-list li + li {
   border-top: 1px solid var(--raised-high);
@@ -3138,8 +3430,9 @@ a.person-name:hover {
 .login {
   min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 32px 16px;
+  /* Calé en haut : passer du numéro au code ne fait pas sauter la page (hauteur différente des deux étapes). */
+  place-items: start center;
+  padding: clamp(32px, 9vh, 96px) 16px 32px;
   background: var(--canvas);
 }
 .login-shell {
@@ -3175,13 +3468,14 @@ a.person-name:hover {
   background: var(--white);
 }
 .login-hero .brand-tag {
-  background: var(--white-16);
+  background: var(--hero-panel);
   color: var(--on-cobalt);
 }
 .login-radar {
   position: absolute;
-  top: -120px;
-  right: -120px;
+  /* Ondes autour du livreur (haut à droite) : elles s'arrêtent avant le titre, en bas du panneau. */
+  top: -140px;
+  right: -140px;
   width: 440px;
   height: 440px;
   pointer-events: none;
@@ -3205,8 +3499,8 @@ a.person-name:hover {
 }
 .login-marker {
   position: absolute;
-  top: 74px;
-  right: 74px;
+  top: 54px;
+  right: 54px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -3376,21 +3670,41 @@ a.person-name:hover {
   box-shadow: inset 0 0 0 2px var(--sun);
 }
 .demo-accounts .muted {
+  flex: none;
   color: var(--ink-muted);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* ---------------------------------------------------------------- Écrans tactiles : cibles plus grandes */
+/* ---------------------------------------------------------------- Écrans tactiles : cibles de 48 px au moins */
 @media (pointer: coarse) {
+  .btn,
   .btn-small,
   .segmented button,
-  .map-filters button {
-    height: 44px;
+  .map-filters button,
+  .map-legend-toggle,
+  .back-link,
+  .map-recenter,
+  .demo-accounts button {
+    min-height: 48px;
+    border-radius: 24px;
   }
-  .icon-btn {
-    width: 44px;
-    height: 44px;
+  .nav-link {
+    height: 48px;
+  }
+  .icon-btn,
+  .hero-call,
+  .live-map .map-recenter,
+  .map-frame.live-map .maplibregl-ctrl-group button {
+    width: 48px;
+    height: 48px;
+  }
+  .map-frame.live-map .maplibregl-ctrl-group {
+    border-radius: 24px;
+  }
+  .live-map .map-recenter {
+    top: 128px;
   }
 }
 
@@ -3424,22 +3738,126 @@ a.person-name:hover {
     line-height: 60px;
   }
 }
-@media (max-width: 1180px) {
-  .table-wrap {
-    overflow-x: auto;
+/*
+ * Barre latérale étroite (821 à 1279 px) : pictogrammes seuls (nom en info-bulle et pour les lecteurs d'écran),
+ * pastilles posées sur le pictogramme ; la page gagne 172 px (tableaux, tarifs, carte).
+ */
+@media (min-width: 821px) and (max-width: 1279px) {
+  :root {
+    --sidebar-w: 76px;
   }
+  .sidebar {
+    align-items: center;
+    padding: 24px 12px 14px;
+  }
+  .brand {
+    justify-content: center;
+    padding-left: 0;
+  }
+  .brand-rest,
+  .brand-tag {
+    display: none;
+  }
+  .nav {
+    width: 100%;
+    margin-top: 24px;
+    gap: 10px;
+  }
+  .nav-group + .nav-group {
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .nav-list {
+    align-items: center;
+    gap: 4px;
+  }
+  .nav-link {
+    position: relative;
+    justify-content: center;
+    width: 52px;
+    padding: 0;
+    gap: 0;
+  }
+  .nav-group-label,
+  .nav-label,
+  .sidebar-user-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .nav-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 10px;
+    line-height: 18px;
+    box-shadow: 0 0 0 2px var(--card);
+  }
+  .sidebar-user {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0 2px;
+    background: none;
+  }
+  .main {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+}
+@media (max-width: 1180px) {
   .kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .live-grid,
   .detail-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .live-map {
+  .live-map,
+  .map-tile > .loading,
+  .map-placeholder {
     height: 60vh;
   }
   .hero-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Sous 1024 px : une colonne, les panneaux (alertes d'abord) au-dessus de la carte. */
+@media (max-width: 1023px) {
+  .live-grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  .live-grid > .map-tile,
+  .live-grid > .side-panels {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .live-grid > .side-panels {
+    contain: none;
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+  }
+}
+@media (min-width: 700px) and (max-width: 1023px) {
+  .live-grid > .side-panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .side-panels > .alert,
+  .side-panels > .alerts-card {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 960px) {
@@ -3447,6 +3865,10 @@ a.person-name:hover {
   .grid-3,
   .login-shell {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* La barre du haut passe sur deux lignes : l'alerte SOS revient en haut de l'écran. */
+  .toasts {
+    top: 16px;
   }
   .login-hero {
     display: none;
@@ -3468,17 +3890,33 @@ a.person-name:hover {
   .shell {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Menu fermé : hors de l'écran ET invisible (aucun lien atteignable au clavier ni lu) ; ouvert : un vrai voile. */
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     width: 272px;
     z-index: 1800;
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    visibility: hidden;
+    transition:
+      transform 0.2s ease,
+      visibility 0s linear 0.2s;
   }
   .menu-open .sidebar {
     transform: none;
-    box-shadow: 0 0 0 100vmax var(--overlay);
+    visibility: visible;
+    box-shadow: var(--sh-modal);
+    transition:
+      transform 0.2s ease,
+      visibility 0s;
+  }
+  .menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1700;
+    background: var(--overlay);
+    animation: fade-in 0.15s ease-out;
   }
   .icon-btn.menu-btn {
     display: inline-grid;

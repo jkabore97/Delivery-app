@@ -52,12 +52,13 @@ export function buildKpis(d: DashboardDto): Kpi[] {
       label: 'Livraisons en cours',
       icon: 'package',
       value: String(d.activeOrders),
-      sub: `${plural(d.cancelledToday, 'annulée')} aujourd'hui`,
+      // `activeOrders` compte tous les statuts non terminés, recherche d'un livreur comprise.
+      sub: d.waitingForDriver > 0 ? `dont ${d.waitingForDriver}${NBSP}sans${NBSP}livreur` : 'toutes avec un livreur',
       tone: 'muted',
       look: 'cobalt',
     },
     {
-      label: "En attente d'un livreur",
+      label: 'En attente d’un livreur',
       icon: 'search',
       value: String(d.waitingForDriver),
       sub: d.waitingOver5Min > 0 ? `${d.waitingOver5Min}${NBSP}depuis plus de 5${NBSP}min` : 'aucune attente longue',
@@ -65,11 +66,12 @@ export function buildKpis(d: DashboardDto): Kpi[] {
       look: d.waitingOver5Min > 0 ? 'alert' : undefined,
     },
     {
-      label: "Livrées aujourd'hui",
+      label: 'Livrées aujourd’hui',
       icon: 'check',
       value: String(d.deliveredToday),
-      sub: `${plural(d.openIncidents, 'incident')} ouvert${d.openIncidents > 1 ? 's' : ''}`,
-      tone: d.openIncidents > 0 ? 'red' : 'green',
+      // Le bilan du jour : livrées en grand, annulées en dessous (les incidents ouverts sont dans « Alertes »).
+      sub: `${plural(d.cancelledToday, 'annulée')} aujourd’hui`,
+      tone: 'muted',
       look: 'mint',
     },
     {
@@ -134,6 +136,36 @@ export function KpiTile({ k }: { k: Kpi }) {
         </div>
       )}
     </article>
+  );
+}
+
+/**
+ * Tuiles d'attente (chargement des indicateurs) : même grille et mêmes hauteurs de ligne que les vraies tuiles, la carte
+ * en dessous ne bouge pas à leur arrivée.
+ */
+export function KpiSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="kpis" aria-busy="true">
+      <span className="sr-only" role="status">
+        Chargement des indicateurs…
+      </span>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="kpi kpi-skeleton" aria-hidden="true">
+          <div className="kpi-top">
+            <span className="kpi-icon" />
+          </div>
+          <div className="kpi-value">
+            <span className="sk sk-value" />
+          </div>
+          <div className="kpi-label">
+            <span className="sk sk-label" />
+          </div>
+          <div className="kpi-sub">
+            <span className="sk sk-sub" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

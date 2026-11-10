@@ -1,21 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, type TextStyle } from 'react-native';
 import { FontDisplay, loadAsync, type FontSource } from 'expo-font';
-import { PlusJakartaSans_400Regular } from '@expo-google-fonts/plus-jakarta-sans/400Regular';
-import { PlusJakartaSans_500Medium } from '@expo-google-fonts/plus-jakarta-sans/500Medium';
-import { PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-sans/600SemiBold';
-import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans/700Bold';
-import { PlusJakartaSans_800ExtraBold } from '@expo-google-fonts/plus-jakarta-sans/800ExtraBold';
+// Fichiers de chaque graisse : TTF complets du paquet sur Android / iOS (fontFiles.ts), sous-ensembles WOFF2 latins sur
+// le web (fontFiles.web.ts, choisi par Metro).
+import { FONT_FILES as PLATFORM_FONT_FILES } from './fontFiles';
 
 /**
- * LA POLICE DE L'APPLICATION (système Cobalt) : SEUL fichier qui la connaît. Aucun autre fichier ne nomme une police :
- * les textes passent par `Text` / `TextInput` de components/Text.tsx, qui appliquent la famille de la graisse demandée.
+ * LA POLICE DE L'APPLICATION (système Cobalt) : SEUL module qui la connaît (avec ses tableaux de fichiers, fontFiles.ts
+ * et fontFiles.web.ts). Aucun autre fichier ne nomme une police : les textes passent par `Text` / `TextInput` de
+ * components/Text.tsx, qui appliquent la famille de la graisse demandée.
  *
  * Changer de police (voir docs/DESIGN.md § « Changer de police ») :
  * 1. `npx expo install @expo-google-fonts/<police>` dans apps/mobile (et retirer l'ancien paquet) ;
- * 2. dans CE fichier : les imports ci-dessus, `FONT_NAME`, `FAMILY_PREFIX`, `FONT_FILES` (une ligne par graisse),
- *    `LOADED_WEIGHTS` si les graisses changent et `FONT_MISSING_CHARS` (caractères que la nouvelle police n'a pas) ;
- * 3. vérifier : `npx jest src/__tests__/fonts.test.tsx src/__tests__/textImports.test.ts`, `npm run export:web` (il
+ * 2. fichiers de la police : src/fontFiles.ts (Android / iOS : les imports du paquet, une ligne par graisse) et, pour
+ *    le web, les sous-ensembles WOFF2 de assets/fonts/ (commande pyftsubset de docs/DESIGN.md) listés dans
+ *    src/fontFiles.web.ts ;
+ * 3. dans CE fichier : `FONT_NAME`, `FAMILY_PREFIX`, `LOADED_WEIGHTS` si les graisses changent et
+ *    `FONT_MISSING_CHARS` (caractères que la nouvelle police n'a pas) ;
+ * 4. vérifier : `npx jest src/__tests__/fonts.test.tsx src/__tests__/textImports.test.ts`, `npm run export:web` (il
  *    annonce les polices préchargées), puis les écrans (la nouvelle police a peut-être d'autres proportions : titres
  *    très longs, chiffres tabulaires `tnum`).
  *
@@ -35,25 +37,23 @@ export const FONT_NAME = 'Plus Jakarta Sans';
 /** Préfixe des familles enregistrées : « PlusJakartaSans-800 », « PlusJakartaSans-500-italic ». */
 const FAMILY_PREFIX = 'PlusJakartaSans';
 
+/** Fichier (module d'asset) de chaque graisse : droit, et italique facultatif. */
+export type FontFileTable = Record<FontWeightValue, { normal: number; italic?: number }>;
+
 /**
- * Graisse → fichier de police (droit ; `italic` facultatif). Sans fichier italique, un texte en italique est penché par
- * la plateforme (web, Android) ou reste droit (iOS) : Cobalt n'utilise pas l'italique.
+ * Graisse → fichier de police (droit ; `italic` facultatif) de la plateforme : TTF complet sur Android / iOS
+ * (fontFiles.ts), sous-ensemble WOFF2 latin sur le web (fontFiles.web.ts). Sans fichier italique, un texte en italique
+ * est penché par la plateforme (web, Android) ou reste droit (iOS) : Cobalt n'utilise pas l'italique.
  */
-export const FONT_FILES: Record<FontWeightValue, { normal: number; italic?: number }> = {
-  400: { normal: PlusJakartaSans_400Regular },
-  500: { normal: PlusJakartaSans_500Medium },
-  600: { normal: PlusJakartaSans_600SemiBold },
-  700: { normal: PlusJakartaSans_700Bold },
-  800: { normal: PlusJakartaSans_800ExtraBold },
-};
+export const FONT_FILES: FontFileTable = PLATFORM_FONT_FILES;
 
 /** Graisse d'un texte sans `fontWeight` : le texte courant de Cobalt (15/500). */
 export const DEFAULT_WEIGHT: FontWeightValue = 500;
 
 /**
- * Graisses chargées au démarrage (un fichier chacune, ≈ 95 ko, ≈ 43 ko compressé). Cobalt écrit en 500 / 600 / 700 /
- * 800 : 400 n'est pas chargé (aucun écran ne le demande ; un `fontWeight: '400'` est dessiné en 500). L'ajouter ici
- * suffit à le charger.
+ * Graisses chargées au démarrage (un fichier chacune : TTF de ≈ 95 ko sur Android / iOS, WOFF2 latin de ≈ 11 ko sur le
+ * web). Cobalt écrit en 500 / 600 / 700 / 800 : 400 n'est pas chargé (aucun écran ne le demande ; un
+ * `fontWeight: '400'` est dessiné en 500). L'ajouter ici suffit à le charger.
  */
 export const LOADED_WEIGHTS: readonly FontWeightValue[] = [500, 600, 700, 800];
 
@@ -86,8 +86,9 @@ export const FONT_LOAD_TIMEOUT_MS = 2500;
 /**
  * Page publique de suivi (web, ouverte depuis un SMS, souvent en 3G) : attente très courte. Le suivi s'affiche dès que
  * le JavaScript est prêt, dans la police du système si les polices ne sont pas encore là (première visite : elles ne
- * sont pas préchargées, pour ne pas retarder le JavaScript) ; le navigateur les substitue à leur arrivée. Visites
- * suivantes : polices en cache, chargées dans ce délai.
+ * sont pas préchargées, pour ne pas retarder le JavaScript ; demandées au démarrage de l'application, 44 ko en WOFF2,
+ * elles arrivent peu après) ; le navigateur les substitue à leur arrivée. Visites suivantes : polices en cache, chargées
+ * dans ce délai.
  */
 export const FONT_PUBLIC_TIMEOUT_MS = 200;
 
@@ -253,4 +254,33 @@ export function typeface(weight?: TextStyle['fontWeight'] | number | null, itali
   const created = style ? StyleSheet.create({ s: style }).s : null;
   overrideCache.set(key, created);
   return created;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+/* Largeur des textes (ajustement sans mesure)                                                                          */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+/**
+ * Avance des caractères de la police (part de la taille), mesurée sur ses fichiers (graisse 800, chiffres tabulaires
+ * `tnum` ; arrondie vers le haut pour couvrir les autres graisses et la police du système en repli). Sert à donner à un
+ * montant ou une heure la plus grande taille qui tient dans sa place (components/design/FitAmount.tsx). À mesurer de
+ * nouveau en changeant de police (avance du glyphe / unitsPerEm, ex. avec fontTools).
+ */
+export const GLYPH_EM = { digit: 0.6, space: 0.18, colon: 0.41, sign: 0.68, upper: 0.72, lower: 0.57, other: 0.6 } as const;
+
+/** Largeur estimée de `text` dessiné à `size` px (interlettrage `letterSpacing` compris), en px. */
+export function estimateTextWidth(text: string, size: number, letterSpacing = 0): number {
+  let em = 0;
+  let n = 0;
+  for (const ch of text) {
+    n++;
+    if (ch >= '0' && ch <= '9') em += GLYPH_EM.digit;
+    else if (ch === ' ' || ch === ' ' || ch === ' ') em += GLYPH_EM.space;
+    else if (ch === ':' || ch === '.' || ch === ',') em += GLYPH_EM.colon;
+    else if (ch === '+' || ch === '-' || ch === '−') em += GLYPH_EM.sign;
+    else if (ch !== ch.toLowerCase()) em += GLYPH_EM.upper;
+    else if (ch !== ch.toUpperCase()) em += GLYPH_EM.lower;
+    else em += GLYPH_EM.other;
+  }
+  return em * size + letterSpacing * n;
 }

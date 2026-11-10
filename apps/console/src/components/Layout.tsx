@@ -5,12 +5,12 @@ import { useAuth } from '../auth/AuthContext';
 import { useAppConfig } from '../realtime/AppConfigContext';
 import { useDashboard } from '../hooks/DashboardContext';
 import { useIncidents } from '../hooks/IncidentsContext';
-import { useNow } from '../hooks/useAsync';
+import { useMinuteNow } from '../hooks/useAsync';
 import { formatTime } from '../lib/format';
 import { useLiveIntervalMs, useRealtime, useSocketEvent } from '../realtime/RealtimeContext';
 import { Icon, type IconName } from './Icon';
 import { PageTitleSlot } from './PageTitle';
-import { Avatar } from './ui';
+import { Avatar, isModalOpen } from './ui';
 
 interface NavItem {
   to: string;
@@ -43,9 +43,9 @@ const dayFmt = new Intl.DateTimeFormat('fr-FR', {
   month: 'long',
 });
 
-/** « lundi 9 novembre · 21:42 » (heure de Ouagadougou), mis à jour toutes les 30 s. */
+/** « lundi 9 novembre · 21:42 » (heure de Ouagadougou), mis à jour à chaque changement de minute. */
 function LiveClock() {
-  const now = useNow(30_000);
+  const now = useMinuteNow();
   const iso = new Date(now).toISOString();
   return (
     <span className="tnum">
@@ -54,28 +54,53 @@ function LiveClock() {
   );
 }
 
-/** État du rafraîchissement : temps réel (socket) ou actualisation périodique (mode poll), en pause après inactivité. */
+/**
+ * État du rafraîchissement : temps réel (socket) ou actualisation périodique (mode poll), en pause après inactivité. Le
+ * point et son texte forment un bloc insécable : à la ligne ensemble, jamais un point orphelin en fin de ligne.
+ */
 function LiveState() {
   const { connected, mode, idlePaused } = useRealtime();
   const liveIntervalMs = useLiveIntervalMs();
   if (mode === 'poll') {
     return (
-      <>
+      <span className="live-status">
         <span className={`live-dot${idlePaused ? ' is-paused' : ''}`} aria-hidden="true" />
         <span className="live-state" title="Mode sans temps réel : les données sont rechargées régulièrement">
           {idlePaused ? 'Actualisation en pause' : `Actualisation automatique toutes les ${Math.round(liveIntervalMs / 1000)} s`}
         </span>
-      </>
+      </span>
     );
   }
   return (
-    <>
+    <span className="live-status">
       <span className={`live-dot${connected ? '' : ' is-off'}`} aria-hidden="true" />
       <span className="live-state" title={connected ? 'Temps réel connecté' : 'Temps réel déconnecté'}>
         {connected ? 'Temps réel' : 'Hors ligne'}
       </span>
-    </>
+    </span>
   );
+}
+
+/** SOS masqués dans cet onglet (sessionStorage) : un SOS encore ouvert au rechargement n'est pas ré-affiché. */
+const SOS_DISMISSED_KEY = 'yaar.console.sosDismissed';
+
+function dismissedSos(): Set<string> {
+  try {
+    const raw = window.sessionStorage.getItem(SOS_DISMISSED_KEY);
+    const ids: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberDismissedSos(id: string): void {
+  try {
+    const ids = [...dismissedSos(), id].slice(-50);
+    window.sessionStorage.setItem(SOS_DISMISSED_KEY, JSON.stringify(ids));
+  } catch {
+    /* stockage indisponible (navigation privée) : le SOS pourra réapparaître au rechargement */
+  }
 }
 
 export function Layout() {
@@ -91,6 +116,8 @@ export function Layout() {
   const [sosToasts, setSosToasts] = useState<IncidentDto[]>([]);
   const [titleSlot, setTitleSlot] = useState<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useSocketEvent('sos', ({ incident }) => {
     setSosToasts((prev) => [incident, ...prev.filter((i) => i.id !== incident.id)].slice(0, 3));
@@ -99,27 +126,41 @@ export function Layout() {
     if (incident.status === 'RESOLVED') setSosToasts((prev) => prev.filter((i) => i.id !== incident.id));
   });
 
-  // Mode poll : les SOS ouverts arrivent avec les alertes partagées (IncidentsProvider, une requête pour
-  // toute la console) ; seuls les nouveaux (après le premier chargement) déclenchent une alerte, comme
-  // l'événement `sos` du socket.
+  // Les SOS ouverts arrivent avec les alertes partagées (IncidentsProvider, une requête pour toute la console).
+  // Premier chargement : un SOS encore ouvert (que personne n'a pris en charge) s'affiche aussi, sauf s'il a déjà été
+  // masqué dans cet onglet. Ensuite, en mode poll, chaque nouveau SOS ouvre une alerte, comme l'événement `sos` du socket.
   const seenSos = useRef<Set<string> | null>(null);
   useEffect(() => {
-    if (mode !== 'poll' || !incidents) return;
+    if (!incidents) return;
     const open = incidents.filter((i) => i.type === 'SOS' && i.status === 'OPEN');
     const ids = new Set(open.map((i) => i.id));
     const seen = seenSos.current;
     seenSos.current = ids;
-    const fresh = seen ? open.filter((i) => !seen.has(i.id)) : [];
+    if (seen === null) {
+      const dismissed = dismissedSos();
+      const initial = open.filter((i) => !dismissed.has(i.id));
+      if (initial.length > 0) {
+        setSosToasts((prev) => [...prev, ...initial.filter((i) => !prev.some((p) => p.id === i.id))].slice(0, 3));
+      }
+      return;
+    }
+    if (mode !== 'poll') return;
+    const fresh = open.filter((i) => !seen.has(i.id));
     setSosToasts((prev) => {
       const kept = prev.filter((i) => ids.has(i.id));
       return [...fresh, ...kept.filter((k) => !fresh.some((f) => f.id === k.id))].slice(0, 3);
     });
   }, [incidents, mode]);
 
-  // « / » (hors d'un champ) place le curseur dans la recherche, comme l'indique la touche affichée.
+  function dismissToast(id: string) {
+    rememberDismissedSos(id);
+    setSosToasts((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  // « / » (hors d'un champ, aucune fenêtre ouverte) place le curseur dans la recherche, comme l'indique la touche affichée.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || isModalOpen()) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.preventDefault();
@@ -128,6 +169,21 @@ export function Layout() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Menu des petits écrans (≤ 820 px) : le focus entre dans le menu à l'ouverture ; Échap le ferme et rend le focus au
+  // bouton « Menu » (un clic sur le voile le ferme aussi).
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const first = sidebarRef.current?.querySelector<HTMLElement>('.nav-link.active, .nav-link');
+    first?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   const groups: Array<{ label: string; items: NavItem[] }> = [
     {
@@ -156,7 +212,7 @@ export function Layout() {
     {
       label: 'Administration',
       items: [
-        { to: '/audit', icon: 'shield', label: "Journal d'audit" },
+        { to: '/audit', icon: 'shield', label: 'Journal d’audit' },
         { to: '/clients', icon: 'user', label: 'Anciens clients' },
         { to: '/equipe', icon: 'users', label: 'Équipe', adminOnly: true },
       ],
@@ -171,10 +227,15 @@ export function Layout() {
 
   return (
     <div className={`shell ${menuOpen ? 'menu-open' : ''}`}>
-      <aside className="sidebar">
+      {menuOpen && <div className="menu-backdrop" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
+      <aside className="sidebar" ref={sidebarRef}>
+        {/* Barre étroite (821 à 1279 px) : « Y » et le point cobalt seulement, menu en pictogrammes. */}
         <Link to="/" className="brand" aria-label="Yaar Console : carte en direct" onClick={() => setMenuOpen(false)}>
           <span className="brand-word">
-            Yaar<span className="brand-dot" aria-hidden="true" />
+            <span className="brand-text">
+              Y<span className="brand-rest">aar</span>
+            </span>
+            <span className="brand-dot" aria-hidden="true" />
           </span>
           <span className="brand-tag">Console</span>
         </Link>
@@ -190,7 +251,7 @@ export function Layout() {
                 <ul className="nav-list" aria-labelledby={`nav-${g.label}`}>
                   {items.map((i) => (
                     <li key={i.to}>
-                      <NavLink to={i.to} end={i.end} className="nav-link" onClick={() => setMenuOpen(false)}>
+                      <NavLink to={i.to} end={i.end} className="nav-link" title={i.label} onClick={() => setMenuOpen(false)}>
                         <Icon name={i.icon} size={20} />
                         <span className="nav-label">{i.label}</span>
                         {i.badge ? (
@@ -221,6 +282,7 @@ export function Layout() {
       <div className="main">
         <header className="topbar">
           <button
+            ref={menuButtonRef}
             type="button"
             className="icon-btn menu-btn"
             aria-label="Menu"
@@ -279,13 +341,7 @@ export function Layout() {
                     <Icon name="alert" size={20} />
                   </span>
                   <strong className="toast-title">SOS · {i.reporter.name ?? 'Livreur'}</strong>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label="Masquer"
-                    title="Masquer"
-                    onClick={() => setSosToasts((prev) => prev.filter((x) => x.id !== i.id))}
-                  >
+                  <button type="button" className="icon-btn" aria-label="Masquer" title="Masquer" onClick={() => dismissToast(i.id)}>
                     <Icon name="close" size={18} />
                   </button>
                 </div>
@@ -299,7 +355,7 @@ export function Layout() {
                     type="button"
                     className="btn btn-small btn-on-coral"
                     onClick={() => {
-                      setSosToasts((prev) => prev.filter((x) => x.id !== i.id));
+                      dismissToast(i.id);
                       if (location.pathname !== '/incidents') navigate(`/incidents?focus=${i.id}`);
                     }}
                   >

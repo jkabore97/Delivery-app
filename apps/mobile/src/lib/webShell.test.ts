@@ -2,10 +2,8 @@ import type { TrackingDto } from '@yaar/shared';
 import {
   isFullWidthPath,
   isSlowConnection,
-  markPublicFontsCached,
+  isWideAppPath,
   prefetchPublicTracking,
-  PUBLIC_FONTS_KEY,
-  publicFontsCached,
   takePrefetchedTracking,
   trackingTokenFromPath,
 } from './webShell';
@@ -23,6 +21,17 @@ describe('coquille web : page publique de suivi', () => {
     expect(trackingTokenFromPath(null)).toBeNull();
     expect(isFullWidthPath('/suivi/tok')).toBe(true);
     expect(isFullWidthPath('/business')).toBe(false);
+  });
+
+  it('espace entreprise sur ordinateur (≥ 1024 px) : toute la fenêtre ; colonne « téléphone » ailleurs ou plus étroit', () => {
+    expect(isWideAppPath('/business', 1024)).toBe(true);
+    expect(isWideAppPath('/business/livraison/o1', 1440)).toBe(true);
+    expect(isWideAppPath('/business/nouvelle', 1280)).toBe(true);
+    expect(isWideAppPath('/business', 1023)).toBe(false);
+    expect(isWideAppPath('/businessman', 1440)).toBe(false);
+    expect(isWideAppPath('/driver', 1440)).toBe(false);
+    expect(isWideAppPath('/suivi/tok', 1440)).toBe(false); // la page publique a sa règle (isFullWidthPath)
+    expect(isWideAppPath(null, 1440)).toBe(false);
   });
 
   it('requête lancée au démarrage : reprise une seule fois, pour le même jeton et récente seulement', async () => {
@@ -44,26 +53,6 @@ describe('coquille web : page publique de suivi', () => {
     const fetcher = jest.fn(() => Promise.reject(new Error('réseau')));
     prefetchPublicTracking('/suivi/tok-e', fetcher, 0);
     await expect(takePrefetchedTracking('tok-e', 10)).rejects.toThrow('réseau');
-  });
-
-  it('polices de la page publique : « déjà téléchargées » retenu sur l’appareil, jamais d’erreur si le stockage est bloqué', () => {
-    const m = new Map<string, string>();
-    const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
-    expect(publicFontsCached(store)).toBe(false);
-    markPublicFontsCached(store);
-    expect(m.get(PUBLIC_FONTS_KEY)).toBe('1');
-    expect(publicFontsCached(store)).toBe(true);
-    const blocked = {
-      getItem: () => {
-        throw new Error('SecurityError');
-      },
-      setItem: () => {
-        throw new Error('QuotaExceededError');
-      },
-    };
-    expect(publicFontsCached(blocked)).toBe(false);
-    expect(() => markPublicFontsCached(blocked)).not.toThrow();
-    expect(publicFontsCached(null)).toBe(false);
   });
 
   it('connexion très lente (2G, économie de données) : même règle que l’écran de démarrage du HTML', () => {

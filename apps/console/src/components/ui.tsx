@@ -1,4 +1,5 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LABELS,
   type DriverStatus,
@@ -10,6 +11,7 @@ import {
 import { errorMessage } from '../api/client';
 import { statusLabel } from '../lib/delivery';
 import { formatDate, formatTime, initials } from '../lib/format';
+import { markerInitials } from '../lib/map/initials';
 import { Icon, type IconName } from './Icon';
 
 /**
@@ -51,8 +53,9 @@ const DRIVER_TONE: Record<DriverStatus, Tone> = {
   SUSPENDED: 'red',
 };
 
-export function DriverStatusBadge({ status }: { status: DriverStatus }) {
-  return <Badge tone={DRIVER_TONE[status]}>{LABELS.driverStatus[status]}</Badge>;
+/** `short` (listes) : « À valider » au lieu de « En attente de validation ». */
+export function DriverStatusBadge({ status, short = false }: { status: DriverStatus; short?: boolean }) {
+  return <Badge tone={DRIVER_TONE[status]}>{short && status === 'PENDING' ? 'À valider' : LABELS.driverStatus[status]}</Badge>;
 }
 
 const INCIDENT_TONE: Record<IncidentStatus, Tone> = { OPEN: 'red', IN_PROGRESS: 'blue', RESOLVED: 'green' };
@@ -61,8 +64,16 @@ export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
   return <Badge tone={INCIDENT_TONE[status]}>{LABELS.incidentStatus[status]}</Badge>;
 }
 
+/**
+ * Nom d'un type d'incident dans toute la console (filtre, puce, alertes, fenêtre de résolution) : « Autre incident »
+ * plutôt que le seul « Autre » des libellés partagés, qui ne se lit pas seul (« Autre : le livreur demande… »).
+ */
+export function incidentTypeLabel(type: IncidentType): string {
+  return type === 'OTHER' ? 'Autre incident' : LABELS.incidentType[type];
+}
+
 export function IncidentTypeBadge({ type }: { type: IncidentType }) {
-  return <Badge tone={type === 'SOS' ? 'coral' : type === 'DISPUTE' ? 'orange' : 'grey'}>{LABELS.incidentType[type]}</Badge>;
+  return <Badge tone={type === 'SOS' ? 'coral' : type === 'DISPUTE' ? 'orange' : 'grey'}>{incidentTypeLabel(type)}</Badge>;
 }
 
 /** Pictogramme de chaque véhicule (de profil, comme sur la carte et dans l'application). */
@@ -77,19 +88,20 @@ export function Vehicle({ type, withLabel = true, size = 18 }: { type: VehicleTy
   );
 }
 
-/** Avatar rond aux initiales (cobaltTint) ; `business` : carré encre aux initiales blanches (entreprise). */
+/**
+ * Avatar rond aux initiales : cobaltTint dans les listes (par défaut) ; `sun` pour LE livreur mis en avant (tuile héros
+ * d'une livraison, fiche du livreur), comme sur la planche Cobalt.
+ */
 export function Avatar({
   name,
   size = 'md',
   tone,
-  business = false,
 }: {
   name: string | null | undefined;
   size?: 'sm' | 'md' | 'lg';
   tone?: 'sun' | 'mint';
-  business?: boolean;
 }) {
-  const cls = ['avatar', size === 'sm' ? 'avatar-small' : size === 'lg' ? 'avatar-large' : '', tone ? `avatar-${tone}` : '', business ? 'avatar-biz' : '']
+  const cls = ['avatar', size === 'sm' ? 'avatar-small' : size === 'lg' ? 'avatar-large' : '', tone ? `avatar-${tone}` : '']
     .filter(Boolean)
     .join(' ');
   return (
@@ -100,12 +112,51 @@ export function Avatar({
 }
 
 /**
- * Marque d'une entreprise (carré encre arrondi aux initiales blanches, comme sur la carte). Les initiales sont
- * dessinées en CSS (`attr(data-initials)`) : elles ne s'ajoutent pas au texte de la cellule ni à ce que lit un lecteur
- * d'écran, qui lit déjà le nom à côté.
+ * Marque d'une entreprise (carré encre arrondi aux initiales blanches), avec les MÊMES initiales que son carré sur les
+ * cartes (`markerInitials` : « Grillades de Pissy » → GP), ou le pictogramme boutique sans nom exploitable. Les initiales
+ * sont dessinées en CSS (`attr(data-initials)`) : elles ne s'ajoutent pas au texte de la cellule ni à ce que lit un
+ * lecteur d'écran, qui lit déjà le nom à côté.
  */
 export function BizMark({ name, large }: { name: string | null | undefined; large?: boolean }) {
-  return <span className={`biz-mark${large ? ' biz-mark-large' : ''}`} data-initials={initials(name)} aria-hidden="true" />;
+  const letters = markerInitials(name);
+  return (
+    <span className={`biz-mark${large ? ' biz-mark-large' : ''}`} data-initials={letters ?? undefined} aria-hidden="true">
+      {letters ? null : <Icon name="store" size={large ? 20 : 16} />}
+    </span>
+  );
+}
+
+/**
+ * Enveloppe d'un tableau : défile horizontalement DANS sa carte quand le tableau est plus large qu'elle (jamais la page
+ * entière), et seulement dans ce cas : un tableau qui tient garde son en-tête collant (`position: sticky` ne colle plus
+ * dans un conteneur qui défile). Mesuré par ResizeObserver (taille de la carte et du tableau) ; défilant, le conteneur
+ * est une région nommée que le clavier peut atteindre (flèches gauche / droite).
+ */
+export function TableWrap({ children, label = 'Tableau' }: { children: ReactNode; label?: string }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [scroll, setScroll] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const check = () => {
+      const table = el.firstElementChild as HTMLElement | null;
+      setScroll(!!table && table.offsetWidth > el.clientWidth + 1);
+    };
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    check();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className={`table-wrap${scroll ? ' is-scroll' : ''}`}
+      {...(scroll ? { role: 'region', 'aria-label': `${label} (défilement horizontal)`, tabIndex: 0 } : {})}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** Date d'un tableau : heure en avant, date en dessous (chiffres tabulaires). */
@@ -262,18 +313,100 @@ export function Pagination({
   );
 }
 
+const TABBABLE =
+  'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), ' +
+  'textarea:not([disabled]), iframe, object, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+/** Éléments atteignables au clavier dans `root`, dans l'ordre du document. */
+export function tabbables(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (el) => el.tabIndex >= 0 && !el.closest('[hidden], [inert], [aria-hidden="true"]'),
+  );
+}
+
+/** Fenêtres ouvertes, de la plus ancienne à la plus récente : seule la dernière répond à Échap. */
+const openDialogs: HTMLElement[] = [];
+
+/** Une fenêtre modale est-elle ouverte ? (raccourcis clavier de la page désactivés pendant ce temps) */
+export function isModalOpen(): boolean {
+  return openDialogs.length > 0;
+}
+
+/**
+ * Fenêtre modale accessible : rendue dans <body> (portail), le reste de la page devient inerte (ni clic, ni Tab, ni
+ * lecteur d'écran) ; le focus entre dans la fenêtre (élément `autoFocus`, sinon la fenêtre elle-même, qui annonce son
+ * titre), Tab et Maj+Tab y tournent en boucle, Échap ou un clic sur le voile la ferment, et le focus revient à l'élément
+ * qui l'a ouverte.
+ */
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Élément qui avait le focus à l'ouverture, lu au premier rendu : un champ `autoFocus` le déplace avant les effets.
+  const [opener] = useState<HTMLElement | null>(() =>
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const dialog = dialogRef.current;
+    const backdrop = dialog?.parentElement;
+    if (!dialog || !backdrop) return undefined;
+    // Fond inerte : tout ce qui, dans <body>, n'est pas cette fenêtre (l'application, les autres portails).
+    const inerted: Element[] = [];
+    for (const el of Array.from(document.body.children)) {
+      if (el === backdrop || el.contains(backdrop) || el.hasAttribute('inert') || el.tagName === 'SCRIPT') continue;
+      el.setAttribute('inert', '');
+      inerted.push(el);
+    }
+    openDialogs.push(dialog);
+    if (!dialog.contains(document.activeElement)) dialog.focus();
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape' && openDialogs[openDialogs.length - 1] === dialog) onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      openDialogs.splice(openDialogs.indexOf(dialog), 1);
+      for (const el of inerted) el.removeAttribute('inert');
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, [opener]);
+
+  /** Tab / Maj+Tab restent dans la fenêtre. */
+  function trapTab(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const items = tabbables(dialog);
+    if (items.length === 0) {
+      e.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = items[0]!;
+    const last = items[items.length - 1]!;
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !dialog.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div
+        ref={dialogRef}
+        className={`modal ${wide ? 'modal-wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={trapTab}
+      >
         <header className="modal-head">
           <h2 id={titleId}>{title}</h2>
           <button type="button" className="icon-btn" aria-label="Fermer" title="Fermer" onClick={onClose}>
@@ -282,7 +415,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
         </header>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -294,6 +428,7 @@ export function ReasonDialog({
   title,
   label = 'Motif',
   confirmLabel,
+  cancelLabel = 'Annuler',
   danger = true,
   required = true,
   placeholder,
@@ -306,6 +441,8 @@ export function ReasonDialog({
   description?: ReactNode;
   label?: string;
   confirmLabel: string;
+  /** Bouton qui ferme sans rien faire (« Retour » quand l'action elle-même s'appelle « Annuler… »). */
+  cancelLabel?: string;
   danger?: boolean;
   required?: boolean;
   placeholder?: string;
@@ -355,7 +492,7 @@ export function ReasonDialog({
         <ErrorBanner message={error} />
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            Annuler
+            {cancelLabel}
           </button>
           <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} disabled={busy}>
             {busy ? 'Envoi…' : confirmLabel}

@@ -127,6 +127,7 @@ export function buildLiveScene(data: MapDataDto, filter: VehicleFilter): MapScen
       lng: o.dropoff.lng,
       title: `Livraison #${o.number} · destinataire : ${o.dropoff.address}`,
       orderId: o.id,
+      ...(nearBusiness(o.dropoff) ? { onBusiness: true } : {}),
     });
     // Retrait ailleurs qu'à l'adresse d'une entreprise (entrepôt…) : son propre carré, tant que le colis n'est pas pris.
     if (o.status !== 'PICKED_UP' && !nearBusiness(o.pickup)) {
@@ -140,15 +141,10 @@ export function buildLiveScene(data: MapDataDto, filter: VehicleFilter): MapScen
       });
     }
     if (o.status === 'SEARCHING_DRIVER') {
-      markers.push({
-        id: `search:${o.id}`,
-        kind: 'search',
-        lat: o.pickup.lat,
-        lng: o.pickup.lng,
-        label: `#${o.number}`,
-        title: `Livraison #${o.number} · ${vehicle} · recherche d’un livreur · ${o.pickup.address} → ${o.dropoff.address}`,
-        orderId: o.id,
-      });
+      const title = `Livraison #${o.number} · ${vehicle} · recherche d’un livreur · ${o.pickup.address} → ${o.dropoff.address}`;
+      markers.push({ id: `search:${o.id}`, kind: 'search', lat: o.pickup.lat, lng: o.pickup.lng, title, orderId: o.id });
+      // Étiquette « #1005 » : un marqueur à part, au-dessus des gouttes et des carrés (le radar reste dessous).
+      markers.push({ id: `tag:${o.id}`, kind: 'tag', lat: o.pickup.lat, lng: o.pickup.lng, label: `#${o.number}`, title, orderId: o.id });
       // Livraison qui attend un livreur : ligne droite en tirets cobalt (comme l'application mobile).
       lines.push({ id: `next:${o.id}`, kind: 'dashed', points: [{ ...o.pickup }, { ...o.dropoff }] });
     }
@@ -207,7 +203,15 @@ export function buildDeliveryScene(o: OrderDto): DeliveryScene {
   const driverId = 'driver';
 
   if (pickup) {
-    markers.push({ id: 'pickup', kind: 'business', ...pickup, title: `Retrait : ${o.store?.name ?? o.pickup?.address ?? 'point de retrait'}` });
+    // Mêmes initiales que sur la carte en direct et dans les tableaux (« Grillades de Pissy » → GP).
+    const initials = markerInitials(o.store?.name);
+    markers.push({
+      id: 'pickup',
+      kind: 'business',
+      ...pickup,
+      title: `Retrait : ${o.store?.name ?? o.pickup?.address ?? 'point de retrait'}`,
+      ...(initials ? { initials } : {}),
+    });
     if (stage === 'searching') markers.push({ id: 'search', kind: 'search', ...pickup, title: 'Recherche d’un livreur' });
   }
   if (dropoff) {
@@ -298,16 +302,16 @@ export function sceneKey(scene: MapScene): string {
     .map(
       (x) =>
         `${x.id}:${x.kind}:${x.lat.toFixed(6)},${x.lng.toFixed(6)}:${x.heading ?? ''}:${x.busy ? 1 : 0}:${x.pulse ? 1 : 0}:` +
-        `${x.dimmed ? 1 : 0}:${x.vehicleType ?? ''}:${x.label ?? ''}:${x.initials ?? ''}:${x.title}`,
+        `${x.dimmed ? 1 : 0}:${x.onBusiness ? 1 : 0}:${x.vehicleType ?? ''}:${x.label ?? ''}:${x.initials ?? ''}:${x.title}`,
     )
     .join(';');
   const l = scene.lines.map((x) => `${x.id}:${x.kind}:${x.trimToMarkerId ?? ''}:${pointsKey(x.points)}`).join(';');
   return `${m}#${l}`;
 }
 
-/** Points du cadrage initial de la carte en direct (tout ce qui est affiché, sauf les noms de quartiers). */
+/** Points du cadrage initial de la carte en direct (tout ce qui est affiché, sauf les noms de quartiers et étiquettes). */
 export function scenePoints(scene: MapScene): LatLng[] {
-  return scene.markers.filter((m) => m.kind !== 'label').map((m) => ({ lat: m.lat, lng: m.lng }));
+  return scene.markers.filter((m) => m.kind !== 'label' && m.kind !== 'tag').map((m) => ({ lat: m.lat, lng: m.lng }));
 }
 
 /** Noms des quartiers, affichés seulement sur le fond de secours (aucun nom de rue sans les tuiles). */

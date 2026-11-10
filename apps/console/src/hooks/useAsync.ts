@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { errorMessage } from '../api/client';
+import { ApiError, errorMessage } from '../api/client';
 
 export interface AsyncState<T> {
   data: T | null;
   error: string | null;
+  /** Statut HTTP de la dernière erreur (404 : la ressource n'existe pas, inutile de réessayer) ; null sans erreur HTTP. */
+  errorStatus: number | null;
   loading: boolean;
   /**
    * Recharge ; `silent` garde les données affichées pendant le chargement.
@@ -20,6 +22,7 @@ export interface AsyncState<T> {
 export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const seq = useRef(0);
   const fnRef = useRef(fn);
@@ -34,11 +37,13 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
         if (id !== seq.current) return true;
         setData(value);
         setError(null);
+        setErrorStatus(null);
         return true;
       })
       .catch((err: unknown) => {
         if (id !== seq.current) return false;
         setError(errorMessage(err));
+        setErrorStatus(err instanceof ApiError && err.status > 0 ? err.status : null);
         return false;
       })
       .finally(() => {
@@ -54,7 +59,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: readonly unknown[]): Asy
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  return { data, error, loading, reload: run, setData };
+  return { data, error, errorStatus, loading, reload: run, setData };
 }
 
 /** Appelle `fn` au plus une fois toutes les `delayMs` (regroupe les rafales d'événements). */
@@ -84,5 +89,25 @@ export function useNow(intervalMs = 1000): number {
     const t = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(t);
   }, [intervalMs]);
+  return now;
+}
+
+/**
+ * Horloge à la minute (date et heure de la barre du haut) : mise à jour juste après chaque changement de minute, jamais
+ * en retard de plus d'une seconde (une horloge rafraîchie toutes les 30 s pouvait l'être de 30 s).
+ */
+export function useMinuteNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        setNow(Date.now());
+        schedule();
+      }, 60_000 - (Date.now() % 60_000) + 50);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
   return now;
 }

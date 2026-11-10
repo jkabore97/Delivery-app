@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,17 +7,19 @@ import { FONT_LOAD_TIMEOUT_MS, FONT_PUBLIC_TIMEOUT_MS, useAppFonts } from '../fo
 import { AuthProvider } from '../state/auth';
 import { AppConfigProvider } from '../state/config';
 import { SocketProvider } from '../state/socket';
-import { hideWebSplash, isFullWidthPath, isSlowConnection } from '../lib/webShell';
+import { hideWebSplash, isFullWidthPath, isSlowConnection, isWideAppPath } from '../lib/webShell';
 import { MAX_APP_WIDTH, palette } from '../theme';
 
 /**
- * Web : l'application tient dans une colonne « téléphone » centrée, sauf la page publique de suivi qui prend toute
- * la fenêtre (carte à gauche et feuille à droite sur ordinateur).
+ * Web : l'application tient dans une colonne « téléphone » centrée, sauf la page publique de suivi (carte à gauche et
+ * feuille à droite sur ordinateur) et l'espace entreprise sur ordinateur (≥ 1024 px : barre latérale et tableau de
+ * bord), qui prennent toute la fenêtre.
  */
 function WebPhoneFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { width } = useWindowDimensions();
   if (Platform.OS !== 'web') return <>{children}</>;
-  const full = isFullWidthPath(pathname);
+  const full = isFullWidthPath(pathname) || isWideAppPath(pathname, width);
   return (
     <View style={styles.webBackdrop}>
       <View style={[styles.webPhone, full && styles.webFull]}>{children}</View>

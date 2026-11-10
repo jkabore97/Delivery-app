@@ -10,11 +10,14 @@ import type { MarkerKind, SceneMarker } from './types';
  * - destinataire : goutte cobalt cerclée de blanc (maison), halo pulsé sous la pointe pendant la livraison ;
  * - livreur : disque blanc, véhicule de profil toujours droit, petite encoche de cap séparée sur le bord ; en livraison :
  *   véhicule et encoche cobalt ; libre : encre atténuée et pastille menthe « disponible » ;
- * - livraison en attente d'un livreur : radar cobalt doux et étiquette blanche (« #1005 ») ;
+ * - livraison en attente d'un livreur : radar cobalt doux au retrait, et son étiquette blanche (« #1005 ») en marqueur
+ *   à part, au-dessus des gouttes et des carrés (MARKER_Z) ;
+ * - destinataire à l'adresse même d'une entreprise : goutte posée au-dessus du carré (markerOffset), les deux visibles ;
  * - SOS : point corail pulsé, étiquette corail foncé.
- * Leurs styles (classes `ycm-*`) sont injectés par `ensureCobaltMapCss` et limités aux cartes (`.yaar-cobalt`, posé par
- * MapFrame) : les anciennes règles `yaar-*` de styles.css ne s'appliquent plus qu'aux éléments racine, redéfinis ici.
- * Ne jamais fixer `position` sur l'élément racine : MapLibre le place avec `.maplibregl-marker { position: absolute }`.
+ * Leurs styles (classes `yaar-*` et `ycm-*`) sont injectés par `ensureCobaltMapCss` et limités aux cartes (`.yaar-cobalt`,
+ * posé par MapFrame) ; le cadre, les boutons de zoom, la mention des données et les messages d'état de la carte sont
+ * dans styles.css. Ne jamais fixer `position` sur l'élément racine : MapLibre le place avec
+ * `.maplibregl-marker { position: absolute }`.
  */
 
 const C = COBALT_MAP;
@@ -117,23 +120,18 @@ ${S} .ycm-radar{position:absolute;inset:0;border-radius:50%;box-sizing:border-bo
   pointer-events:none;animation:ycm-radar 3s cubic-bezier(.25,.6,.4,1) infinite}
 ${S} .ycm-radar.d2{animation-delay:1s}${S} .ycm-radar.d3{animation-delay:2s}
 @keyframes ycm-radar{0%{transform:scale(.9);opacity:0}12%{opacity:1}100%{transform:scale(3.1);opacity:0}}
-${S} .ycm-search-label{position:absolute;left:26px;top:-18px;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px 0 8px;border-radius:999px;
-  background:#fff;color:${C.ink};font-size:12px;font-weight:700;white-space:nowrap;pointer-events:auto;cursor:pointer;
+${S} .yaar-tag{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px 0 8px;border-radius:999px;
+  background:#fff;color:${C.ink};font-size:12px;font-weight:700;white-space:nowrap;
   box-shadow:0 1px 2px ${rgba(C.ink, 0.06)},0 6px 16px ${rgba(C.ink, 0.1)};font-variant-numeric:tabular-nums}
-${S} .ycm-search-label::before{content:'';width:7px;height:7px;border-radius:50%;background:${C.cobalt};box-shadow:0 0 0 3px ${rgba(C.cobalt, 0.16)}}
+${S} .yaar-tag::before{content:'';width:7px;height:7px;border-radius:50%;background:${C.cobalt};box-shadow:0 0 0 3px ${rgba(C.cobalt, 0.16)}}
 ${S} .yaar-sos{width:18px;height:18px}
 ${S} .ycm-sos-dot{position:absolute;inset:0;border-radius:50%;background:${MAP_COLORS.sos};border:3px solid #fff;box-sizing:border-box;
   box-shadow:0 0 0 8px ${rgba(C.coral, 0.25)};animation:ycm-sos 1.2s ease-in-out infinite}
 @keyframes ycm-sos{50%{box-shadow:0 0 0 14px ${rgba(C.coral, 0.12)}}}
 ${S} .ycm-sos-label{position:absolute;left:24px;top:-4px;height:24px;display:inline-flex;align-items:center;padding:0 10px;border-radius:999px;white-space:nowrap;
   background:${MAP_COLORS.sosFill};color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px ${rgba(C.ink, 0.2)}}
-${S} .ycm-search-label[hidden],${S} .ycm-sos-label[hidden]{display:none}
-${S} .maplibregl-ctrl-group{border-radius:12px;overflow:hidden}
-${S} .maplibregl-ctrl-group:not(:empty){box-shadow:0 1px 2px ${rgba(C.ink, 0.06)},0 6px 16px ${rgba(C.ink, 0.1)}}
-${S} .map-attribution{background:rgba(255,255,255,.88);border-radius:8px;padding:2px 8px;font-size:10px;line-height:14px;font-weight:500;color:${C.inkMuted}}
-${S} .map-status{color:${C.inkMuted}}
-${S} .map-fallback-note{border:0;border-radius:8px;color:${C.inkMuted};box-shadow:0 1px 2px ${rgba(C.ink, 0.06)},0 6px 16px ${rgba(C.ink, 0.1)}}
-${S} .yaar-hood{padding-top:22px;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${MAP_COLORS.label};
+${S} .ycm-sos-label[hidden]{display:none}
+${S} .yaar-hood{padding-top:22px;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${C.inkMuted};
   white-space:nowrap;pointer-events:none;text-shadow:0 0 2px ${C.land},0 0 2px ${C.land},0 1px 0 ${C.land}}
 @media (prefers-reduced-motion: reduce){${S} .ycm-radar,${S} .ycm-pulse,${S} .ycm-sos-dot{animation:none}${S} .ycm-radar{opacity:.35}}
 `;
@@ -150,21 +148,35 @@ export function ensureCobaltMapCss(): void {
   document.head.appendChild(style);
 }
 
-/** Empilement : anneaux sous les entreprises, livreurs au-dessus des épingles, SOS tout en haut. */
-export const MARKER_Z: Record<MarkerKind, number> = { label: 0, search: 1, business: 2, dropoff: 3, driver: 4, sos: 5 };
+/**
+ * Empilement : anneaux sous les entreprises, livreurs au-dessus des épingles, étiquettes « #1005 » au-dessus de tout
+ * marqueur de livraison (jamais cachées sous une goutte), SOS tout en haut.
+ */
+export const MARKER_Z: Record<MarkerKind, number> = { label: 0, search: 1, business: 2, dropoff: 3, driver: 4, tag: 5, sos: 6 };
 
 /**
- * Ancre MapLibre du marqueur : la goutte pointe vers le bas ; le nom de quartier est posé sous son point (les
- * entreprises de démonstration sont souvent au centre même du quartier).
+ * Ancre MapLibre du marqueur : la goutte pointe vers le bas ; l'étiquette part à droite de son point ; le nom de
+ * quartier est posé sous son point (les entreprises de démonstration sont souvent au centre même du quartier).
  */
-export function markerAnchor(kind: MarkerKind): 'center' | 'bottom' | 'top' {
+export function markerAnchor(kind: MarkerKind): 'center' | 'bottom' | 'top' | 'left' {
   if (kind === 'dropoff') return 'bottom';
+  if (kind === 'tag') return 'left';
   return kind === 'label' ? 'top' : 'center';
+}
+
+/**
+ * Décalage en pixels du marqueur par rapport à son ancre : l'étiquette à droite du carré de l'entreprise (36 px), un
+ * peu au-dessus ; la goutte d'un destinataire situé à une entreprise posée sur le haut du carré au lieu de le couvrir.
+ */
+export function markerOffset(m: Pick<SceneMarker, 'kind' | 'onBusiness'>): [number, number] {
+  if (m.kind === 'tag') return [22, -14];
+  if (m.kind === 'dropoff' && m.onBusiness) return [0, -16];
+  return [0, 0];
 }
 
 /** Apparence fixe d'un marqueur : l'élément est recréé seulement si elle change (le reste est mis à jour en place). */
 export function markerLook(m: SceneMarker): string {
-  return `${m.kind}|${m.vehicleType ?? ''}|${m.initials ?? ''}`;
+  return `${m.kind}|${m.vehicleType ?? ''}|${m.initials ?? ''}|${m.onBusiness ? 1 : 0}`;
 }
 
 export function isClickable(m: SceneMarker): boolean {
@@ -222,7 +234,9 @@ export function createMarkerElement(m: SceneMarker): HTMLElement {
     case 'search':
       el.className = 'yaar-mk yaar-search';
       el.innerHTML = '<div class="ycm-radar-glow"></div><div class="ycm-radar"></div><div class="ycm-radar d2"></div><div class="ycm-radar d3"></div>';
-      span(el, 'ycm-search-label');
+      break;
+    case 'tag':
+      el.className = 'yaar-mk yaar-tag';
       break;
     case 'sos':
       el.className = 'yaar-mk yaar-sos';
@@ -233,7 +247,12 @@ export function createMarkerElement(m: SceneMarker): HTMLElement {
       el.className = 'yaar-mk yaar-hood';
       break;
   }
-  if (isClickable(m)) {
+  if (m.kind === 'tag') {
+    // Double, pour la souris, du radar de la même livraison (bouton du clavier et des lecteurs d'écran) : pas d'arrêt
+    // de tabulation ni de lecture en plus.
+    if (isClickable(m)) el.classList.add('is-clickable');
+    el.setAttribute('aria-hidden', 'true');
+  } else if (isClickable(m)) {
     el.classList.add('is-clickable');
     el.setAttribute('role', 'button');
     el.tabIndex = 0;
@@ -250,6 +269,11 @@ export function updateMarkerElement(el: HTMLElement, m: SceneMarker): void {
     el.textContent = m.label ?? '';
     return;
   }
+  if (m.kind === 'tag') {
+    el.textContent = m.label ?? '';
+    el.title = m.title;
+    return;
+  }
   el.title = m.title;
   el.setAttribute('aria-label', m.title);
   if (m.kind === 'driver') {
@@ -258,8 +282,8 @@ export function updateMarkerElement(el: HTMLElement, m: SceneMarker): void {
   }
   if (m.kind === 'business') el.classList.toggle('is-dimmed', !!m.dimmed);
   if (m.kind === 'dropoff') el.classList.toggle('is-pulsing', !!m.pulse);
-  if (m.kind === 'search' || m.kind === 'sos') {
-    const label = el.querySelector<HTMLElement>(m.kind === 'search' ? '.ycm-search-label' : '.ycm-sos-label');
+  if (m.kind === 'sos') {
+    const label = el.querySelector<HTMLElement>('.ycm-sos-label');
     if (label) {
       label.textContent = m.label ?? '';
       label.hidden = !m.label;

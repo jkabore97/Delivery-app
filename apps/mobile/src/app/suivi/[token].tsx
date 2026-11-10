@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { loadAsync } from 'expo-font';
+import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../components/Text';
 import Head from 'expo-router/head';
 import { Stack, useLocalSearchParams } from 'expo-router';
@@ -19,9 +18,7 @@ import { publicApi } from '../../lib/publicApi';
 import { trackingPollMs } from '../../lib/publicConfig';
 import { telUrl } from '../../lib/tel';
 import { recipientToDriverText, trackingHeadline, trackingSteps, type Headline } from '../../lib/trackingSteps';
-import { hideWebSplash, isSlowConnection, markPublicFontsCached, takePrefetchedTracking } from '../../lib/webShell';
-import { mapEngineReady } from '../../components/driver/mapEngine';
-import { FONT_ASSETS } from '../../fonts';
+import { hideWebSplash, takePrefetchedTracking } from '../../lib/webShell';
 import { useAppConfig } from '../../state/config';
 import { palette, radii, shadows, spacing } from '../../theme';
 
@@ -38,33 +35,6 @@ function fetchTracking(token: string): Promise<TrackingDto> {
   return takePrefetchedTracking(token) ?? publicApi.trackDelivery(token);
 }
 
-/** Au plus tard après ce délai, les polices sont demandées même si la carte n'est pas prête. */
-const FONTS_AFTER_MAP_MAX_WAIT_MS = 8000;
-
-/**
- * Web : polices de l'application demandées une fois le moteur de la carte téléchargé (ou au bout de 8 s), pour qu'en 3G
- * elles ne retardent ni le suivi ni la carte ; le texte, affiché d'abord dans la police du système, prend la police à son
- * arrivée. Retenu ensuite sur l'appareil (`markPublicFontsCached`) : aux visites suivantes, polices en cache. Aucune
- * police sur une connexion très lente. Sans effet quand la mise en page racine les a déjà chargées (demande reprise).
- */
-function usePublicFontsAfterMap(): void {
-  useEffect(() => {
-    if (Platform.OS !== 'web' || isSlowConnection()) return;
-    let done = false;
-    const load = () => {
-      if (done) return;
-      done = true;
-      loadAsync(FONT_ASSETS).then(
-        () => markPublicFontsCached(),
-        () => undefined,
-      );
-    };
-    const timer = setTimeout(load, FONTS_AFTER_MAP_MAX_WAIT_MS);
-    void mapEngineReady().then(load);
-    return () => clearTimeout(timer);
-  }, []);
-}
-
 /**
  * Page publique du destinataire (lien reçu par SMS / WhatsApp), SANS compte ni connexion, au dessin Cobalt : carte
  * Cobalt en direct (itinéraire, entreprise en épingle à ses initiales, « chez vous » en épingle à maison, livreur),
@@ -79,7 +49,6 @@ export default function PublicTrackingScreen() {
   const { config } = useAppConfig();
   const state = usePublicTracking(token, { intervalMs: (data) => trackingPollMs(config, data?.status) || 60_000, fetcher: fetchTracking });
   useEffect(() => hideWebSplash(), []);
-  usePublicFontsAfterMap();
 
   return (
     <>

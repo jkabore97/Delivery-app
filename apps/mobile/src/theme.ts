@@ -8,6 +8,22 @@ import { Platform, type TextStyle, type ViewStyle } from 'react-native';
  * Contrastes (WCAG) mesurés : voir chaque couleur. Petits textes : 4,5:1 au moins là où ils sont posés.
  * La police : src/fonts.ts (un seul endroit) ; les textes passent par components/Text.tsx.
  */
+/**
+ * Couleur `#RRGGBB` (ou `#RGB`) avec une opacité de 0 à 1 → `rgba(r, g, b, a)` : voiles, halos, filets translucides et
+ * ombres se tirent des jetons (`alpha(palette.ink, 0.08)`, `alpha(palette.white, 0.16)` sur cobalt), jamais d'un rgba
+ * écrit à la main. Une valeur qui n'est pas hexadécimale est rendue telle quelle.
+ */
+export function alpha(color: string, opacity: number): string {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const hex = m[1]!.length === 3 ? m[1]!.replace(/./g, (c) => c + c) : m[1]!;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const a = Math.round(Math.min(1, Math.max(0, Number.isFinite(opacity) ? opacity : 1)) * 1000) / 1000;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+const INK = '#0C1222';
+
 export const palette = {
   /** Fond de l'application derrière les cartes. */
   canvas: '#EEF1F5',
@@ -23,7 +39,7 @@ export const palette = {
   /** Poignée des feuilles du bas. */
   handle: '#D5DBE5',
   /** Texte principal : 18,7:1 sur blanc, 16,5:1 sur canvas. */
-  ink: '#0C1222',
+  ink: INK,
   /** Texte secondaire : 5,96:1 sur blanc, 5,26:1 sur canvas, 5,5:1 sur raised, 5,07:1 sur raisedHigh. */
   inkMuted: '#5B6475',
   /** LA couleur : actions principales, itinéraire, onglet actif, liens, tuile héros (texte : 6,09:1 sur blanc). */
@@ -61,7 +77,9 @@ export const palette = {
   /** Texte d'erreur : 5,46:1 sur coralTint, 6,57:1 sur blanc, 6,07:1 sur raised. */
   coralText: '#B42318',
   /** Voile derrière une fenêtre. */
-  overlay: 'rgba(12, 18, 34, 0.45)',
+  overlay: alpha(INK, 0.45),
+  /** Web : fond de la page autour de la colonne « téléphone » (grand écran). */
+  backdrop: '#DCE1E9',
 } as const;
 
 /** Rayons (px) : cartes 24, tuile héros 28, feuilles 32, champs 16, pastilles et boutons en pilule. */
@@ -95,17 +113,19 @@ function shadow(boxShadow: string, elevation: number): ViewStyle {
 
 export const shadows = {
   /** Cartes et tuiles posées sur canvas. */
-  tile: shadow('0 1px 2px rgba(12, 18, 34, 0.04), 0 12px 32px rgba(12, 18, 34, 0.06)', 2),
+  tile: shadow(`0 1px 2px ${alpha(INK, 0.04)}, 0 12px 32px ${alpha(INK, 0.06)}`, 2),
   /** Éléments flottants : pastilles et boutons sur la carte, barre d'onglets. */
-  float: shadow('0 1px 2px rgba(12, 18, 34, 0.06), 0 6px 16px rgba(12, 18, 34, 0.10)', 6),
+  float: shadow(`0 1px 2px ${alpha(INK, 0.06)}, 0 6px 16px ${alpha(INK, 0.1)}`, 6),
   /** Feuille du bas posée sur une carte. */
-  sheet: shadow('0 -8px 32px rgba(12, 18, 34, 0.10)', 12),
+  sheet: shadow(`0 -8px 32px ${alpha(INK, 0.1)}`, 12),
   /** Bouton cobalt plein (léger halo cobalt). */
-  cobalt: shadow('0 8px 18px -6px rgba(36, 72, 255, 0.55)', 4),
+  cobalt: shadow(`0 8px 18px -6px ${alpha(palette.cobalt, 0.55)}`, 4),
   /** Tuile héros cobalt. */
-  hero: shadow('0 1px 2px rgba(12, 18, 34, 0.06), 0 18px 36px -14px rgba(36, 72, 255, 0.55)', 6),
+  hero: shadow(`0 1px 2px ${alpha(INK, 0.06)}, 0 18px 36px -14px ${alpha(palette.cobalt, 0.55)}`, 6),
   /** Tuile soleil (espèces). */
-  sun: shadow('0 1px 2px rgba(12, 18, 34, 0.05), 0 14px 30px -14px rgba(196, 140, 0, 0.55)', 3),
+  sun: shadow(`0 1px 2px ${alpha(INK, 0.05)}, 0 14px 30px -14px ${alpha('#C48C00', 0.55)}`, 3),
+  /** Filet d'ombre d'un bouton blanc posé sur une carte blanche (secondaire, `outline`). */
+  hairline: { boxShadow: `0 1px 2px ${alpha(INK, 0.05)}` } as ViewStyle,
 } as const;
 
 /* ------------------------------------------------------------------------------------------------------------------ */
@@ -141,85 +161,34 @@ export const typography = {
 export const tabular: TextStyle = { fontVariant: ['tabular-nums'] };
 
 /* ------------------------------------------------------------------------------------------------------------------ */
-/* ANCIENS JETONS (écrans pas encore redessinés)                                                                      */
+/* Anneau de focus du clavier (web)                                                                                     */
 /* ------------------------------------------------------------------------------------------------------------------ */
 
 /**
- * @deprecated Ancienne palette claire. Valeurs remplacées par leurs équivalents Cobalt pour que les écrans pas encore
- * redessinés forment une application CLAIRE cohérente ; utiliser `palette`. Correspondance :
- * green / orange / blue (accents des espaces) → cobalt ; leurs fonds clairs → cobaltTint ; red (textes d'erreur,
- * fonds destructifs) → coralText #B42318 (lisible partout, blanc dessus 6,6:1) ; redLight → coralTint ;
- * text → ink ; textMuted → inkMuted ; border → line ; background → canvas ; card / white → blanc.
+ * Attributs `data-*` d'un élément sur le web (`dataSet` de react-native-web) ; rien sur Android / iOS. À étaler dans
+ * les props : `<View {...ON_COBALT_SURFACE} />`.
  */
-export const colors = {
-  green: palette.cobalt,
-  greenLight: palette.cobaltTint,
-  orange: palette.cobalt,
-  orangeLight: palette.cobaltTint,
-  blue: palette.cobalt,
-  blueLight: palette.cobaltTint,
-  red: palette.coralText,
-  redLight: palette.coralTint,
-  text: palette.ink,
-  textMuted: palette.inkMuted,
-  border: palette.line,
-  background: palette.canvas,
-  card: palette.card,
-  white: palette.white,
-} as const;
+function webData(data: Record<string, string>): Record<never, never> {
+  return Platform.OS === 'web' ? ({ dataSet: data } as Record<never, never>) : {};
+}
+
+/*
+ * L'anneau lui-même est dessiné par public/index.html (une règle `:focus-visible` pour toute l'application) : 2 px
+ * cobalt détachés de 2 px, qui suivent les coins de l'élément (contraste 6,1:1 sur blanc, 5,4:1 sur canvas). Un champ
+ * qui dessine son propre anneau (bordure cobalt de `Field`) l'écarte avec `outlineStyle: 'none'`. Les marqueurs
+ * ci-dessous règlent les deux cas où l'élément focalisé n'est pas la forme que l'on voit.
+ */
 
 /**
- * @deprecated Anciennes surfaces sombres (livreur, entreprise). Cobalt n'a pas de mode sombre : valeurs remplacées par
- * leurs équivalents CLAIRS, pour que les écrans pas encore redessinés restent lisibles et cohérents ; utiliser
- * `palette`. Correspondance (contraste de chaque texte vérifié sur canvas, card, raised et sur son fond doux) :
- * background → canvas ; surface → card (blanc) ; raised → raised ; raisedHigh → raisedHigh ; border → line ;
- * text → ink ; textMuted et textFaint → inkMuted (5,07:1 au moins) ; green (action, gain) → cobalt (5,23:1 au
- * moins) et greenInk (texte dessus) → blanc ; greenSoft → cobaltTint ; red (texte) → coralText #B42318 (5,46:1 au
- * moins ; #D92D20 n'aurait que 4,01:1 sur coralTint) ; redFill → coralFill ; redSoft → coralTint ; amber (texte des
- * espèces) → amberText #8A5A00 (5,23:1 au moins ; un FOND d'espèces s'écrit `palette.sun`) ; amberSoft → sunTint ;
- * overlay → voile encre ; chip (pastille sur la carte) → blanc.
+ * Élément focalisable dont la forme visible est un ENFANT (colonne « disque + libellé » d'un bouton rond, `Pressable`
+ * élargi autour d'une pastille) : l'anneau entoure cette forme, marquée `FOCUS_SHAPE`, au lieu du rectangle de la
+ * colonne (qui rognait le libellé). `<Pressable {...FOCUS_RING_INNER}><View {...FOCUS_SHAPE} style={disque} /></Pressable>`.
  */
-export const dark = {
-  background: palette.canvas,
-  surface: palette.card,
-  raised: palette.raised,
-  raisedHigh: palette.raisedHigh,
-  border: palette.line,
-  text: palette.ink,
-  textMuted: palette.inkMuted,
-  textFaint: palette.inkMuted,
-  green: palette.cobalt,
-  greenInk: palette.onCobalt,
-  greenSoft: palette.cobaltTint,
-  red: palette.coralText,
-  redFill: palette.coralFill,
-  redSoft: palette.coralTint,
-  amber: palette.amberText,
-  amberSoft: palette.sunTint,
-  overlay: palette.overlay,
-  chip: palette.card,
-} as const;
-
-/** @deprecated Couleur de chaque espace : Cobalt n'en a qu'une (cobalt) pour tous. */
-export const roleColor = {
-  CLIENT: palette.cobalt,
-  SELLER: palette.cobalt,
-  DRIVER: palette.cobalt,
-} as const;
-
-/** @deprecated Rayons d'origine, agrandis aux valeurs Cobalt (sm 12, md 16, lg 24) : utiliser `radii`. */
-export const radius = { sm: radii.sm, md: radii.input, lg: radii.card, pill: radii.pill } as const;
-
+export const FOCUS_RING_INNER = webData({ focusRing: 'inner' });
+/** La forme visible d'un élément `FOCUS_RING_INNER` (disque, pastille) : l'anneau en suit les coins. */
+export const FOCUS_SHAPE = webData({ focusShape: 'true' });
 /**
- * @deprecated Ancienne échelle (titres 900) : mêmes clés, valeurs Cobalt (800 au plus, interlettrage serré) ; utiliser
- * `typography`. hero : grand titre d'écran (= display) ; title : titre d'écran compact (24) ; subtitle : nom (18/700).
+ * Surface cobalt pleine (tuile héros, bouton posé sur elle) : l'anneau de ses éléments focalisables y devient blanc
+ * (6,1:1 sur cobalt) avec un halo cobalt, visible aussi là où il déborde sur du blanc. À poser sur le conteneur cobalt.
  */
-export const typeScale: Record<'hero' | 'title' | 'subtitle' | 'body' | 'label' | 'kicker' | 'amount', TextStyle> = {
-  hero: typography.display,
-  title: { fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.6 },
-  subtitle: { fontSize: 18, lineHeight: 23, fontWeight: '700', letterSpacing: -0.2 },
-  body: typography.body,
-  label: typography.label,
-  kicker: typography.kicker,
-  amount: typography.amount,
-};
+export const ON_COBALT_SURFACE = webData({ surface: 'cobalt' });

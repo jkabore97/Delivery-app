@@ -9,9 +9,10 @@ export type LineKind = 'route' | 'dashed' | 'next';
 /**
  * business = entreprise / point de retrait (carré encre, initiales ou boutique) ; dropoff = destinataire (goutte
  * cobalt) ; driver = livreur (disque blanc, véhicule droit, encoche de cap) ; search = livraison en attente d'un
- * livreur (radar cobalt au retrait) ; sos = alerte SOS (point corail pulsé) ; label = nom de quartier (fond de secours).
+ * livreur (radar cobalt au retrait) ; tag = étiquette blanche « #1005 » de cette livraison, au-dessus de tous les
+ * marqueurs ; sos = alerte SOS (point corail pulsé) ; label = nom de quartier (fond de secours).
  */
-export type MarkerKind = 'business' | 'dropoff' | 'driver' | 'search' | 'sos' | 'label';
+export type MarkerKind = 'business' | 'dropoff' | 'driver' | 'search' | 'tag' | 'sos' | 'label';
 
 export interface SceneMarker extends LatLng {
   id: string;
@@ -26,11 +27,16 @@ export interface SceneMarker extends LatLng {
   heading?: number | null;
   /** Destinataire : halo pulsé (livraison en cours). */
   pulse?: boolean;
+  /**
+   * Destinataire à l'adresse même d'une entreprise : la goutte est posée au-dessus du carré de l'entreprise au lieu de
+   * le recouvrir (les deux restent visibles).
+   */
+  onBusiness?: boolean;
   /** Entreprise fermée : marqueur estompé. */
   dimmed?: boolean;
   /** Entreprise : initiales blanches dans le carré (« LV ») ; absent = pictogramme boutique. */
   initials?: string | null;
-  /** Texte affiché à côté du marqueur (« #1052 », « SOS · Karim D. », nom de quartier). */
+  /** Texte affiché à côté du marqueur (« #1052 » d'une étiquette, « SOS · Karim D. », nom de quartier). */
   label?: string;
   /** Clic : fiche de la livraison ou du livreur. */
   orderId?: string;

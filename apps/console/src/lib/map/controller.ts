@@ -1,7 +1,7 @@
 import type { Marker } from 'maplibre-gl';
 import { boundsOf, distanceM, padBounds, type LatLng } from '@yaar/shared';
 import { ensureLineLayers, LINES_SOURCE, setLineFeatures, type BaseMap, type Maplibre } from './engine';
-import { createMarkerElement, markerAnchor, markerLook, setDriverHeading, updateMarkerElement } from './markers';
+import { createMarkerElement, markerAnchor, markerLook, markerOffset, setDriverHeading, updateMarkerElement } from './markers';
 import { SmoothMover } from './motion';
 import { neighbourhoodLabels, resolveLines } from './scene';
 import type { MapScene, SceneLine, SceneMarker } from './types';
@@ -91,7 +91,9 @@ export class MapSceneController {
 
   private addEntry(m: SceneMarker, look: string): Entry {
     const el = createMarkerElement(m);
-    const marker = new this.ml.Marker({ element: el, anchor: markerAnchor(m.kind) }).setLngLat([m.lng, m.lat]).addTo(this.map);
+    const marker = new this.ml.Marker({ element: el, anchor: markerAnchor(m.kind), offset: markerOffset(m) })
+      .setLngLat([m.lng, m.lat])
+      .addTo(this.map);
     const entry: Entry = { look, marker, el, data: m };
     const fire = (ev: Event) => {
       ev.stopPropagation();

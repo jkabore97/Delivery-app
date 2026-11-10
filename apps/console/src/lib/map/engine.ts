@@ -68,8 +68,20 @@ export interface BaseMap {
  * d'inclinaison ; densité de pixels plafonnée à 2 ; mention des données affichée par la console (attributionControl
  * désactivé) ; taille suivie.
  */
+/** Textes de MapLibre lus par les lecteurs d'écran (canevas, boutons de zoom) : en français, comme la console. */
+export const MAP_LOCALE: Record<string, string> = {
+  'Map.Title': 'Carte',
+  'Marker.Title': 'Repère sur la carte',
+  'NavigationControl.ZoomIn': 'Zoom avant',
+  'NavigationControl.ZoomOut': 'Zoom arrière',
+  'NavigationControl.ResetBearing': 'Remettre le nord en haut',
+  'Popup.Close': 'Fermer',
+  'AttributionControl.ToggleAttribution': 'Afficher ou masquer les sources',
+};
+
 export function createBaseMap(ml: Maplibre, container: HTMLElement, opts: BaseMapOptions): BaseMap {
   const map = new ml.Map({
+    locale: MAP_LOCALE,
     container,
     style: resolveMapStyleUrl(opts.styleUrl ?? MAP_STYLE_URL),
     center: [opts.center.lng, opts.center.lat],

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { IncidentDto, MapDataDto, PendingOrderDto } from '@yaar/shared';
 import { useApi } from '../auth/AuthContext';
 import { AlertsPanel } from '../components/AlertsPanel';
-import { KpiCards } from '../components/KpiCards';
+import { KpiCards, KpiSkeleton } from '../components/KpiCards';
 import { KycQueuePanel } from '../components/KycQueuePanel';
 import { LiveMap } from '../components/LiveMap';
 import { PendingOrdersPanel } from '../components/PendingOrdersPanel';
@@ -26,48 +26,79 @@ function PinGlyph() {
   );
 }
 
+/** Légende ouverte ou repliée : préférence de cet écran (localStorage), repliée par défaut. */
+const LEGEND_OPEN_KEY = 'yaar.console.legendOpen';
+
+function readLegendOpen(): boolean {
+  try {
+    return window.localStorage.getItem(LEGEND_OPEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Légende de la carte : mêmes formes que les marqueurs Cobalt (src/lib/map/markers.ts) : livreur en livraison (disque
- * blanc, véhicule cobalt), livreur libre (véhicule encre atténuée, point menthe), entreprise (carré encre), destinataire
- * (goutte cobalt), livraison en attente (tirets cobalt), itinéraire (cobalt à liseré blanc), SOS (point corail).
+ * Légende de la carte, repliée par défaut en une pastille « Légende » (elle ne cache aucun marqueur ; le cadrage garde
+ * sa place, cf. LiveMap). Ouverte, une liste avec les mêmes formes que les marqueurs Cobalt (src/lib/map/markers.ts) :
+ * livreur en livraison (disque blanc, véhicule cobalt), livreur libre (véhicule encre atténuée, point menthe), entreprise
+ * (carré encre), destinataire (goutte cobalt), livraison en attente (tirets cobalt), itinéraire (cobalt à liseré blanc),
+ * SOS (point corail).
  */
 export function MapLegend() {
+  const [open, setOpen] = useState(readLegendOpen);
+  const listId = useId();
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    try {
+      window.localStorage.setItem(LEGEND_OPEN_KEY, next ? '1' : '0');
+    } catch {
+      /* préférence non retenue (stockage indisponible) */
+    }
+  }
   return (
-    <div className="map-legend" aria-label="Légende">
-      <span>
-        <i className="lg lg-driver" aria-hidden="true">
-          <Icon name="moto" size={14} strokeWidth={2.6} />
-        </i>
-        En livraison
-      </span>
-      <span>
-        <i className="lg lg-driver lg-free" aria-hidden="true">
-          <Icon name="moto" size={14} strokeWidth={2.6} />
-        </i>
-        Livreur libre
-      </span>
-      <span>
-        <i className="lg lg-business" aria-hidden="true" />
-        Entreprise
-      </span>
-      <span>
-        <i className="lg lg-dropoff" aria-hidden="true">
-          <PinGlyph />
-        </i>
-        Destinataire
-      </span>
-      <span>
-        <i className="lg lg-search" aria-hidden="true" />
-        En attente d’un livreur
-      </span>
-      <span>
-        <i className="lg lg-route" aria-hidden="true" />
-        Itinéraire
-      </span>
-      <span>
-        <i className="lg lg-sos" aria-hidden="true" />
-        SOS
-      </span>
+    <div className={`map-legend${open ? ' is-open' : ''}`}>
+      <ul id={listId} className="map-legend-list" aria-label="Légende" hidden={!open}>
+        <li>
+          <i className="lg lg-driver" aria-hidden="true">
+            <Icon name="moto" size={14} strokeWidth={2.6} />
+          </i>
+          En livraison
+        </li>
+        <li>
+          <i className="lg lg-driver lg-free" aria-hidden="true">
+            <Icon name="moto" size={14} strokeWidth={2.6} />
+          </i>
+          Livreur libre
+        </li>
+        <li>
+          <i className="lg lg-business" aria-hidden="true" />
+          Entreprise
+        </li>
+        <li>
+          <i className="lg lg-dropoff" aria-hidden="true">
+            <PinGlyph />
+          </i>
+          Destinataire
+        </li>
+        <li>
+          <i className="lg lg-search" aria-hidden="true" />
+          En attente d’un livreur
+        </li>
+        <li>
+          <i className="lg lg-route" aria-hidden="true" />
+          Itinéraire
+        </li>
+        <li>
+          <i className="lg lg-sos" aria-hidden="true" />
+          SOS
+        </li>
+      </ul>
+      <button type="button" className="map-legend-toggle" aria-expanded={open} aria-controls={listId} onClick={toggle}>
+        <Icon name="list" size={18} />
+        Légende
+        <Icon name="chevronDown" size={16} className="map-legend-chevron" />
+      </button>
     </div>
   );
 }
@@ -79,7 +110,11 @@ const FILTERS: Array<{ value: VehicleFilter; label: string; icon?: IconName }> =
   { value: 'CAR', label: 'Voiture', icon: 'car' },
 ];
 
-/** « Carte en direct » : indicateurs, carte de Ouagadougou, livraisons en attente, dossiers KYC et alertes. */
+/**
+ * « Carte en direct » : indicateurs, alertes (SOS d'abord), livraisons en attente, dossiers KYC et carte de Ouagadougou.
+ * Les panneaux viennent avant la carte dans le document (lecteur d'écran, Tab : les urgences d'abord) ; sur grand écran
+ * ils forment la colonne de droite, à la hauteur de la carte et défilante, sous 1024 px ils passent au-dessus de la carte.
+ */
 export function LivePage() {
   const api = useApi();
   const navigate = useNavigate();
@@ -185,41 +220,18 @@ export function LivePage() {
   };
 
   const openIncidents = (incidents.incidents ?? []).filter((i) => i.status !== 'RESOLVED');
+  // Carte jamais chargée et en erreur : un emplacement à la hauteur de la carte, le bandeau et « Réessayer » dedans.
+  const mapFailed = !map.data && !!map.error;
 
   return (
     <div className="page page-live">
       <PageTitle>Carte en direct</PageTitle>
-      <ErrorBanner message={dashError} />
-      {dashboard ? <KpiCards dashboard={dashboard} /> : <Loading label="Chargement des indicateurs…" />}
+      <ErrorBanner message={dashError} onRetry={refreshDashboard} />
+      {dashboard ? <KpiCards dashboard={dashboard} /> : dashError ? null : <KpiSkeleton />}
       <div className="live-grid">
-        <div className="map-tile">
-          <div className="map-filters" role="group" aria-label="Filtrer par véhicule">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                aria-pressed={filter === f.value}
-                onClick={() => setFilter(f.value)}
-              >
-                {f.icon && <Icon name={f.icon} size={18} />}
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {map.error && <ErrorBanner message={map.error} onRetry={() => map.reload()} />}
-          {map.data ? (
-            <LiveMap
-              data={map.data}
-              filter={filter}
-              onOrderClick={(id) => navigate(`/courses/${id}`)}
-              onDriverClick={(id) => navigate(`/livreurs/${id}`)}
-            />
-          ) : (
-            !map.error && <Loading label="Chargement de la carte…" />
-          )}
-          <MapLegend />
-        </div>
         <div className="side-panels">
+          <ErrorBanner message={incidents.error} onRetry={() => void incidents.reload()} />
+          <AlertsPanel incidents={openIncidents} />
           <ErrorBanner message={pending.error} onRetry={() => pending.reload()} />
           <PendingOrdersPanel
             orders={pending.data ?? []}
@@ -227,13 +239,50 @@ export function LivePage() {
             onChanged={onPendingChanged}
             limit={5}
           />
-          <ErrorBanner message={kyc.error} />
+          <ErrorBanner message={kyc.error} onRetry={() => kyc.reload()} />
           <KycQueuePanel
             drivers={kyc.data?.items ?? []}
             total={kyc.data?.total ?? 0}
           />
-          <ErrorBanner message={incidents.error} onRetry={() => void incidents.reload()} />
-          <AlertsPanel incidents={openIncidents} />
+        </div>
+        <div className={`map-tile${mapFailed ? ' is-failed' : ''}`}>
+          {!mapFailed && (
+            <div className="map-filters" role="group" aria-label="Filtrer par véhicule">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  aria-pressed={filter === f.value}
+                  onClick={() => setFilter(f.value)}
+                >
+                  {f.icon && <Icon name={f.icon} size={18} />}
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {map.data ? (
+            <>
+              {map.error && <ErrorBanner message={map.error} onRetry={() => map.reload()} />}
+              <LiveMap
+                data={map.data}
+                filter={filter}
+                onOrderClick={(id) => navigate(`/courses/${id}`)}
+                onDriverClick={(id) => navigate(`/livreurs/${id}`)}
+              />
+            </>
+          ) : mapFailed ? (
+            <div className="map-placeholder">
+              <span className="map-placeholder-icon" aria-hidden="true">
+                <Icon name="map" size={22} />
+              </span>
+              <p className="map-placeholder-title">Carte indisponible</p>
+              <ErrorBanner message={map.error} onRetry={() => map.reload()} />
+            </div>
+          ) : (
+            <Loading label="Chargement de la carte…" />
+          )}
+          {!mapFailed && <MapLegend />}
         </div>
       </div>
     </div>
