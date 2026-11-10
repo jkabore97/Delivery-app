@@ -1,6 +1,5 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { FitAmount } from '../../components/design/FitAmount';
 import { Text } from '../../components/Text';
 import { Icon } from '../../components/design/Icon';
 import { ScreenHeader, SurfaceScreen } from '../../components/design/Surfaces';
@@ -65,7 +64,7 @@ export default function DriverHistory() {
                 leading={o.store ? <Avatar name={o.store.name} testID={testID} /> : <IconDisc icon="package" tone="cobalt" size={44} style={styles.avatarIcon} />}
                 title={o.store?.name ?? 'Colis'}
                 subtitle={cash ? `${meta}\n${cash}` : meta}
-                right={o.driverEarning !== null ? <FitAmount amount={o.driverEarning} sign="+" size={17} /> : null}
+                amount={o.driverEarning !== null ? { value: o.driverEarning, sign: '+' } : null}
                 rightSub={o.deliveredAt ? shortDateTime(o.deliveredAt) : null}
                 testID={testID}
               />

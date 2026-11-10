@@ -97,13 +97,22 @@ describe('OfferModal (plein écran)', () => {
     expect(StyleSheet.flatten(r.getByTestId('offer-earning').props.style)).toMatchObject({ backgroundColor: '#E9EDFF' });
     expect(StyleSheet.flatten(r.getByTestId('offer-cash').props.style)).toMatchObject({ backgroundColor: '#FFC93C' });
     // Texte encre sur le soleil (12,2:1), détail en encre brune (7,1:1) : jamais de texte jaune.
-    expect(StyleSheet.flatten(r.getByTestId('offer-cash-total').props.style)).toMatchObject({ color: '#0C1222', fontVariant: ['tabular-nums'] });
+    expect(StyleSheet.flatten(within(r.getByTestId('offer-cash-total')).getByText('9\u202f700').props.style)).toMatchObject({ color: '#0C1222', fontVariant: ['tabular-nums'] });
     expect(StyleSheet.flatten(r.getByTestId('offer-cash-split').props.style)).toMatchObject({ color: '#4B3B08' });
     const kicker = r.getByText('Détails de la course');
     expect(StyleSheet.flatten(kicker.props.style).textTransform).toBeUndefined();
     // Refuser : pilule rouge pleine (texte blanc 4,8:1), 56 px.
     const reject = within(r.getByTestId('reject-offer'));
     expect(reject.getByText('Refuser')).toBeTruthy();
+  });
+
+  it('course déjà payée : tuile verte douce « Rien à encaisser » à coche, jamais « 0 FCFA » en soleil', async () => {
+    mockDriver.offers = [offer({ cashToCollect: 0, cashAtPickup: 0, cashAtDelivery: 0 })];
+    const r = await show();
+    expect(r.getByTestId('offer-cash')).toHaveTextContent('Rien à encaisserCourse déjà payée');
+    expect(StyleSheet.flatten(r.getByTestId('offer-cash').props.style)).toMatchObject({ backgroundColor: '#D7F5E8' });
+    expect(r.queryByTestId('offer-cash-total')).toBeNull();
+    expect(r.queryByText(/0\u202fFCFA/)).toBeNull();
   });
 
   it('temps jusqu’au retrait : distance de l’API à la vitesse moyenne du véhicule (1 min au moins)', async () => {

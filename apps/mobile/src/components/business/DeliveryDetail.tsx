@@ -112,7 +112,8 @@ export function CancelReason({ order: o }: { order: OrderDto }) {
 const styles = StyleSheet.create({
   flex: { flex: 1, gap: 2 },
   block: { gap: spacing.md, padding: spacing.lg, borderRadius: 20, backgroundColor: palette.raised },
-  blockOnCard: { backgroundColor: palette.raised },
+  // Posé dans une tuile blanche (ordinateur) : pas de deuxième boîte remplie dans la tuile.
+  blockOnCard: { padding: 0, borderRadius: 0, backgroundColor: 'transparent' },
   recipientTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   kicker: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.inkMuted },
   recipientName: { fontSize: 17, lineHeight: 22, fontWeight: '700', color: palette.ink, letterSpacing: -0.2 },

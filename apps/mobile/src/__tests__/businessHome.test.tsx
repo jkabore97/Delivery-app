@@ -110,14 +110,18 @@ describe('Accueil de l’entreprise (téléphone) : carte, chiffres du jour et l
     await fireEvent.press(r.getByTestId('new-delivery'));
     expect(mockPush).toHaveBeenCalledWith('/business/nouvelle');
     expect(mockApi.request).toHaveBeenCalledWith('GET', '/business/summary');
-    // « 2 en cours » (la liste affichée), « 14 livrées », « 87 500 FCFA à reverser » (soleil).
-    expect(r.getByTestId('kpi-chips')).toHaveTextContent(/^2en cours14livrées87\s500\sFCFAà reverser$/);
-    expect(r.getByLabelText('87 500 FCFA à reverser, encaissés pour vous aujourd’hui')).toBeTruthy();
-    // Pastille de la carte et titre de la liste (attendu aussi par le parcours e2e).
+    // « 2 en cours » (la liste affichée), « 14 livrées », « 87 500 FCFA encaissés aujourd’hui » (soleil) : chiffre du
+    // jour, jamais « à reverser » (le reversement par Yaar n'est pas suivi).
+    expect(r.getByTestId('kpi-chips')).toHaveTextContent(/^2en cours14livrées87\s500\sFCFAencaissés aujourd’hui$/);
+    expect(r.getByLabelText('87 500 FCFA encaissés pour vous aujourd’hui')).toBeTruthy();
+    // Pastille de la carte (lue d'un seul tenant par les lecteurs d'écran).
     expect(r.getByTestId('summary-on-the-way')).toHaveTextContent('2 en cours');
     expect(r.getByTestId('summary-searching')).toHaveTextContent('1 en recherche');
     expect(r.getByTestId('summary-on-the-way').props.numberOfLines).toBe(1);
-    expect(r.getByText('Livraisons en cours')).toBeTruthy();
+    expect(r.getByLabelText('2 livraisons en cours, dont 1 en recherche d’un livreur')).toBe(r.getByTestId('map-summary'));
+    // Planche : pas de titre « Livraisons en cours » (la pastille et le chiffre le disent) ; « Recentrer » toujours là.
+    expect(r.queryByText('Livraisons en cours')).toBeNull();
+    expect(r.getByTestId('recenter-button')).toBeTruthy();
   });
 
   it('tuile héros cobalt : la livraison dont le colis arrive le premier (heure géante, soleil, livreur), toucher → suivi', async () => {
@@ -128,8 +132,10 @@ describe('Accueil de l’entreprise (téléphone) : carte, chiffres du jour et l
     const r = await show();
     const hero = r.getByTestId('hero-delivery');
     expect(within(hero).getByText('14:24')).toBeTruthy();
-    expect(hero).toHaveTextContent(/^Arrivée16\s500\sFCFA14:24dans 4 minAKAwa Kaboré\s+Patte d’OieIssouf S\./);
-    expect(StyleSheet.flatten(within(hero).getByText('14:24').props.style)).toMatchObject({ fontSize: 64, fontWeight: '800' });
+    // Planche (120 px) : heure 44/800, « Arrivée » et « dans 4 min » à côté, « À encaisser » et la pilule soleil à droite.
+    expect(hero).toHaveTextContent(/^14:24Arrivéedans 4 minÀ encaisser16\s500\sFCFAAKAwa Kaboré\s+Patte d’OieIssouf S\./);
+    expect(StyleSheet.flatten(within(hero).getByText('14:24').props.style)).toMatchObject({ fontSize: 44, fontWeight: '800' });
+    expect(r.getByTestId('delivery-p-soon').props.accessibilityLabel).toMatch(/, 16\s500\sFCFA à encaisser$/);
     await fireEvent.press(r.getByTestId('delivery-p-soon'));
     expect(mockPush).toHaveBeenCalledWith('/business/livraison/p-soon');
   });
@@ -176,7 +182,7 @@ describe('Accueil de l’entreprise (téléphone) : carte, chiffres du jour et l
     const r = await show();
     const open = r.getByTestId('delivery-del-1');
     expect(open.props.accessibilityRole).toBe('button');
-    expect(open.props.accessibilityLabel).toBe('Awa Kaboré, en livraison, arrivée vers 14:29, dans 9 min');
+    expect(open.props.accessibilityLabel).toBe('Awa Kaboré, en livraison, arrivée vers 14:29, dans 9 min, 16\u202f500\u202fFCFA à encaisser');
     expect(within(open).queryByLabelText(/WhatsApp|Appeler/)).toBeNull();
     const card = r.getByTestId('delivery-del-1-card');
     expect(within(card).getByLabelText('Écrire à Awa Kaboré sur WhatsApp (+22670112233)')).toBeTruthy();
@@ -271,7 +277,40 @@ describe('Accueil de l’entreprise (téléphone) : carte, chiffres du jour et l
     mockApi.getOrder.mockRejectedValue(new Error('réseau'));
     mockApi.listDeliveries.mockResolvedValue(page([listed({ etaMinutes: 9 })]));
     const r = await show();
-    expect(r.getByTestId('kpi-chips')).toHaveTextContent(/^1en cours…livrées…à reverser$/);
+    // Échec : « — » (dit indisponible), pas « … » pour toujours.
+    expect(r.getByTestId('kpi-chips')).toHaveTextContent(/^1en cours—livrées—encaissés aujourd’hui$/);
+    expect(r.getByLabelText('Encaissé pour vous aujourd’hui\u202f: indisponible')).toBeTruthy();
     expect(r.getByTestId('hero-delivery')).toBeTruthy();
+  });
+
+  it('chargement : « … » en cours (pas « 0 en cours »), ni « Aucune livraison »', async () => {
+    mockApi.request.mockReturnValue(new Promise(() => undefined));
+    mockApi.listDeliveries.mockReturnValue(new Promise(() => undefined));
+    const r = await show();
+    expect(r.getByTestId('kpi-chips')).toHaveTextContent(/^…en cours…livrées…encaissés aujourd’hui$/);
+    expect(r.queryByTestId('no-active-delivery')).toBeNull();
+  });
+
+  it('recherche d’un livreur en tête : l’état en grand, l’heure de la demande en petit', async () => {
+    mockApi.getOrder.mockRejectedValue(new Error('réseau'));
+    mockApi.listDeliveries.mockResolvedValue(page([listed({ id: 's', status: 'SEARCHING_DRIVER', driver: null, etaMinutes: null, createdAt: '2026-11-08T14:18:00.000Z' })]));
+    const r = await show();
+    const hero = r.getByTestId('hero-delivery');
+    expect(within(hero).getByTestId('hero-state')).toHaveTextContent('Recherche…');
+    expect(hero).toHaveTextContent(/^Livreur demandé à 14:18 · il y a 2 minRecherche…/);
+    expect(within(hero).queryByText('14:18')).toBeNull();
+  });
+
+  it('liste : la puce d’état se raccourcit, l’heure et le montant gardent leur place ; puce grise blanche sur la carte canvas', async () => {
+    mockApi.getOrder.mockRejectedValue(new Error('réseau'));
+    mockApi.listDeliveries.mockResolvedValue(
+      page([listed({ id: 'p', etaMinutes: 4 }), listed({ id: 'a', status: 'ASSIGNED', etaMinutes: 18 }), listed({ id: 's', status: 'SEARCHING_DRIVER', driver: null, cashToCollect: 12500 }), listed({ id: 'p2', etaMinutes: 20 })]),
+    );
+    const r = await show();
+    const chipText = within(r.getByTestId('delivery-s')).getByText('Recherche d’un livreur');
+    expect(StyleSheet.flatten(chipText.props.style)).toMatchObject({ flexShrink: 1 });
+    expect(chipText.props.numberOfLines).toBe(1);
+    const chip = chipText.parent!;
+    expect(StyleSheet.flatten(chip.props.style)).toMatchObject({ maxWidth: '100%', backgroundColor: '#FFFFFF' });
   });
 });

@@ -166,10 +166,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
     .join(' · ');
   const split =
     cash.atPickup !== null && cash.atDelivery !== null && cash.total > 0
-      ? [
-          cash.atPickup > 0 ? `${formatFcfa(cash.atPickup)} au retrait` : null,
-          cash.atDelivery > 0 ? `${formatFcfa(cash.atDelivery)} à la livraison` : null,
-        ]
+      ? [cash.atPickup > 0 ? `${formatFcfa(cash.atPickup)} au retrait` : null, cash.atDelivery > 0 ? `${formatFcfa(cash.atDelivery)} à la livraison` : null]
           .filter(Boolean)
           .join(' · ')
       : null;
@@ -262,7 +259,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
           >
             {/* Le véhicule passe sous le titre plutôt que d'être coupé quand la ligne est trop courte. */}
             <View style={[styles.detailsHeader, compact && styles.detailsHeaderCompact]}>
-              <Text style={styles.kicker} accessibilityRole="header">
+              <Text style={styles.kicker} accessibilityRole="header" aria-level={2}>
                 Détails de la course
               </Text>
               <Text style={styles.facts} testID="offer-vehicle">
@@ -295,7 +292,12 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
                   ) : null}
                 </View>
               ) : (
-                <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.noCash]} testID="offer-cash" accessible accessibilityLabel="Rien à encaisser : course déjà payée">
+                <View
+                  style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.noCash]}
+                  testID="offer-cash"
+                  accessible
+                  accessibilityLabel="Rien à encaisser : course déjà payée"
+                >
                   <View style={styles.noCashDisc}>
                     <Icon name="check" size={16} color={palette.white} strokeWidth={3} />
                   </View>
@@ -373,7 +375,15 @@ const styles = StyleSheet.create({
   detailsHeaderCompact: { flexDirection: 'column', alignItems: 'flex-start', gap: 2 },
   kicker: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
   facts: { color: palette.inkMuted, fontSize: 13, lineHeight: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  error: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.banner, backgroundColor: palette.coralTint },
+  error: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radii.banner,
+    backgroundColor: palette.coralTint,
+  },
   errorText: { flex: 1, color: palette.coralText, fontSize: 14, lineHeight: 20, fontWeight: '700' },
   money: { flexDirection: 'row', gap: 10 },
   moneyBox: { flex: 1, borderRadius: 20, paddingVertical: 14, paddingHorizontal: 14, gap: 4 },
@@ -389,14 +399,14 @@ const styles = StyleSheet.create({
   moneyFigure: { marginTop: 2 },
   cashSplit: { color: palette.onSun2, fontSize: 12, lineHeight: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   // Petit écran : détail sur toute la largeur, sous les tuiles (fond blanc : encre brune des espèces, 5,9:1).
-  cashSplitWide: { color: palette.amberText, fontSize: 12.5, marginTop: -2, paddingHorizontal: 2 },
+  cashSplitWide: { color: palette.amberText, fontSize: 13, marginTop: -2, paddingHorizontal: 2 },
   stop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   stopIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   businessIcon: { backgroundColor: palette.ink, borderRadius: 13 },
   zoneIcon: { backgroundColor: palette.cobaltTint, borderWidth: 1.5, borderColor: palette.cobalt, borderStyle: 'dashed' },
-  stopInitials: { color: palette.white, fontWeight: '800', fontSize: 13.5, letterSpacing: 0.2 },
+  stopInitials: { color: palette.white, fontWeight: '800', fontSize: 13, letterSpacing: 0.2 },
   stopTitle: { color: palette.ink, fontSize: 16, lineHeight: 21, fontWeight: '800', letterSpacing: -0.2 },
   stopTitleCompact: { fontSize: 15, lineHeight: 20 },
-  stopLine: { color: palette.inkMuted, fontSize: 13.5, lineHeight: 19, fontWeight: '500' },
+  stopLine: { color: palette.inkMuted, fontSize: 13, lineHeight: 19, fontWeight: '500' },
   connector: { width: 2, height: 12, marginLeft: 19, marginVertical: -7, borderRadius: 1, backgroundColor: palette.line },
 });

@@ -61,10 +61,10 @@ describe('Connexion : Entreprise et Livreur seulement', () => {
       expect(text).not.toMatch(emoji);
     }
     expect(r.queryByText(/[🏪🛵📦]/u)).toBeNull();
-    expect(r.getByTestId('role-SELLER').props.accessibilityState).toMatchObject({ selected: true });
-    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ selected: false });
+    expect(r.getByTestId('role-SELLER').props.accessibilityState).toMatchObject({ checked: true });
+    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ checked: false });
     await fireEvent.press(r.getByTestId('role-DRIVER'));
-    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ selected: true });
+    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ checked: true });
   });
 
   it('démo : code de démonstration, aucun code demandé (pas de limite de 5 codes par heure) ; profil transmis', async () => {
@@ -94,7 +94,7 @@ describe('Connexion : Entreprise et Livreur seulement', () => {
     expect(r.queryByText(/Client ·/)).toBeNull();
     await fireEvent.press(r.getByTestId('demo-account-73000002'));
     expect(r.getByTestId('phone-input').props.value).toBe('73000002');
-    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ selected: true });
+    expect(r.getByTestId('role-DRIVER').props.accessibilityState).toMatchObject({ checked: true });
   });
 
   it('session d’un ancien compte client : déconnexion avec un message d’accueil', async () => {

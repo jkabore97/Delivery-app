@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../../components/Text';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -16,7 +16,7 @@ import { Pill, StatusChip } from '../../../components/design/Pill';
 import { useTabBarInset } from '../../../components/design/tabBarInset';
 import { errorMessage } from '../../../lib/api';
 import { amountsToCollect, BUSINESS_HISTORY_STATUSES, FEE_PAYER_LABELS } from '../../../lib/delivery';
-import { formatDateTime, formatFcfa, formatOrderNumber } from '../../../lib/format';
+import { formatDateTime, formatFcfa, formatOrderNumber, formatTime } from '../../../lib/format';
 import { useApi } from '../../../state/auth';
 import { useBusiness } from '../../../state/business';
 import { palette, shadows, spacing, tabular, typography } from '../../../theme';
@@ -26,7 +26,8 @@ const PAGE_SIZE = 20;
 /**
  * Historique de l'entreprise : livraisons terminées (livrées ou annulées), montant encaissé auprès du destinataire,
  * « Voir plus » pour la suite ; une livraison ouvre son détail. Téléphone : cartes de colis sur canvas. Ordinateur :
- * tableau (numéro, destinataire et quartier, état, date, encaissé, frais), lignes séparées par un filet.
+ * tableau (numéro, destinataire et quartier, état, date, encaissé, frais), lignes séparées par un filet ; fenêtre de
+ * moins de 1 280 px : tableau resserré (frais sous le montant encaissé, heure sous la date).
  */
 export default function BusinessHistoryScreen() {
   const api = useApi();
@@ -118,6 +119,17 @@ export default function BusinessHistoryScreen() {
   );
 }
 
+/** En dessous de cette largeur de fenêtre, le tableau de l'historique est resserré (colonne « Frais » fusionnée). */
+const HISTORY_FULL_MIN_WIDTH = 1280;
+
+/** « 09/11/2026 » et « 12:02 » d'une date de l'historique (tableau resserré : l'heure sur une deuxième ligne). */
+function splitDateTime(iso: string): { date: string; time: string } {
+  const full = formatDateTime(iso);
+  const time = formatTime(iso);
+  const date = full.endsWith(time) ? full.slice(0, full.length - time.length).trim() : full;
+  return { date, time };
+}
+
 /** Frais d'une ligne du tableau : « 1 500 FCFA » et qui les a payés (annulée : aucuns frais). */
 function feeCell(o: OrderDto): { amount: string; who: string } {
   if (o.status === 'CANCELLED') return { amount: '—', who: 'aucuns frais' };
@@ -142,6 +154,9 @@ function DesktopHistory({
   note: ReactNode;
 }) {
   const { stores, store } = useBusiness();
+  const { width } = useWindowDimensions();
+  const compact = width < HISTORY_FULL_MIN_WIDTH;
+  const col = compact ? compactCols : fullCols;
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent} testID="history-desktop">
       <PageHeader title="Historique" subtitle={summary ?? 'Livraisons terminées : livrées et annulées'} actions={<NewDeliveryButton stores={stores} store={store} variant="desktop" />} />
@@ -149,13 +164,15 @@ function DesktopHistory({
         {banner}
         <View style={[styles.table, shadows.tile]}>
           <View style={styles.thead} accessibilityRole="header">
-            <Text style={[styles.th, styles.cNum]}>N°</Text>
-            <Text style={[styles.th, styles.cWho]}>Destinataire</Text>
-            <Text style={[styles.th, styles.cState]}>État</Text>
-            <Text style={[styles.th, styles.cDate]}>Date</Text>
-            <Text style={[styles.th, styles.cAmount, styles.right]}>Encaissé</Text>
-            <Text style={[styles.th, styles.cFee, styles.right]}>Frais</Text>
-            <View style={styles.cGo} />
+            <Text style={[styles.th, col.num]}>N°</Text>
+            <Text style={[styles.th, styles.cWho]} numberOfLines={1}>
+              Destinataire
+            </Text>
+            <Text style={[styles.th, col.state]}>État</Text>
+            <Text style={[styles.th, col.date]}>Date</Text>
+            <Text style={[styles.th, col.amount, styles.right]}>{compact ? 'Encaissé · frais' : 'Encaissé'}</Text>
+            {compact ? null : <Text style={[styles.th, col.fee, styles.right]}>Frais</Text>}
+            <View style={col.go} />
           </View>
           {items === null && loading ? <ActivityIndicator color={palette.cobalt} style={{ marginVertical: spacing.xl }} /> : null}
           {empty}
@@ -167,6 +184,7 @@ function DesktopHistory({
             const area = dropoffArea(o);
             const fee = feeCell(o);
             const name = o.recipientName ?? 'Destinataire';
+            const at = splitDateTime(when);
             return (
               <Pressable
                 key={o.id}
@@ -176,7 +194,7 @@ function DesktopHistory({
                 style={(s: WebPressState) => [styles.tr, i > 0 && styles.trLine, POINTER, (s.hovered || s.pressed) && styles.trHover]}
                 testID={`history-row-${o.id}`}
               >
-                <Text style={[styles.td, styles.cNum, styles.muted]}>{formatOrderNumber(o.number)}</Text>
+                <Text style={[styles.td, col.num, styles.muted]}>{formatOrderNumber(o.number)}</Text>
                 <View style={[styles.cWho, styles.who]}>
                   <InitialsAvatar name={name} size={36} tone={o.status === 'DELIVERED' ? 'mint' : 'grey'} />
                   <View style={styles.whoText}>
@@ -190,18 +208,38 @@ function DesktopHistory({
                     </Text>
                   </View>
                 </View>
-                <View style={styles.cState}>
+                <View style={col.state}>
                   <StatusChip label={chip.label} tone={chip.tone} />
                 </View>
-                <Text style={[styles.td, styles.cDate]}>{formatDateTime(when)}</Text>
-                <Text style={[styles.td, styles.cAmount, styles.right, styles.strong]} testID={collected > 0 ? `history-row-collected-${o.id}` : undefined}>
-                  {collected > 0 ? formatFcfa(collected) : '—'}
-                </Text>
-                <View style={[styles.cFee, styles.feeCell]}>
-                  <Text style={[styles.td, styles.right]}>{fee.amount}</Text>
-                  {fee.who ? <Text style={[styles.sub, styles.right]}>{fee.who}</Text> : null}
-                </View>
-                <View style={styles.cGo}>
+                {compact ? (
+                  <View style={col.date}>
+                    <Text style={styles.td}>{at.date}</Text>
+                    <Text style={styles.sub}>{at.time}</Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.td, col.date]}>{formatDateTime(when)}</Text>
+                )}
+                {compact ? (
+                  <View style={[col.amount, styles.feeCell]}>
+                    <Text style={[styles.td, styles.right, styles.strong]} testID={collected > 0 ? `history-row-collected-${o.id}` : undefined}>
+                      {collected > 0 ? formatFcfa(collected) : '—'}
+                    </Text>
+                    <Text style={[styles.sub, styles.right]} numberOfLines={1}>
+                      {o.status === 'CANCELLED' ? 'aucuns frais' : `frais ${fee.amount}`}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={[styles.td, col.amount, styles.right, styles.strong]} testID={collected > 0 ? `history-row-collected-${o.id}` : undefined}>
+                      {collected > 0 ? formatFcfa(collected) : '—'}
+                    </Text>
+                    <View style={[col.fee, styles.feeCell]}>
+                      <Text style={[styles.td, styles.right]}>{fee.amount}</Text>
+                      {fee.who ? <Text style={[styles.sub, styles.right]}>{fee.who}</Text> : null}
+                    </View>
+                  </>
+                )}
+                <View style={col.go}>
                   <Icon name="chevronRight" size={18} color={palette.inkMuted} strokeWidth={2.4} />
                 </View>
               </Pressable>
@@ -239,16 +277,28 @@ const styles = StyleSheet.create({
   muted: { color: palette.inkMuted },
   strong: { fontWeight: '800' },
   right: { textAlign: 'right' },
-  cNum: { width: 72 },
-  cWho: { flex: 1, minWidth: 0 },
-  cState: { width: 150 },
-  cDate: { width: 150 },
-  cAmount: { width: 130 },
-  cFee: { width: 190 },
-  cGo: { width: 36, alignItems: 'flex-end' },
+  cWho: { flex: 1, minWidth: 200 },
   who: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingRight: 12 },
   whoText: { flex: 1, minWidth: 0 },
   name: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
   sub: { fontSize: 12, lineHeight: 16, fontWeight: '500', color: palette.inkMuted },
   feeCell: { alignItems: 'flex-end' },
+});
+
+/** Colonnes du tableau : pleine largeur (≥ 1 280 px) et resserré (1 024 à 1 279 px, « Destinataire » garde 200 px). */
+const fullCols = StyleSheet.create({
+  num: { width: 72 },
+  state: { width: 150 },
+  date: { width: 150 },
+  amount: { width: 130 },
+  fee: { width: 190 },
+  go: { width: 36, alignItems: 'flex-end' },
+});
+const compactCols = StyleSheet.create({
+  num: { width: 64 },
+  state: { width: 120 },
+  date: { width: 112 },
+  amount: { width: 124 },
+  fee: { width: 0 },
+  go: { width: 28, alignItems: 'flex-end' },
 });

@@ -12,6 +12,7 @@ import { Icon } from '../components/design/Icon';
 import { DemoNotice } from '../components/DemoNotice';
 import { Wordmark } from '../components/driver/Wordmark';
 import { DEMO_OTP_CODE } from '../lib/publicConfig';
+import { useRadioGroupKeys } from '../hooks/useRadioGroupKeys';
 import { hideWebSplash } from '../lib/webShell';
 import { useAppConfig } from '../state/config';
 
@@ -78,6 +79,12 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Clavier (web) : un seul arrêt de tabulation pour les deux tuiles, flèches et Espace pour choisir.
+  const roleKeys = useRadioGroupKeys(
+    SIGNUP_ROLES.map((r) => r.role),
+    role,
+    setRole,
+  );
 
   useEffect(() => hideWebSplash(), []);
 
@@ -119,19 +126,20 @@ export default function LoginScreen() {
           <Text style={styles.title} accessibilityRole="header">
             Connexion
           </Text>
-          <Text style={styles.lead}>Faites livrer vos clients en moto, vélo ou voiture, suivis en direct.</Text>
+          <Text style={styles.lead}>Entreprises : faites livrer vos clients, suivis en direct. Livreurs : recevez des courses près de vous.</Text>
         </View>
         {notice ? <Banner message={notice} tone={notice === CLIENT_ACCOUNT_MESSAGE ? 'blue' : 'orange'} /> : null}
 
         <Text style={styles.sectionLabel}>Vous êtes</Text>
-        <View style={styles.roles} accessibilityRole="radiogroup">
-          {SIGNUP_ROLES.map((r) => {
+        <View style={styles.roles} accessibilityRole="radiogroup" accessibilityLabel="Vous êtes">
+          {SIGNUP_ROLES.map((r, i) => {
             const selected = role === r.role;
             return (
               <Pressable
                 key={r.role}
+                {...roleKeys(i)}
                 accessibilityRole="radio"
-                accessibilityState={{ selected }}
+                accessibilityState={{ checked: selected }}
                 aria-checked={selected}
                 accessibilityLabel={r.label}
                 accessibilityHint={r.hint}
@@ -154,6 +162,16 @@ export default function LoginScreen() {
           })}
         </View>
 
+        <Text style={styles.hint} testID="login-code-hint">
+          {demo
+            ? `Entrez votre numéro de téléphone, puis le code de démonstration ${DEMO_OTP_CODE} (aucun SMS n’est envoyé).`
+            : `Entrez votre numéro de téléphone : vous recevrez un code par ${channel}.`}
+        </Text>
+        <PhoneField value={phone} onChangeText={setPhone} onSubmit={() => void submit()} error={error} />
+        <Button title={demo ? 'Continuer' : 'Recevoir le code'} onPress={submit} loading={busy} disabled={phone.trim().length < 8} testID="login-submit" />
+
+        {/* Démonstration : le numéro et « Continuer » restent juste sous les profils (visibles sans défiler) ; les
+            comptes de démonstration viennent ensuite. */}
         {demo ? (
           <DemoNotice
             onPick={(p, r) => {
@@ -163,21 +181,6 @@ export default function LoginScreen() {
             }}
           />
         ) : null}
-
-        <Text style={styles.hint} testID="login-code-hint">
-          {demo
-            ? `Entrez votre numéro de téléphone, puis le code de démonstration ${DEMO_OTP_CODE} (aucun SMS n’est envoyé).`
-            : `Entrez votre numéro de téléphone : vous recevrez un code par ${channel}.`}
-        </Text>
-        <PhoneField value={phone} onChangeText={setPhone} onSubmit={() => void submit()} error={error} />
-        <Button
-          title={demo ? 'Continuer' : 'Recevoir le code'}
-          icon={(c) => <Icon name="chevronRight" size={20} color={c} strokeWidth={2.6} />}
-          onPress={submit}
-          loading={busy}
-          disabled={phone.trim().length < 8}
-          testID="login-submit"
-        />
 
         <View style={[styles.recipient, shadows.tile]} testID="recipient-hint">
           <View style={styles.recipientDisc}>
@@ -261,7 +264,15 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
   },
   fieldError: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.coralText },
-  recipient: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, padding: spacing.lg, borderRadius: radii.card, backgroundColor: palette.card, marginTop: spacing.sm },
+  recipient: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    padding: spacing.lg,
+    borderRadius: radii.card,
+    backgroundColor: palette.card,
+    marginTop: spacing.sm,
+  },
   recipientDisc: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.cobaltTint },
   recipientText: { flex: 1, gap: 3 },
   recipientTitle: { fontSize: 16, lineHeight: 21, fontWeight: '800', color: palette.ink },

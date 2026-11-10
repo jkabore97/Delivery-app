@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Linking, StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OrderDto } from '@yaar/shared';
 import DriverOrderScreen from '../app/driver/order';
@@ -68,12 +68,23 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
       cashToCollect: 8000,
       deliveryFee: 1700,
       driverEarning: 1360,
-      route: route({ target: 'PICKUP', points: [[12.3735, -1.492], [12.3727, -1.505], [12.3686, -1.5275]], distanceM: 4000, durationS: 600 }),
+      route: route({
+        target: 'PICKUP',
+        points: [
+          [12.3735, -1.492],
+          [12.3727, -1.505],
+          [12.3686, -1.5275],
+        ],
+        distanceM: 4000,
+        durationS: 600,
+      }),
     });
     mockDriver.position = { lat: 12.3729, lng: -1.4985, at: 0, heading: 265 };
     const r = await render(wrap(<DriverOrderScreen />));
     // Étape, entreprise, puis distance et durée restantes de l'itinéraire.
-    expect(r.getByTestId('next-step')).toHaveTextContent(/^Étape 1 sur 2 · \d,\d km · \d+ minRécupérerPharmacie du CentreAvenue Kwame NkrumahRepère : En face de la BCEAO$/);
+    expect(r.getByTestId('next-step')).toHaveTextContent(
+      /^Étape 1 sur 2 · \d,\d km · \d+ minRécupérerPharmacie du CentreAvenue Kwame NkrumahRepère : En face de la BCEAO$/,
+    );
     // Espèces de l'étape (au retrait), puis ce qui sera à encaisser à la livraison.
     expect(r.getByTestId('collect-at-pickup')).toHaveTextContent(/À encaisser au retrait.*1 700 FCFA/);
     expect(r.getByTestId('collect-detail')).toHaveTextContent('1 700 FCFA : frais de livraison payés au retrait, en espèces.');
@@ -104,7 +115,9 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     mockDriver.currentOrder = delivery();
     mockDriver.position = { lat: 12.3536, lng: -1.5191, at: 0, heading: null };
     const r = await render(wrap(<DriverOrderScreen />));
-    expect(r.getByTestId('next-step')).toHaveTextContent(/^Étape 2 sur 2 · \d,\d km · \d+ minLivrerColis pour Awa KaboréPatte d’Oie, rue 15\.23Repère : Station Total$/);
+    expect(r.getByTestId('next-step')).toHaveTextContent(
+      /^Étape 2 sur 2 · \d,\d km · \d+ minLivrerColis pour Awa KaboréPatte d’Oie, rue 15\.23Repère : Station Total$/,
+    );
     expect(r.getByTestId('collect-at-dropoff')).toHaveTextContent(/À encaisser.*16 500 FCFA/);
     expect(r.getByTestId('collect-detail')).toHaveTextContent('16 500 FCFA : marchandise 15 000 FCFA + frais de livraison 1 500 FCFA, en espèces.');
     expect(r.queryByTestId('collect-at-pickup')).toBeNull();
@@ -122,10 +135,31 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
     expect(r.getByLabelText('Itinéraire vers Awa Kaboré')).toBeTruthy();
   });
 
+  it('petit téléphone (360 × 640), long nom et longue adresse : étape et cible sur une ligne, le repère avant l’adresse', async () => {
+    const dims = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1 });
+    mockDriver.currentOrder = delivery({
+      recipientName: 'Awa Mariam Kaboré-Ouédraogo',
+      dropoff: { ...delivery().dropoff!, address: 'Patte d’Oie, rue 15.23, derrière la grande mosquée, portail vert, deuxième maison à gauche' },
+    });
+    const r = await render(wrap(<DriverOrderScreen />));
+    expect(within(r.getByTestId('next-step')).getByRole('header')).toHaveTextContent('Livrer · Colis pour Awa Mariam Kaboré-Ouédraogo');
+    // Le repère vient juste après la cible ; l'adresse, sur 2 lignes au plus, ensuite.
+    expect(r.getByTestId('next-step')).toHaveTextContent(/Kaboré-Ouédraogo.*Repère.*Station Total.*derrière la grande mosquée/);
+    const address = r.getByText(/derrière la grande mosquée/);
+    expect(address.props.numberOfLines).toBe(2);
+    expect(r.getByTestId('order-landmark')).toHaveTextContent('Repère\u202f: Station Total', { normalizer: (t: string) => t });
+    dims.mockRestore();
+  });
+
   it('règle : les espèces de l’étape en cours sont fixées au-dessus des boutons ronds, jamais dans la partie qui défile', async () => {
     const cases: Array<{ order: OrderDto; id: string; action: string; amount: string }> = [
       // Retrait : frais payés par l'entreprise.
-      { order: delivery({ status: 'ASSIGNED', feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }), id: 'collect-at-pickup', action: 'pickup-button', amount: '1700' },
+      {
+        order: delivery({ status: 'ASSIGNED', feePaidBy: 'SENDER', cashToCollect: 8000, deliveryFee: 1700 }),
+        id: 'collect-at-pickup',
+        action: 'pickup-button',
+        amount: '1700',
+      },
       // Livraison : marchandise + frais payés par le destinataire.
       { order: delivery(), id: 'collect-at-dropoff', action: 'go-deliver', amount: '16500' },
     ];
@@ -145,7 +179,9 @@ describe('Course du livreur (carte, prochaine étape, montants)', () => {
       // testID uniques, montant exact sous `-value` (vérifications de bout en bout).
       expect(ids.filter((id) => id === c.id)).toHaveLength(1);
       expect(ids.filter((id) => id === `${c.id}-value`)).toHaveLength(1);
-      expect(r.getByTestId(`${c.id}-value`)).toHaveTextContent(new RegExp(`^${c.amount.replace(/\B(?=(\d{3})+$)/g, '\u202f')}\u202fFCFA$`), { normalizer: (t: string) => t });
+      expect(r.getByTestId(`${c.id}-value`)).toHaveTextContent(new RegExp(`^${c.amount.replace(/\B(?=(\d{3})+$)/g, '\u202f')}\u202fFCFA$`), {
+        normalizer: (t: string) => t,
+      });
       await r.unmount();
     }
   });

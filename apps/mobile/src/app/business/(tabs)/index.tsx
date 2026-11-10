@@ -5,14 +5,13 @@ import { router, useIsFocused } from 'expo-router';
 import type { OrderDto, StoreDto } from '@yaar/shared';
 import { DarkBanner } from '../../../components/business/DarkForm';
 import { focusedDelivery, isSearching, neighbourhood } from '../../../components/business/dashboardData';
-import { BusinessDashboard } from '../../../components/business/desktop/Dashboard';
 import { useIsDesktop } from '../../../components/business/desktop/layout';
+import { LazyDashboard } from '../../../components/business/desktop/LazyDashboard';
 import { BusinessMark, NewDeliveryButton } from '../../../components/business/parts';
 import { CompactDeliveryCard, HeroDeliveryCard, KpiChips, MapSummaryPill } from '../../../components/business/phone/HomeParts';
-import { useBusinessSummary, useSummaryRefresh } from '../../../components/business/summary';
+import { useBusinessSummary, useSummaryRefresh, useSummaryRefreshOnChange } from '../../../components/business/summary';
 import { useActiveDeliveries } from '../../../components/business/useDeliveries';
 import { CourierIllustration } from '../../../components/design/CourierIllustration';
-import { MapIconButton } from '../../../components/design/Pill';
 import { StoreApprovalBanner } from '../../../components/StoreApprovalBanner';
 import { LiveTrackingLayout } from '../../../components/tracking/LiveTrackingLayout';
 import { Loading } from '../../../components/ui';
@@ -21,9 +20,6 @@ import { POLL_MS } from '../../../lib/publicConfig';
 import { isBusinessApproved, useBusiness } from '../../../state/business';
 import { useSocket } from '../../../state/socket';
 import { palette, spacing, typography } from '../../../theme';
-
-/** Place des boutons latéraux de la barre du haut de LiveTrackingLayout (la pastille de la carte s'aligne à gauche). */
-const TOP_SIDE_WIDTH = 52;
 
 /**
  * Explication sous « Aucune livraison en cours » : l'invitation à demander un livreur seulement si c'est possible ;
@@ -38,7 +34,8 @@ function emptyText(store: StoreDto): string {
 /** Accueil de l'entreprise : tableau de bord sur ordinateur, carte et feuille sur téléphone. */
 export default function BusinessDeliveriesScreen() {
   const desktop = useIsDesktop();
-  return desktop ? <BusinessDashboard /> : <PhoneHome />;
+  // Ordinateur : le tableau de bord (chargé à part sur le web, voir LazyDashboard.web.tsx).
+  return desktop ? <LazyDashboard /> : <PhoneHome />;
 }
 
 /**
@@ -52,15 +49,15 @@ export default function BusinessDeliveriesScreen() {
 function PhoneHome() {
   const { store, stores, error: storeError, refreshStores } = useBusiness();
   const { pollIntervalMs } = useSocket();
-  const { summary } = useBusinessSummary();
+  const { summary, error: summaryError } = useBusinessSummary();
   const { width, height } = useWindowDimensions();
   const focused = useIsFocused();
   const enabled = focused && !!store;
   const { items, deliveries, error, load } = useActiveDeliveries(enabled);
   useSummaryRefresh(enabled);
+  // Une livraison livrée, annulée ou nouvelle : les chiffres du jour sont relus tout de suite (pas 30 s plus tard).
+  useSummaryRefreshOnChange(items ? items.map((o) => o.id).sort().join(',') : null, enabled);
   const [retrying, setRetrying] = useState(false);
-  // « Recentrer » : un nouveau `stageKey` recadre la carte et reprend le suivi (LiveTrackingLayout).
-  const [recenter, setRecenter] = useState(0);
 
   // « Réessayer » : en mode socket, rien ne relance le chargement tout seul après une erreur.
   const retry = async () => {
@@ -91,7 +88,7 @@ function PhoneHome() {
   // Rien en cours : la carte montre le quartier de l'entreprise (~2 km), pas son seul marqueur au zoom maximal.
   const fitPoints = list.length === 0 && business ? neighbourhood(business) : overview.fitPoints;
   // Nouvelle livraison ou nouvelle étape : la carte recadre (même si elle avait été déplacée).
-  const stageKey = `${list.map((o) => `${o.id}:${o.status}`).sort().join('|') || 'empty'}#${recenter}`;
+  const stageKey = list.map((o) => `${o.id}:${o.status}`).sort().join('|') || 'empty';
   const openDelivery = (o: OrderDto) => router.push(`/business/livraison/${o.id}`);
 
   const header = (
@@ -113,23 +110,17 @@ function PhoneHome() {
       fitPoints={fitPoints}
       stageKey={stageKey}
       animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
-      // La carte garde le haut de l'écran (~40 %) ; sans livraison, la feuille reste courte.
-      sheetMaxRatio={list.length > 0 ? (short ? 0.66 : 0.62) : 0.56}
+      // La carte garde le haut de l'écran (~40 %) ; sans livraison, la feuille reste courte (sauf petit téléphone :
+      // l'explication tient en entier).
+      sheetMaxRatio={list.length > 0 || short ? (short ? 0.66 : 0.62) : 0.56}
       // Cadrage : les épingles tiennent au-dessus de la mention des données (la carte est courte ici).
       fitBottomMargin={44}
       insetBottom={false}
       // Une seule carte (contexte WebGL) à la fois : démontée quand une livraison est ouverte par-dessus.
       mapVisible={focused}
-      topCenter={
-        list.length > 0 ? (
-          <View style={styles.pillSlot} pointerEvents="box-none">
-            <MapSummaryPill total={list.length} searching={searching} />
-          </View>
-        ) : null
-      }
-      topRight={
-        <MapIconButton icon="recenter" color={palette.cobalt} onPress={() => setRecenter((n) => n + 1)} accessibilityLabel="Recentrer la carte" testID="home-recenter" />
-      }
+      // Pastille « 3 en cours | 1 en recherche » à gauche (place large, jusqu'au disque « Recentrer » toujours visible).
+      topLeft={list.length > 0 ? <MapSummaryPill total={list.length} searching={searching} /> : null}
+      recenterControl="always"
       sheetHeader={short ? undefined : header}
       testID="business-home"
     >
@@ -137,17 +128,11 @@ function PhoneHome() {
       {storeError ? (
         <DarkBanner message={storeError} action={{ label: 'Réessayer', onPress: () => void retry(), loading: retrying, testID: 'retry-store' }} />
       ) : null}
-      {store ? <StoreApprovalBanner store={store} /> : <Text style={styles.muted}>Créez le profil de votre entreprise pour demander des livraisons.</Text>}
-      {store ? <KpiChips active={items ? list.length : (summary?.active ?? 0)} summary={summary} dense={short} /> : null}
-      {/* Petit téléphone : pas de titre de liste (la pastille « 3 en cours » le dit), la tuile héros remonte. */}
-      {store && !short ? (
-        <View style={styles.sectionRow}>
-          <Text style={styles.section} accessibilityRole="header">
-            Livraisons en cours
-          </Text>
-          {list.length > 0 ? <Text style={styles.sectionCount}>{list.length}</Text> : null}
-        </View>
+      {store ? <StoreApprovalBanner store={store} compact /> : <Text style={styles.muted}>Créez le profil de votre entreprise pour demander des livraisons.</Text>}
+      {store ? (
+        <KpiChips active={items ? list.length : (summary?.active ?? null)} summary={summary} unavailable={!summary && !!summaryError} dense={short} />
       ) : null}
+      {/* Pas de titre de liste (planche) : la pastille « 3 en cours » et le chiffre « en cours » le disent. */}
       {error ? (
         <DarkBanner message={error} action={{ label: 'Réessayer', onPress: () => void retry(), loading: retrying, testID: 'retry-deliveries' }} />
       ) : null}
@@ -187,23 +172,6 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 40 },
   title: { ...typography.display, flex: 1, color: palette.ink },
   titleSmall: { fontSize: 28, lineHeight: 32, letterSpacing: -0.8 },
-  // La pastille s'aligne sur le bord gauche de la carte (par-dessus la place vide du bouton de gauche).
-  pillSlot: { alignSelf: 'stretch', alignItems: 'flex-start', marginLeft: -TOP_SIDE_WIDTH },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-  section: { fontSize: 16, lineHeight: 21, fontWeight: '800', letterSpacing: -0.2, color: palette.ink },
-  sectionCount: {
-    minWidth: 24,
-    height: 22,
-    paddingHorizontal: 7,
-    borderRadius: 11,
-    overflow: 'hidden',
-    backgroundColor: palette.cobaltTint,
-    color: palette.cobaltText,
-    fontSize: 12,
-    lineHeight: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
   duo: { flexDirection: 'row', gap: 8 },
   loading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
   muted: { color: palette.inkMuted, fontSize: 14, lineHeight: 20, fontWeight: '500' },

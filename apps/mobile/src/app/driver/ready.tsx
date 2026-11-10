@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.cobaltTint,
     marginTop: spacing.xs,
   },
-  noteText: { flex: 1, fontSize: 13.5, lineHeight: 19, fontWeight: '600', color: palette.cobaltText },
+  noteText: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '600', color: palette.cobaltText },
   footer: { gap: 4 },
   primary: { alignSelf: 'stretch', justifyContent: 'center' },
 });

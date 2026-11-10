@@ -6,15 +6,15 @@ import { errorMessage } from '../lib/api';
 import { onlineStatus } from '../lib/driverStatus';
 import { useApi } from '../state/auth';
 import { useDriver } from '../state/driver';
-import { MIN_TOUCH, palette, shadows, spacing } from '../theme';
+import { alpha, MIN_TOUCH, palette, shadows, spacing } from '../theme';
 import { confirmAsync, notify } from '../lib/dialog';
 import { Pill } from './design/Pill';
 import { RoundButton } from './design/RoundButton';
 
 /** Point d'état : vert (suivi actif), soleil (en attente, en pause), gris (hors ligne). */
-const STATUS_DOT = { on: palette.mint, pending: palette.sun, paused: palette.sun, off: '#9AA3B2' } as const;
+const STATUS_DOT = { on: palette.mint, pending: palette.sun, paused: palette.sun, off: alpha(palette.inkMuted, 0.6) } as const;
 /** Halo du point d'état (en ligne : le point « vit »). */
-const STATUS_HALO = { on: 'rgba(22, 196, 127, 0.22)', pending: 'rgba(255, 201, 60, 0.3)', paused: 'rgba(255, 201, 60, 0.3)', off: 'transparent' } as const;
+const STATUS_HALO = { on: alpha(palette.mint, 0.22), pending: alpha(palette.sun, 0.3), paused: alpha(palette.sun, 0.3), off: 'transparent' } as const;
 
 /**
  * Indicateur légal permanent « En ligne : suivi GPS actif » / « Hors ligne : position non suivie » (pastille blanche
@@ -171,7 +171,7 @@ export function SosButton({ size = 64 }: { size?: number }) {
 const styles = StyleSheet.create({
   statusWrap: { alignItems: 'center', gap: 4, maxWidth: '100%' },
   statusPill: { paddingLeft: 14, paddingRight: 16, gap: 9 },
-  statusText: { fontSize: 13.5, letterSpacing: 0 },
+  statusText: { fontSize: 13, letterSpacing: 0 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   powerRing: {
     width: POWER_DIAMETER + POWER_RING * 2,

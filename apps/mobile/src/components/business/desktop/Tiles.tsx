@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import type { Href } from 'expo-router';
 import { LABELS, type BusinessSummaryDto, type OrderDto, type StoreDto } from '@yaar/shared';
 import { Text } from '../../Text';
 import { CourierIllustration } from '../../design/CourierIllustration';
@@ -8,7 +9,7 @@ import { formatFcfa, formatTime } from '../../../lib/format';
 import { driverWhatsappText, recipientCallName } from '../../../lib/share';
 import { telUrl, whatsappUrl } from '../../../lib/tel';
 import { isBusinessApproved } from '../../../state/business';
-import { palette, radii, shadows, tabular } from '../../../theme';
+import { alpha, FOCUS_RING_INNER, FOCUS_RING_INNER_ON_COBALT, FOCUS_SHAPE, ON_COBALT_SURFACE, palette, radii, shadows, tabular } from '../../../theme';
 import {
   deliveryMinutes,
   deliveryTimeline,
@@ -20,7 +21,7 @@ import {
   shortName,
   type LiveEta,
 } from '../dashboardData';
-import { avatarToneOf, InitialsAvatar, MiniChip, miniToneOf, NewDeliveryButton, POINTER, SegmentedProgress, SunPill, type WebPressState } from '../parts';
+import { avatarToneOf, InitialsAvatar, MiniChip, miniToneOf, NavLink, POINTER, PrimaryPill, SegmentedProgress, SunPill, type WebPressState } from '../parts';
 
 function open(url: string) {
   try {
@@ -77,16 +78,24 @@ export function KpiTile({
   );
 }
 
-/** Tuile soleil « À reverser · encaissé pour vous » (espèces encaissées pour l'entreprise aujourd'hui) et ses frais. */
-export function CashTile({ summary, style }: { summary: BusinessSummaryDto | null; style?: StyleProp<ViewStyle> }) {
-  const goods = summary ? formatAmount(summary.today.goodsCollected) : '…';
+/**
+ * Tuile soleil « Encaissé pour vous aujourd’hui » (valeur de la marchandise encaissée par les livreurs pour l'entreprise
+ * sur les livraisons livrées aujourd'hui) et ses frais. Chiffre du JOUR : le reversement par Yaar n'est pas suivi, la
+ * tuile ne dit donc pas « à reverser » (elle repart de 0 chaque jour). `unavailable` : résumé en échec, « — ».
+ */
+export function CashTile({ summary, unavailable = false, style }: { summary: BusinessSummaryDto | null; unavailable?: boolean; style?: StyleProp<ViewStyle> }) {
+  const goods = summary ? formatAmount(summary.today.goodsCollected) : unavailable ? '—' : '…';
   const fees = summary && summary.today.deliveryFees > 0 ? `${formatAmount(summary.today.deliveryFees)} FCFA de frais` : null;
   const size = figureSize(goods);
   return (
     <View
       style={[styles.tile, styles.kpi, styles.cash, shadows.sun, style]}
       accessible
-      accessibilityLabel={summary ? `À reverser : ${goods} FCFA, encaissés pour vous aujourd’hui${fees ? `, ${fees}` : ''}` : 'À reverser : chargement'}
+      accessibilityLabel={
+        summary
+          ? `Encaissé pour vous aujourd’hui : ${goods} FCFA${fees ? `, ${fees}` : ''}`
+          : `Encaissé pour vous aujourd’hui : ${unavailable ? 'indisponible' : 'chargement'}`
+      }
       testID="kpi-cash"
     >
       <View style={styles.cashTop}>
@@ -106,7 +115,7 @@ export function CashTile({ summary, style }: { summary: BusinessSummaryDto | nul
         {summary ? <Text style={styles.kpiUnit}> FCFA</Text> : null}
       </Text>
       <Text style={[styles.kpiLabel, styles.cashLabel]} numberOfLines={1}>
-        À reverser · encaissé pour vous
+        Encaissé pour vous aujourd’hui
       </Text>
     </View>
   );
@@ -119,16 +128,16 @@ export function CashTile({ summary, style }: { summary: BusinessSummaryDto | nul
 function heroChip(o: OrderDto, eta: LiveEta): string {
   if (o.status === 'PICKED_UP') return 'En livraison';
   if (o.status === 'ASSIGNED') return eta.minutes === 0 ? 'Livreur sur place' : 'Livreur en route';
-  return 'Recherche d’un livreur';
+  return 'Recherche';
 }
 
 /** Bouton rond blanc de la tuile héros (disque 40 px, pictogramme cobalt, libellé 11/600 dessous). */
 function HeroRound({ icon, label, a11y, onPress, showLabel }: { icon: IconName; label: string; a11y: string; onPress: () => void; showLabel: boolean }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} style={[styles.round, POINTER]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} style={[styles.round, POINTER]} {...FOCUS_RING_INNER_ON_COBALT}>
       {(s: WebPressState) => (
         <>
-          <View style={[styles.roundDisc, (s.hovered || s.pressed) && styles.roundDiscHover]}>
+          <View {...FOCUS_SHAPE} style={[styles.roundDisc, (s.hovered || s.pressed) && styles.roundDiscHover]}>
             <Icon name={icon} size={18} color={palette.cobalt} strokeWidth={2.3} />
           </View>
           {showLabel ? <Text style={styles.roundLabel}>{label}</Text> : null}
@@ -174,6 +183,8 @@ export function HeroTile({
   const driverName = driver ? shortName(driver.name) : null;
   const driverPhone = driver?.phone ?? null;
   const landmark = o.dropoff?.landmark?.trim();
+  // Recherche d'un livreur : l'état en grand, l'heure de la demande en petit (une heure géante se lirait comme une arrivée).
+  const request = eta.kind === 'request';
   return (
     <View
       style={[styles.hero, shadows.hero, style]}
@@ -183,6 +194,7 @@ export function HeroTile({
       }}
       accessibilityLabel={`Livraison #${o.number} suivie`}
       testID="hero-tile"
+      {...ON_COBALT_SURFACE}
     >
       <View style={styles.heroLeft}>
         <View style={styles.heroTop}>
@@ -199,18 +211,29 @@ export function HeroTile({
             onPress={onOpen}
             style={[styles.heroOpen, POINTER]}
             testID="hero-open"
+            {...FOCUS_RING_INNER_ON_COBALT}
           >
             {(s: WebPressState) => (
-              <View style={[styles.heroOpenInner, (s.hovered || s.pressed) && styles.heroOpenHover]}>
+              <View {...FOCUS_SHAPE} style={[styles.heroOpenInner, (s.hovered || s.pressed) && styles.heroOpenHover]}>
                 <Text style={styles.heroOpenText}>Suivi</Text>
                 <Icon name="chevronRight" size={14} color={palette.onCobalt} strokeWidth={2.6} />
               </View>
             )}
           </Pressable>
         </View>
-        <Text style={styles.etaLabel}>{eta.clock ? eta.label : eta.kind === 'pickup' ? 'Retrait' : 'Arrivée'}</Text>
-        <View style={styles.etaRow} accessible accessibilityLabel={eta.clock ? `${eta.label} ${eta.clock}${eta.inText ? `, ${eta.inText}` : ''}` : eta.label}>
-          {eta.clock ? (
+        <Text style={styles.etaLabel} numberOfLines={1}>
+          {request ? `Demandée à ${eta.clock}${eta.inText ? ` · ${eta.inText}` : ''}` : eta.clock ? eta.label : eta.kind === 'pickup' ? 'Retrait' : 'Arrivée'}
+        </Text>
+        <View
+          style={styles.etaRow}
+          accessible
+          accessibilityLabel={request ? `Recherche d’un livreur, demandée à ${eta.clock}` : eta.clock ? `${eta.label} ${eta.clock}${eta.inText ? `, ${eta.inText}` : ''}` : eta.label}
+        >
+          {request ? (
+            <Text style={styles.etaWord} numberOfLines={1} testID="hero-tile-state">
+              Recherche d’un livreur…
+            </Text>
+          ) : eta.clock ? (
             <>
               <Text style={[styles.eta, { fontSize: clockSize, lineHeight: Math.round(clockSize * 0.9), letterSpacing: -Math.round(clockSize * 0.04 * 10) / 10 }]}>{eta.clock}</Text>
               {eta.inText ? <Text style={styles.etaIn}>{eta.inText}</Text> : null}
@@ -329,8 +352,11 @@ export function HeroTile({
   );
 }
 
-/** À la place de la tuile héros quand rien n'est en cours : illustration, explication, « Nouvelle livraison ». */
-export function EmptyHeroTile({ stores, store, style }: { stores: readonly StoreDto[] | undefined; store: StoreDto | null; style?: StyleProp<ViewStyle> }) {
+/**
+ * À la place de la tuile héros quand rien n'est en cours : illustration et explication (« Nouvelle livraison » est déjà
+ * en haut à droite de la page : pas de deuxième bouton ici).
+ */
+export function EmptyHeroTile({ store, style }: { store: StoreDto | null; style?: StyleProp<ViewStyle> }) {
   const canRequest = !!store && isBusinessApproved(store);
   return (
     <View style={[styles.tile, shadows.tile, styles.empty, style]} testID="no-active-delivery">
@@ -342,8 +368,28 @@ export function EmptyHeroTile({ stores, store, style }: { stores: readonly Store
             ? 'Demandez un livreur : il récupère le colis chez vous, votre client le suit en direct et reçoit le code à lui donner.'
             : 'Vos livraisons s’afficheront ici, avec leur livreur en direct sur la carte.'}
         </Text>
-        {canRequest || !store ? <NewDeliveryButton stores={stores} store={store} variant="desktop" style={styles.emptyCta} /> : null}
       </View>
+    </View>
+  );
+}
+
+/** À la place de la tuile héros pendant le premier chargement des livraisons (jamais « Aucune livraison » à tort). */
+export function LoadingHeroTile({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.tile, shadows.tile, styles.state, style]} testID="hero-loading">
+      <ActivityIndicator color={palette.cobalt} />
+      <Text style={styles.stateText}>Chargement des livraisons en cours…</Text>
+    </View>
+  );
+}
+
+/** À la place de la tuile héros quand la liste n'a pas pu être lue (rien d'affiché avant) : explication et « Réessayer ». */
+export function ErrorHeroTile({ onRetry, retrying, style }: { onRetry: () => void; retrying: boolean; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.tile, shadows.tile, styles.state, style]} testID="hero-error">
+      <Text style={styles.emptyTitle}>Livraisons indisponibles</Text>
+      <Text style={[styles.emptyBody, styles.stateCenter]}>La liste de vos livraisons en cours n’a pas pu être chargée. Vérifiez la connexion, puis réessayez.</Text>
+      <PrimaryPill label={retrying ? 'Nouvel essai…' : 'Réessayer'} icon="refresh" desktop onPress={onRetry} testID="hero-retry" />
     </View>
   );
 }
@@ -354,12 +400,37 @@ export function EmptyHeroTile({ stores, store, style }: { stores: readonly Store
 
 /**
  * Zone qui défile d'une tuile de liste, haute d'un nombre entier de lignes (`pitch` = hauteur d'une ligne + écart) : la
- * dernière ligne visible n'est jamais coupée en deux au bas de la tuile ; la suite se lit en faisant défiler.
+ * dernière ligne visible n'est jamais coupée en deux au bas de la tuile. S'il y a plus de lignes que de place, une
+ * dernière ligne le dit (« + 2 autres livraisons en cours ») ; elle fait défiler la liste (et sur le web la barre de
+ * défilement reste visible) : aucune livraison n'est cachée sans le dire.
  */
-function RowsViewport({ pitch, gap, children, contentStyle }: { pitch: number; gap: number; children: ReactNode; contentStyle: StyleProp<ViewStyle> }) {
+function RowsViewport({
+  pitch,
+  gap,
+  count,
+  moreLabel,
+  children,
+  contentStyle,
+}: {
+  pitch: number;
+  gap: number;
+  /** Nombre de lignes (enfants). */
+  count: number;
+  /** « + N autres … » : texte de la ligne qui annonce les lignes cachées ; sans lui, pas d'annonce. */
+  moreLabel?: (hidden: number) => string;
+  children: ReactNode;
+  contentStyle: StyleProp<ViewStyle>;
+}) {
   const [room, setRoom] = useState<number | null>(null);
-  const rows = room === null ? null : Math.max(1, Math.floor((room - ROWS_INSET * 2 + gap) / pitch));
+  const [scrollY, setScrollY] = useState(0);
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
+  const fit = room === null ? null : Math.max(1, Math.floor((room - ROWS_INSET * 2 + gap) / pitch));
+  const overflow = fit !== null && count > fit && !!moreLabel;
+  // Place de la ligne « + N autres » prise sur les lignes visibles.
+  const rows = fit === null ? null : overflow ? Math.max(1, Math.floor((room! - ROWS_INSET * 2 - MORE_ROW + gap) / pitch)) : fit;
   const height = rows === null ? undefined : ROWS_INSET * 2 + rows * pitch - gap;
+  const seen = rows === null ? count : Math.min(count, Math.floor((scrollY + rows * pitch + pitch / 2) / pitch));
+  const hidden = Math.max(0, count - seen);
   return (
     <View
       style={styles.rowsRoom}
@@ -368,17 +439,40 @@ function RowsViewport({ pitch, gap, children, contentStyle }: { pitch: number; g
         if (h > 0 && h !== room) setRoom(h);
       }}
     >
-      <ScrollView style={height === undefined ? styles.flexFill : { height, flexGrow: 0 }} contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scroller}
+        style={height === undefined ? styles.flexFill : { height, flexGrow: 0 }}
+        contentContainerStyle={contentStyle}
+        showsVerticalScrollIndicator={overflow && Platform.OS === 'web'}
+        onScroll={(e) => setScrollY(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={64}
+      >
         {children}
       </ScrollView>
+      {overflow ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={hidden > 0 ? `${moreLabel!(hidden)}. Faire défiler la liste` : 'Revenir en haut de la liste'}
+          onPress={() => scroller.current?.scrollTo({ y: hidden > 0 ? scrollY + (rows ?? 1) * pitch : 0, animated: true })}
+          style={(s: WebPressState) => [styles.more, POINTER, (s.hovered || s.pressed) && styles.moreHover]}
+          testID="rows-more"
+        >
+          <Text style={styles.moreText} numberOfLines={1}>
+            {hidden > 0 ? moreLabel!(hidden) : 'Revenir en haut'}
+          </Text>
+          <Icon name={hidden > 0 ? 'chevronDown' : 'chevronUp'} size={14} color={palette.cobaltText} strokeWidth={2.6} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 /** Marge autour des lignes d'une liste (l'anneau de focus du clavier n'est pas rogné par la zone qui défile). */
 const ROWS_INSET = 3;
+/** Hauteur de la ligne « + N autres … » sous une liste qui déborde. */
+const MORE_ROW = 36;
 
-function TileHead({ title, count, action }: { title: string; count?: number | null; action?: { label: string; onPress: () => void; testID?: string } }) {
+function TileHead({ title, count, action }: { title: string; count?: number | string | null; action?: { label: string; href: Href; testID?: string } }) {
   return (
     <View style={styles.head}>
       <Text style={styles.headTitle} accessibilityRole="header" numberOfLines={1}>
@@ -386,17 +480,21 @@ function TileHead({ title, count, action }: { title: string; count?: number | nu
       </Text>
       {count ? (
         <View style={styles.count}>
-          <Text style={styles.countText}>{count}</Text>
+          <Text style={styles.countText} testID="live-count">
+            {count}
+          </Text>
         </View>
       ) : null}
       {action ? (
-        <Pressable accessibilityRole="link" accessibilityLabel={action.label} onPress={action.onPress} style={[styles.headBtnWrap, POINTER]} testID={action.testID}>
-          {(s: WebPressState) => (
-            <View style={[styles.headBtn, (s.hovered || s.pressed) && styles.headBtnHover]}>
-              <Icon name="chevronRight" size={16} color={palette.ink} strokeWidth={2.5} />
-            </View>
-          )}
-        </Pressable>
+        <NavLink href={action.href}>
+          <Pressable accessibilityRole="link" accessibilityLabel={action.label} style={[styles.headBtnWrap, POINTER]} testID={action.testID} {...FOCUS_RING_INNER}>
+            {(s: WebPressState) => (
+              <View {...FOCUS_SHAPE} style={[styles.headBtn, (s.hovered || s.pressed) && styles.headBtnHover]}>
+                <Icon name="chevronRight" size={16} color={palette.ink} strokeWidth={2.5} />
+              </View>
+            )}
+          </Pressable>
+        </NavLink>
       ) : null}
     </View>
   );
@@ -404,7 +502,8 @@ function TileHead({ title, count, action }: { title: string; count?: number | nu
 
 /**
  * Tuile « En cours » : toutes les livraisons en cours. Une ligne se choisit (la tuile héros et la carte la suivent) ;
- * le suivi complet s'ouvre depuis la tuile héros (« Suivi »), qui montre toujours la livraison choisie.
+ * le suivi complet s'ouvre depuis la tuile héros (« Suivi »), qui montre toujours la livraison choisie. Recherche en
+ * cours : le compteur dit « 2 / 12 ». `state` : premier chargement ou liste illisible (jamais « aucune » à tort).
  */
 export function LiveListTile({
   list,
@@ -413,6 +512,7 @@ export function LiveListTile({
   onSelect,
   now,
   query,
+  state = 'ready',
   style,
 }: {
   list: OrderDto[];
@@ -421,17 +521,30 @@ export function LiveListTile({
   onSelect: (o: OrderDto) => void;
   now: number;
   query: string;
+  state?: 'ready' | 'loading' | 'error';
   style?: StyleProp<ViewStyle>;
 }) {
+  const searching = query.trim().length > 0;
+  const count = state !== 'ready' ? null : searching ? `${list.length} / ${total}` : total;
   return (
     <View style={[styles.tile, shadows.tile, styles.listTile, style]} testID="live-list">
-      <TileHead title="En cours" count={total} />
-      {list.length === 0 ? (
+      <TileHead title="En cours" count={count} />
+      {state === 'loading' ? (
+        <Text style={styles.listEmpty}>Chargement…</Text>
+      ) : state === 'error' ? (
+        <Text style={styles.listEmpty}>Livraisons indisponibles pour le moment.</Text>
+      ) : list.length === 0 ? (
         <Text style={styles.listEmpty}>
-          {query.trim() ? `Aucune livraison en cours ne correspond à « ${query.trim()} ».` : 'Aucune livraison en cours pour le moment.'}
+          {searching ? `Aucune livraison en cours ne correspond à « ${query.trim()} ».` : 'Les livraisons demandées s’afficheront ici, avec leur livreur.'}
         </Text>
       ) : (
-        <RowsViewport pitch={68} gap={4} contentStyle={styles.rowsContent}>
+        <RowsViewport
+          pitch={68}
+          gap={4}
+          count={list.length}
+          moreLabel={(n) => `+ ${n} ${n > 1 ? 'autres livraisons' : 'autre livraison'} en cours`}
+          contentStyle={styles.rowsContent}
+        >
           {list.map((o) => {
             const selected = o.id === selectedId;
             const eta = liveEta(o, now);
@@ -443,7 +556,7 @@ export function LiveListTile({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${name}, ${liveStatusText(o, eta).toLowerCase()}${time ? `, livraison vers ${time}` : ''}. Afficher sur la carte`}
+                  accessibilityLabel={`${name}, ${liveStatusText(o, eta).toLowerCase()}${time ? `, livraison vers ${time}` : ''}${cash.amount > 0 ? `, ${formatFcfa(cash.amount)} à encaisser` : ''}. Afficher sur la carte`}
                   onPress={() => onSelect(o)}
                   style={(s: WebPressState) => [styles.rowMain, POINTER, !selected && (s.hovered || s.pressed) && styles.rowHover]}
                   testID={`live-row-${o.id}`}
@@ -494,7 +607,6 @@ export function RecentTile({
   error,
   query,
   onOpen,
-  onSeeAll,
   style,
 }: {
   list: OrderDto[] | null;
@@ -502,18 +614,17 @@ export function RecentTile({
   error: string | null;
   query: string;
   onOpen: (o: OrderDto) => void;
-  onSeeAll: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[styles.tile, shadows.tile, styles.doneTile, style]} testID="recent-list">
-      <TileHead title="Dernières livraisons" action={{ label: 'Voir tout l’historique', onPress: onSeeAll, testID: 'recent-see-all' }} />
+      <TileHead title="Dernières livraisons" action={{ label: 'Voir tout l’historique', href: '/business/history', testID: 'recent-see-all' }} />
       {list === null ? (
         <Text style={styles.listEmpty}>{error ?? (loading ? 'Chargement…' : '')}</Text>
       ) : list.length === 0 ? (
         <Text style={styles.listEmpty}>{query.trim() ? `Aucune livraison du jour ne correspond à « ${query.trim()} ».` : 'Pas encore de livraison livrée aujourd’hui.'}</Text>
       ) : (
-        <RowsViewport pitch={64} gap={0} contentStyle={styles.doneContent}>
+        <RowsViewport pitch={64} gap={0} count={list.length} moreLabel={(n) => `+ ${n} ${n > 1 ? 'autres livraisons livrées' : 'autre livraison livrée'}`} contentStyle={styles.doneContent}>
           {list.map((o, i) => {
             const minutes = deliveryMinutes(o);
             const area = dropoffArea(o);
@@ -557,7 +668,8 @@ export function RecentTile({
   );
 }
 
-const ON_HERO_CARD = 'rgba(10, 20, 90, 0.18)';
+/** Fond plus sombre posé sur la tuile cobalt (bloc du destinataire, survol de « Suivi ») : blanc dessus 8,1:1, onCobalt2 6,8:1. */
+const ON_HERO_CARD = alpha(palette.ink, 0.22);
 
 const styles = StyleSheet.create({
   tile: { backgroundColor: palette.card, borderRadius: 24, overflow: 'hidden' },
@@ -568,19 +680,20 @@ const styles = StyleSheet.create({
   kpiLabel: { marginTop: 6, fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.inkMuted },
   cash: { backgroundColor: palette.sun },
   cashTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  cashIcon: { backgroundColor: 'rgba(12, 18, 34, 0.08)' },
+  cashIcon: { backgroundColor: alpha(palette.ink, 0.08) },
   cashLabel: { color: palette.onSun2 },
-  fee: { height: 26, borderRadius: 13, paddingHorizontal: 10, backgroundColor: 'rgba(12, 18, 34, 0.08)', justifyContent: 'center', flexShrink: 1 },
+  fee: { height: 26, borderRadius: 13, paddingHorizontal: 10, backgroundColor: alpha(palette.ink, 0.08), justifyContent: 'center', flexShrink: 1 },
   feeText: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: palette.ink, ...tabular },
   hero: { flexDirection: 'row', gap: 24, padding: 24, borderRadius: radii.hero, backgroundColor: palette.cobalt, overflow: 'hidden' },
   heroLeft: { flex: 1, minWidth: 0 },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  heroChip: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 28, paddingLeft: 10, paddingRight: 12, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.16)', flexShrink: 1 },
-  heroDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.white, boxShadow: '0 0 0 3px rgba(255, 255, 255, 0.25)' },
+  heroChip: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 28, paddingLeft: 10, paddingRight: 12, borderRadius: 14, backgroundColor: alpha(palette.white, 0.16), flexShrink: 1 },
+  heroDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.white, boxShadow: `0 0 0 3px ${alpha(palette.white, 0.25)}` },
   heroChipText: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: palette.onCobalt, flexShrink: 1 },
   heroId: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.onCobalt2, ...tabular },
   heroOpen: { marginLeft: 'auto' },
-  heroOpenInner: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 32, paddingLeft: 12, paddingRight: 8, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.16)' },
+  // 44 px de haut (cible tactile d'une tablette en paysage).
+  heroOpenInner: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 44, paddingLeft: 16, paddingRight: 12, borderRadius: 22, backgroundColor: alpha(palette.white, 0.16) },
   // Survol : fond plus sombre (blanc 7,4:1), jamais plus clair (un voile blanc plus fort tomberait sous 4,5:1).
   heroOpenHover: { backgroundColor: ON_HERO_CARD },
   heroOpenText: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: palette.onCobalt },
@@ -594,26 +707,31 @@ const styles = StyleSheet.create({
   noteText: { flexShrink: 1, fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.onCobalt },
   heroSteps: { marginTop: 'auto', paddingTop: 14 },
   heroCardShort: { gap: 8, paddingVertical: 14 },
-  heroCard: { borderRadius: 20, backgroundColor: ON_HERO_CARD, padding: 16, justifyContent: 'space-between', gap: 12, boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.06)' },
+  heroCard: { borderRadius: 20, backgroundColor: ON_HERO_CARD, padding: 16, justifyContent: 'space-between', gap: 12, boxShadow: `inset 0 0 0 1px ${alpha(palette.white, 0.06)}` },
   cardName: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.onCobalt },
   cardMeta: { fontSize: 12, lineHeight: 16, fontWeight: '500', color: palette.onCobalt2 },
-  hr: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.14)' },
+  hr: { height: 1, backgroundColor: alpha(palette.white, 0.14) },
   driver: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   driverText: { flex: 1, minWidth: 0 },
   driverMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rounds: { flexDirection: 'row', gap: 6 },
   round: { alignItems: 'center', gap: 4, minWidth: 48, minHeight: 48, justifyContent: 'center' },
-  roundDisc: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.white, alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px -2px rgba(6, 16, 80, 0.35)' },
+  roundDisc: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.white, alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 10px -2px ${alpha(palette.ink, 0.3)}` },
   roundDiscHover: { backgroundColor: palette.cobaltTint },
   roundLabel: { fontSize: 11, lineHeight: 14, fontWeight: '600', color: palette.onCobalt2 },
-  searchDisc: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255, 255, 255, 0.16)', alignItems: 'center', justifyContent: 'center' },
+  searchDisc: { width: 40, height: 40, borderRadius: 20, backgroundColor: alpha(palette.white, 0.16), alignItems: 'center', justifyContent: 'center' },
   cashRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 32 },
   cashLabel2: { flexShrink: 1, fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.onCobalt },
   empty: { flexDirection: 'row', alignItems: 'center', gap: 28, paddingHorizontal: 32, paddingVertical: 24 },
   emptyText: { flex: 1, gap: 8, alignItems: 'flex-start' },
   emptyTitle: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4, color: palette.ink },
   emptyBody: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted, maxWidth: 420 },
-  emptyCta: { marginTop: 8 },
+  state: { alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
+  stateText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: palette.inkMuted },
+  stateCenter: { textAlign: 'center' },
+  more: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: MORE_ROW, marginTop: 2, borderRadius: 18, backgroundColor: palette.cobaltTint },
+  moreHover: { backgroundColor: palette.raisedHigh },
+  moreText: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: palette.cobaltText, ...tabular },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28, paddingHorizontal: 7 },
   headTitle: { fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.25, color: palette.ink, flexShrink: 1 },
   count: { minWidth: 24, height: 22, paddingHorizontal: 7, borderRadius: 11, backgroundColor: palette.cobaltTint, alignItems: 'center', justifyContent: 'center' },

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OrderDto, Paginated, QuoteResponse, StoreDto } from '@yaar/shared';
@@ -171,6 +171,9 @@ describe('Espace entreprise sur ordinateur (1 440 × 900) : pages larges', () =>
     await fireEvent.changeText(r.getByTestId('package-description'), 'Repas');
     await fireEvent.press(r.getByTestId('wizard-next'));
     expect(r.getByText('Récapitulatif')).toBeTruthy();
+    // Frais payés par l'entreprise, rien à encaisser : une ligne neutre, pas une tuile soleil « 0 FCFA ».
+    expect(r.getByTestId('summary-recipient-pays')).toHaveTextContent('Le destinataire ne paie rien à la livraison.');
+    expect(r.getByTestId('summary-recipient-pays')).not.toHaveTextContent(/FCFA/);
     await fireEvent.press(r.getByTestId('request-driver'));
     expect(mockApi.createDelivery).toHaveBeenCalledWith(expect.objectContaining({ recipientName: 'Awa Kaboré', vehicleType: 'MOTO' }));
     expect(mockRouter.replace).toHaveBeenCalledWith({ pathname: '/business/livraison/[id]', params: { id: 'del-9', created: '1' } });
@@ -183,5 +186,42 @@ describe('Espace entreprise sur ordinateur (1 440 × 900) : pages larges', () =>
     expect(r.getByTestId('business-identity')).toHaveTextContent(/PCPharmacie du CentreAvenue Kwame NkrumahValidée par Yaar/);
     expect(r.getByTestId('account-panel')).toHaveTextContent('Mon profil');
     expect(r.getByTestId('save-business')).toBeTruthy();
+  });
+
+  it('établissements à 1 024 px : colonne du compte de 320 px, titre entier (l’action passe à la ligne)', async () => {
+    dims.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
+    const r = await render(wrap(<BusinessProfile />));
+    const page = r.getByTestId('profile-desktop');
+    const column = page.children[1] as unknown as { props: { style: Parameters<typeof StyleSheet.flatten>[0] } };
+    expect(StyleSheet.flatten(column.props.style)).toMatchObject({ width: 320 });
+    expect(StyleSheet.flatten(r.getByTestId('page-title').props.style)).toMatchObject({ flexShrink: 0 });
+    expect(r.getByTestId('page-title').parent!.parent!.parent!.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ flexWrap: 'wrap' })]));
+  });
+
+  it('historique à 1 024 px : tableau resserré (« Destinataire » garde 200 px, frais sous l’encaissé, heure sous la date)', async () => {
+    dims.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
+    mockApi.listDeliveries.mockResolvedValue({
+      items: [delivery({ id: 'h-1', status: 'DELIVERED', deliveredAt: '2026-11-08T14:51:00.000Z', createdAt: '2026-11-08T14:20:00.000Z' })],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+    const r = await render(wrap(<BusinessHistoryScreen />));
+    await waitFor(() => expect(r.getByTestId('history-row-h-1')).toBeTruthy());
+    expect(r.queryByText('Frais')).toBeNull();
+    expect(r.getByText('Encaissé · frais')).toBeTruthy();
+    expect(r.getByTestId('history-row-h-1')).toHaveTextContent(/Livrée08\/11\/202614:5116\s500\sFCFAfrais 1\s500\sFCFA/);
+    expect(StyleSheet.flatten(r.getByText('Destinataire').props.style)).toMatchObject({ flex: 1, minWidth: 200 });
+  });
+
+  it('détail d’une livraison qui attend un livreur : l’état en grand, l’heure de la demande en petit', async () => {
+    jest.useFakeTimers({ now: Date.parse('2026-11-08T14:20:00.000Z') });
+    mockApi.getOrder.mockResolvedValue(delivery({ status: 'SEARCHING_DRIVER', driver: null, etaMinutes: null, createdAt: '2026-11-08T14:18:00.000Z' }));
+    const r = await render(wrap(<BusinessDeliveryScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByTestId('tracking-headline')).toHaveTextContent(/^Demandée à 14:18 · il y a 2 minRecherche d’un livreur…/);
+    expect(r.getByTestId('tracking-state')).toHaveTextContent('Recherche d’un livreur…');
+    // Le titre de la page dit déjà « Livraison #… » : pas de deuxième pastille sur la carte.
+    expect(r.queryByTestId('order-chip')).toBeNull();
   });
 });

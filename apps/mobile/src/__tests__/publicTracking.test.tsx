@@ -91,7 +91,18 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
 
   it('livreur en route vers l’expéditeur : heure d’arrivée, étape, livreur avec appel', async () => {
     const r = await show(
-      tracking({ status: 'ASSIGNED', pickedUpAt: null, etaMinutes: 12, route: route({ target: 'PICKUP', points: [[12.3627, -1.521], [12.3686, -1.5275]] }) }),
+      tracking({
+        status: 'ASSIGNED',
+        pickedUpAt: null,
+        etaMinutes: 12,
+        route: route({
+          target: 'PICKUP',
+          points: [
+            [12.3627, -1.521],
+            [12.3686, -1.5275],
+          ],
+        }),
+      }),
     );
     expect(r.getByLabelText('Arrivée vers 14:32 · dans 12 min')).toBeTruthy();
     expect(r.getByText('Le livreur récupère votre colis')).toBeTruthy();
@@ -140,7 +151,19 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
   });
 
   it('feuille blanche Cobalt ; entreprise à ses initiales, « chez vous » en épingle à maison', async () => {
-    const r = await show(tracking({ status: 'ASSIGNED', pickedUpAt: null, route: route({ target: 'PICKUP', points: [[12.3627, -1.521], [12.3686, -1.5275]] }) }));
+    const r = await show(
+      tracking({
+        status: 'ASSIGNED',
+        pickedUpAt: null,
+        route: route({
+          target: 'PICKUP',
+          points: [
+            [12.3627, -1.521],
+            [12.3686, -1.5275],
+          ],
+        }),
+      }),
+    );
     expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style)).toMatchObject({ backgroundColor: '#FFFFFF', borderTopLeftRadius: 32 });
     // Retrait (Pharmacie du Centre → PC), destinataire sans initiales (maison), livreur.
     expect(r.getByTestId('live-map-initials').props.children).toBe('PC,-,-');
@@ -210,13 +233,50 @@ describe('page publique de suivi /suivi/[token] (sans compte)', () => {
     expect(r.getByTestId('tracking-error')).toBeTruthy();
     // « Connexion impossible » une seule fois (titre), le texte donne la marche à suivre.
     expect(r.getByTestId('tracking-error')).toHaveTextContent(
-      /^Connexion impossibleVérifiez votre connexion Internet\. Nouvel essai automatique dans quelques secondes\.$/,
+      /^Connexion impossibleVérifiez votre connexion Internet\. Nouvel essai automatique dans quelques secondes\.Réessayer$/,
     );
     // Intervalle doublé après l'échec (8 s → 16 s).
     await act(async () => jest.advanceTimersByTimeAsync(8000));
     expect(r.getByTestId('tracking-error')).toBeTruthy();
     await act(async () => jest.advanceTimersByTimeAsync(8000));
     expect(r.getByText('Votre colis est en route')).toBeTruthy();
+  });
+});
+
+describe('page publique : « Réessayer » et tablette', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: T0 });
+    mockTrack.mockReset();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('erreur : « Réessayer » relance le suivi tout de suite (sans attendre l’essai automatique)', async () => {
+    mockTrack.mockRejectedValueOnce(new ApiError(0, NETWORK_ERROR_CODE, 'Connexion impossible.'));
+    mockTrack.mockResolvedValue(tracking());
+    const r = await render(wrap(<PublicTrackingScreen />));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.getByTestId('tracking-retry')).toHaveTextContent('Réessayer');
+    await act(async () => fireEvent.press(r.getByTestId('tracking-retry')));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(mockTrack).toHaveBeenCalledTimes(2);
+    expect(r.getByText('Votre colis est en route')).toBeTruthy();
+  });
+
+  it('trop de demandes : pas de « Réessayer » (un nouvel essai immédiat serait refusé)', async () => {
+    const r = await show(new ApiError(429, 'RATE_LIMITED', 'Trop de demandes.'));
+    expect(r.getByTestId('tracking-rate-limited')).toBeTruthy();
+    expect(r.queryByTestId('tracking-retry')).toBeNull();
+  });
+
+  it('tablette (768 px) : le contenu de la feuille garde une colonne de 480 px, centrée', async () => {
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 768, height: 1024, scale: 2, fontScale: 1 });
+    const r = await show(tracking());
+    expect(StyleSheet.flatten(r.getByTestId('sheet-column').props.style)).toMatchObject({ maxWidth: 480, alignSelf: 'center' });
+    // Fondu au bas de la feuille : pas de ligne coupée à mi-hauteur.
+    expect(r.getByTestId('sheet-fade')).toBeTruthy();
   });
 });
 
@@ -243,8 +303,7 @@ describe('page publique sur un petit téléphone (360 × 640) et sur une page cl
     expect(StyleSheet.flatten(clock.props.style)).toMatchObject({ fontSize: 48, fontWeight: '800', fontVariant: ['tabular-nums'] });
     expect(clock.parent).toBe(r.getByText('dans 9 min').parent?.parent);
     expect(r.getByLabelText('Arrivée vers 14:29 · dans 9 min')).toBeTruthy();
-    // Montant sur une ligne, tuile plus basse.
-    expect(r.getByTestId('amount-to-pay-value').props.numberOfLines).toBe(1);
+    // Montant sur une ligne, tuile plus basse (jamais coupé : FitAmount, pas de numberOfLines).
     expect(StyleSheet.flatten(r.getByTestId('amount-to-pay').props.style)).toMatchObject({ minHeight: 60 });
     expect(r.getByTestId('amount-to-pay-value')).toHaveTextContent('16 500 FCFA');
   });

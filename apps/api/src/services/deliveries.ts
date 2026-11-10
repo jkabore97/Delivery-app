@@ -234,7 +234,9 @@ export class DeliveryService {
    * Tableau de bord de l'entreprise (GET /business/summary) : livraisons en cours et chiffres du jour UTC
    * (Ouagadougou = UTC+0), sur les mêmes livraisons que GET /business/deliveries (demandées par ce compte, tous ses
    * établissements). Espèces : même modèle que les sérialiseurs et l'application (`amountsToCollect`) : marchandise
-   * = `cashToCollect` (encaissée pour l'entreprise, que Yaar lui reverse), frais = `deliveryFee`.
+   * = `cashToCollect` (encaissée pour l'entreprise, que Yaar lui reverse), frais = `deliveryFee`. `goodsCollected` est
+   * le chiffre du JOUR (reparti de 0 à minuit UTC) : le reversement n'est pas suivi, l'application l'affiche donc
+   * « Encaissé pour vous aujourd'hui », jamais « à reverser ».
    */
   async summary(user: AuthUser): Promise<BusinessSummaryDto> {
     const now = this.clock.now();

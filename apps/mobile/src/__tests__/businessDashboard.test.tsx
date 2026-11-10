@@ -13,12 +13,14 @@ const mockPush = jest.fn();
 const mockNavigate = jest.fn();
 let mockPathname = '/business';
 jest.mock('expo-router', () => {
-  const { useEffect } = jest.requireActual<typeof import('react')>('react');
+  const { cloneElement, useEffect } = jest.requireActual<typeof import('react')>('react');
   return {
     router: { push: (...a: unknown[]) => mockPush(...a), navigate: (...a: unknown[]) => mockNavigate(...a) },
     useFocusEffect: (cb: () => void) => useEffect(cb, [cb]),
     useIsFocused: () => true,
     usePathname: () => mockPathname,
+    // `<Link href asChild>` : un vrai lien sur le web ; ici, l'appui navigue vers `href` (et l'enfant garde `href`).
+    Link: ({ href, children }: { href: string; children: React.ReactElement }) => cloneElement(children as React.ReactElement<Record<string, unknown>>, { href, onPress: () => mockNavigate(href) }),
   };
 });
 const SUMMARY: BusinessSummaryDto = {
@@ -137,7 +139,9 @@ describe('Tableau de bord de l’entreprise (ordinateur, 1 440 × 900)', () => {
     expect(mockApi.request).toHaveBeenCalledWith('GET', '/business/summary');
     expect(r.getByTestId('kpi-delivered')).toHaveTextContent('14Livrées aujourd’hui');
     expect(r.getByTestId('kpi-delay')).toHaveTextContent('24 minDélai moyen');
-    expect(r.getByTestId('kpi-cash')).toHaveTextContent(/^21\s400 FCFA de frais87\s500 FCFAÀ reverser · encaissé pour vous$/);
+    // Chiffre du jour (le reversement n'est pas suivi) : jamais « à reverser ».
+    expect(r.getByTestId('kpi-cash')).toHaveTextContent(/^21\s400 FCFA de frais87\s500 FCFAEncaissé pour vous aujourd’hui$/);
+    expect(r.getByTestId('kpi-cash')).not.toHaveTextContent(/reverser/i);
     // Par défaut, la première livraison dont le colis est en route.
     const hero = r.getByTestId('hero-tile');
     expect(hero).toHaveTextContent(/En livraison#1003SuiviArrivée12:09dans 7 minMariam peut suivre la course en directCode de livraison vérifié à la remise/);
@@ -176,15 +180,20 @@ describe('Tableau de bord de l’entreprise (ordinateur, 1 440 × 900)', () => {
   it('recherche : par numéro ou par destinataire (sans accents), dans les livraisons en cours et du jour', async () => {
     serve([salif, awa, mariam]);
     const r = await showDashboard();
+    await fireEvent.press(r.getByTestId('live-row-o1004'));
     await fireEvent.changeText(r.getByTestId('dashboard-search'), 'ouedraogo');
     expect(within(r.getByTestId('live-list')).queryByText('Awa Kaboré')).toBeNull();
     expect(within(r.getByTestId('live-list')).getByText('Mariam Ouédraogo')).toBeTruthy();
+    // Compteur « trouvées / en cours », et la tuile héros suit la première livraison trouvée.
+    expect(r.getByTestId('live-count')).toHaveTextContent('1 / 3');
+    expect(r.getByTestId('hero-tile')).toHaveTextContent(/#1003/);
     expect(within(r.getByTestId('recent-list')).getByText('Aucune livraison du jour ne correspond à « ouedraogo ».')).toBeTruthy();
     await fireEvent.changeText(r.getByTestId('dashboard-search'), '#1005');
     expect(within(r.getByTestId('live-list')).getByText('Salif Compaoré')).toBeTruthy();
     expect(within(r.getByTestId('live-list')).queryByText('Mariam Ouédraogo')).toBeNull();
     await fireEvent.changeText(r.getByTestId('dashboard-search'), 'zzz');
     expect(r.getByText('Aucune livraison en cours ne correspond à « zzz ».')).toBeTruthy();
+    expect(r.getByTestId('live-count')).toHaveTextContent('0 / 3');
   });
 
   it('« Dernières livraisons » : livrées aujourd’hui seulement, la plus récente en premier ; « › » ouvre l’historique', async () => {
@@ -196,16 +205,20 @@ describe('Tableau de bord de l’entreprise (ordinateur, 1 440 × 900)', () => {
     expect(r.getByTestId('recent-d-late')).toHaveTextContent(/Fatimata Sawadogo11:24.*21 min/);
     await fireEvent.press(r.getByTestId('recent-d-late'));
     expect(mockPush).toHaveBeenCalledWith('/business/livraison/d-late');
+    // « › » : un vrai lien (web : `<a href>`, que le clavier ouvre avec Entrée).
+    expect(r.getByTestId('recent-see-all').props.accessibilityRole).toBe('link');
+    expect(r.getByTestId('recent-see-all').props.href).toBe('/business/history');
     await fireEvent.press(r.getByTestId('recent-see-all'));
     expect(mockNavigate).toHaveBeenCalledWith('/business/history');
   });
 
-  it('rien en cours : tuile d’accueil et « Nouvelle livraison » ; la carte montre le quartier de l’entreprise', async () => {
+  it('rien en cours : tuile d’accueil (un seul « Nouvelle livraison », en haut) ; la carte montre le quartier de l’entreprise', async () => {
     serve([]);
     const r = await showDashboard();
     expect(r.getByTestId('no-active-delivery')).toHaveTextContent(/Aucune livraison en cours.*Demandez un livreur/);
-    expect(r.getAllByTestId('new-delivery').length).toBe(2);
-    expect(r.getByText('Aucune livraison en cours pour le moment.')).toBeTruthy();
+    expect(r.getAllByTestId('new-delivery').length).toBe(1);
+    expect(r.getAllByText('Aucune livraison en cours')).toHaveLength(1);
+    expect(r.getByTestId('live-list')).toHaveTextContent(/Les livraisons demandées s’afficheront ici/);
     expect(r.queryByTestId('map-summary')).toBeNull();
     const box = (r.getByTestId('live-map-fit').props.children as string).split(';').map((p) => p.split(',').map(Number));
     // Carré d'environ 2 km autour de l'entreprise (12,3686 ; -1,5275), pas son seul marqueur au zoom maximal.
@@ -214,6 +227,50 @@ describe('Tableau de bord de l’entreprise (ordinateur, 1 440 × 900)', () => {
     expect(box[1]![1]).toBeCloseTo(-1.5185, 4);
     await fireEvent.press(r.getAllByTestId('new-delivery')[0]!);
     expect(mockPush).toHaveBeenCalledWith('/business/nouvelle');
+  });
+
+  it('premier chargement : tuile « Chargement », jamais « Aucune livraison en cours » ni sa « Nouvelle livraison » en double', async () => {
+    mockApi.listDeliveries.mockReturnValue(new Promise(() => undefined));
+    mockApi.request.mockReturnValue(new Promise(() => undefined));
+    const r = await showDashboard();
+    expect(r.getByTestId('hero-loading')).toHaveTextContent('Chargement des livraisons en cours…');
+    expect(r.queryByTestId('no-active-delivery')).toBeNull();
+    expect(r.getByTestId('live-list')).toHaveTextContent(/^En coursChargement…$/);
+    expect(r.getByTestId('kpi-cash')).toHaveTextContent(/^…Encaissé pour vous aujourd’hui$/);
+  });
+
+  it('liste illisible (rien d’affiché avant) : « Livraisons indisponibles » et « Réessayer » ; résumé en échec : « — »', async () => {
+    mockApi.request.mockRejectedValue(new Error('réseau'));
+    mockApi.listDeliveries.mockRejectedValueOnce(new Error('Service indisponible'));
+    mockApi.listDeliveries.mockRejectedValueOnce(new Error('Service indisponible'));
+    const r = await showDashboard();
+    expect(r.getByTestId('hero-error')).toHaveTextContent(/Livraisons indisponibles/);
+    expect(r.queryByTestId('no-active-delivery')).toBeNull();
+    expect(r.getByTestId('live-list')).toHaveTextContent(/Livraisons indisponibles pour le moment/);
+    expect(r.getByTestId('kpi-delivered')).toHaveTextContent('—Livrées aujourd’hui');
+    expect(r.getByLabelText('Encaissé pour vous aujourd’hui\u202f: indisponible')).toBeTruthy();
+    serve([mariam]);
+    await fireEvent.press(r.getByTestId('hero-retry'));
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    expect(r.queryByTestId('hero-error')).toBeNull();
+    expect(r.getByTestId('hero-tile')).toHaveTextContent(/#1003/);
+  });
+
+  it('recherche d’un livreur suivie : l’état en grand, l’heure de la demande en petit (pas une heure géante)', async () => {
+    serve([salif]);
+    const r = await showDashboard();
+    const hero = r.getByTestId('hero-tile');
+    expect(within(hero).getByTestId('hero-tile-state')).toHaveTextContent('Recherche d’un livreur…');
+    expect(hero).toHaveTextContent(/^Recherche#1005SuiviDemandée à 12:00 · il y a 2 min/);
+  });
+
+  it('pas d’entreprise : « Dernières livraisons » ne reste pas sur « Chargement… »', async () => {
+    mockBusiness.store = null;
+    mockBusiness.stores = [];
+    serve([]);
+    const r = await showDashboard();
+    expect(r.getByTestId('recent-list')).not.toHaveTextContent(/Chargement/);
+    expect(r.getByTestId('recent-list')).toHaveTextContent(/Pas encore de livraison livrée aujourd’hui/);
   });
 
   it('entreprise en attente de validation : bandeau et « Nouvelle livraison » grisée qui explique pourquoi', async () => {
@@ -245,7 +302,8 @@ describe('Barre latérale et cadre de l’ordinateur', () => {
     expect(activeNav('/business/livraison/o1003')).toBe('overview');
     expect(activeNav('/business/history')).toBe('history');
     expect(activeNav('/business/profile')).toBe('stores');
-    expect(activeNav('/business/nouvelle')).toBeNull();
+    expect(activeNav('/business/nouvelle')).toBe('overview');
+    expect(activeNav('/driver')).toBeNull();
   });
 
   it('destinations réelles seulement, nombre de livraisons en cours, carte de l’entreprise vers son profil', async () => {
@@ -254,6 +312,10 @@ describe('Barre latérale et cadre de l’ordinateur', () => {
     await act(async () => undefined);
     const links = r.getAllByRole('link').map((e) => e.props.accessibilityLabel);
     expect(links).toEqual(['Yaar Livraison, vue d’ensemble', 'Vue d’ensemble, 3 livraisons en cours', 'Historique', 'Établissements']);
+    // De vrais liens (web : `<a href>`, ouverts au clavier par Entrée) vers des pages qui existent.
+    expect(r.getAllByRole('link').map((e) => e.props.href)).toEqual(['/business', '/business', '/business/history', '/business/profile']);
+    // Hors du tableau de bord, la barre latérale relit elle-même le résumé (badge à jour).
+    expect(mockApi.request).toHaveBeenCalledWith('GET', '/business/summary');
     expect(r.getByTestId('nav-history').props.accessibilityState).toMatchObject({ selected: true });
     expect(r.getByTestId('nav-overview').props.accessibilityState).toMatchObject({ selected: false });
     await fireEvent.press(r.getByTestId('nav-stores'));
@@ -270,6 +332,8 @@ describe('Barre latérale et cadre de l’ordinateur', () => {
     expect(r.getByTestId('sidebar-business')).toHaveTextContent(/Aïcha T\. · 2 établissements$/);
     await fireEvent.press(r.getByTestId('sidebar-business'));
     const menu = r.getByTestId('store-switcher');
+    // Le choix porte sur le point de retrait des nouvelles livraisons, pas sur un filtre du tableau de bord.
+    expect(menu).toHaveTextContent(/^Point de retrait des nouvelles livraisonsLe tableau de bord montre les livraisons de tous vos établissements\./);
     await fireEvent.press(within(menu).getByText('Le Verdoyant Ouaga 2000'));
     expect(mockBusiness.selectStore).toHaveBeenCalledWith('store-2');
   });

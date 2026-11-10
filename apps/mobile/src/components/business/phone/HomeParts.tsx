@@ -115,7 +115,8 @@ export function heroHeadline(o: OrderDto, eta: LiveEta): { clock: string; label:
     if (eta.clock) return { clock: eta.clock, label: 'Au retrait', inText: eta.inText };
     return { kicker: 'Retrait du colis', word: eta.minutes === 0 ? 'Livreur sur place' : 'Livreur en route' };
   }
-  return { kicker: `Demandée à ${formatTime(o.createdAt)}${eta.inText ? ` · ${eta.inText}` : ''}`, word: 'Recherche d’un livreur…' };
+  // « Recherche… » tient à côté de la pilule soleil même à 360 px ; le sur-titre dit de quoi.
+  return { kicker: `Livreur demandé à ${formatTime(o.createdAt)}${eta.inText ? ` · ${eta.inText}` : ''}`, word: 'Recherche…' };
 }
 
 /** Phrase des lecteurs d'écran d'une livraison en cours, montant à encaisser compris. */
@@ -173,7 +174,7 @@ export function HeroDeliveryCard({ order: o, now, onPress, compact = false }: { 
                 <Text style={styles.heroEtaLabel} numberOfLines={1}>
                   {head.kicker}
                 </Text>
-                <Text style={styles.heroWord} numberOfLines={1} testID="hero-state">
+                <Text style={styles.heroWord} numberOfLines={1} testID="hero-state" accessibilityLabel={head.word === 'Recherche…' ? 'Recherche d’un livreur' : undefined}>
                   {head.word}
                 </Text>
               </View>
@@ -303,7 +304,7 @@ export function CompactDeliveryCard({
             <View style={styles.statusLine}>
               <View style={[styles.statusDot, o.status === 'ASSIGNED' ? styles.statusDotSun : styles.statusDotCobalt]} />
               <Text style={[styles.statusText, searching ? styles.statusTextSearch : null]} numberOfLines={1}>
-                {status}
+                {searching ? 'Recherche…' : status}
               </Text>
             </View>
           </View>

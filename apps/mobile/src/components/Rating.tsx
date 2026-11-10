@@ -113,7 +113,7 @@ export function RatingCard({
 
   return (
     <Card style={styles.card}>
-      <Text style={styles.title} accessibilityRole="header">
+      <Text style={styles.title} accessibilityRole="header" aria-level={2}>
         {title}
       </Text>
       <Stars value={score} onChange={setScore} size={40} />

@@ -9,7 +9,7 @@ import { useAsync } from '../../../hooks/useAsync';
 import { cashRatio } from '../../../lib/driverStatus';
 import { formatFcfa } from '../../../lib/format';
 import { useApi } from '../../../state/auth';
-import { palette, radii, shadows, spacing } from '../../../theme';
+import { alpha, palette, radii, shadows, spacing } from '../../../theme';
 
 const courses = (n: number) => `${n} course${n > 1 ? 's' : ''}`;
 
@@ -67,7 +67,7 @@ export default function DriverEarnings() {
               <Text style={styles.cashLimit}>{`Plafond ${formatFcfa(e.cashLimit)}`}</Text>
             </View>
             <FitAmount amount={e.cashHeld} size={36} />
-            <Meter value={cashRatio(e.cashHeld, e.cashLimit)} color={palette.ink} track="rgba(12, 18, 34, 0.12)" label="Espèces détenues par rapport au plafond" />
+            <Meter value={cashRatio(e.cashHeld, e.cashLimit)} color={palette.ink} track={alpha(palette.ink, 0.12)} label="Espèces détenues par rapport au plafond" />
             <Text style={styles.cashNote}>
               {e.cashBlocked
                 ? 'Plafond atteint : déposez les espèces auprès de Yaar pour reprendre les courses.'
@@ -88,7 +88,7 @@ export default function DriverEarnings() {
                   leading={<IconDisc icon={collection ? 'cash' : 'check'} tone={collection ? 'sun' : 'mint'} size={40} />}
                   title={collection ? (l.orderNumber ? `Course #${l.orderNumber}` : 'Encaissement') : 'Dépôt chez Yaar'}
                   subtitle={`${shortDateTime(l.createdAt)}${!collection && l.note ? ` · ${l.note}` : ''}\nSolde ${formatFcfa(l.balanceAfter)}`}
-                  right={<FitAmount amount={Math.abs(l.amount)} sign={l.amount > 0 ? '+' : '−'} size={17} color={l.amount > 0 ? palette.amberText : palette.mintText} />}
+                  amount={{ value: Math.abs(l.amount), sign: l.amount > 0 ? '+' : '−', color: l.amount > 0 ? palette.amberText : palette.mintText }}
                 />
               );
             })}
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   hero: { borderRadius: radii.hero, padding: 24, gap: 6, backgroundColor: palette.cobalt },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroLabel: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.onCobalt2 },
-  heroChip: { minHeight: 28, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.16)' },
+  heroChip: { minHeight: 28, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: alpha(palette.white, 0.16) },
   heroChipText: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: palette.white, fontVariant: ['tabular-nums'] },
   heroSub: { fontSize: 14, lineHeight: 19, fontWeight: '600', color: palette.onCobalt2, fontVariant: ['tabular-nums'] },
   tiles: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },

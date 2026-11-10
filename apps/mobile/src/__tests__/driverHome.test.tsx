@@ -112,7 +112,7 @@ describe('Accueil du livreur', () => {
     expect(r.getByTestId('cash-held')).toHaveTextContent('18 500 FCFA');
     expect(r.getByTestId('cash-held-limit')).toHaveTextContent(/^Plafond 50 000 FCFA · à déposer auprès de Yaar$/);
     // Gains du jour en grand chiffre cobalt ; jauge des espèces en soleil (37 % du plafond).
-    expect(StyleSheet.flatten(r.getByTestId('today-earnings').props.style)).toMatchObject({ color: '#2448FF', fontVariant: ['tabular-nums'] });
+    expect(StyleSheet.flatten(within(r.getByTestId('today-earnings')).getByText('7\u202f400').props.style)).toMatchObject({ color: '#2448FF', fontVariant: ['tabular-nums'] });
     const gauge = r.getAllByRole('progressbar').find((p) => p.props['aria-valuenow'] === 37);
     expect(gauge).toBeTruthy();
     expect(r.getByTestId('live-map').props.children).toBe('driver');
@@ -136,13 +136,10 @@ describe('Accueil du livreur', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/driver/order');
   });
 
-  it('plafond d’espèces atteint, hors ligne : « Passer en ligne » inactif (le serveur refuserait) et dépôt expliqué', async () => {
+  it('plafond d’espèces atteint, hors ligne : pas de grand « Passer en ligne » inactif, le dépôt expliqué en premier', async () => {
     mockDriver.profile = driverProfile({ isOnline: false, cashBlocked: true, cashHeld: 52000, cashLimit: 50000 });
     const r = await render(wrap(<DriverHome />));
-    const sw = r.getByTestId('online-switch');
-    expect(sw.props.accessibilityState).toMatchObject({ disabled: true });
-    expect(sw.props.accessibilityHint).toMatch(/plafond d’espèces atteint/);
-    await act(async () => fireEvent.press(sw));
+    expect(r.queryByTestId('online-switch')).toBeNull();
     expect(mockDriver.setOnline).not.toHaveBeenCalled();
     expect(r.getByTestId('cash-blocked')).toHaveTextContent(
       /^Plafond d’espèces atteint \(52 000 FCFA\)\.Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré\.$/,

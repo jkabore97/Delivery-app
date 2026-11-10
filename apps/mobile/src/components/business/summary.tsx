@@ -89,3 +89,19 @@ export function useSummaryRefresh(focused: boolean): void {
     if (focused) void refresh();
   });
 }
+
+/**
+ * Relit le résumé quand l'ensemble des livraisons en cours change (`key` : leurs identifiants ; une livraison livrée,
+ * annulée ou nouvelle) : les chiffres du jour suivent la liste sans attendre le prochain rafraîchissement (30 s en mode
+ * poll). Rien au premier chargement (déjà fait par `useSummaryRefresh`), ni tant que `key` est null (liste pas lue).
+ */
+export function useSummaryRefreshOnChange(key: string | null, enabled: boolean): void {
+  const { refresh } = useBusinessSummary();
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    if (key === null) return;
+    const previous = last.current;
+    last.current = key;
+    if (enabled && previous !== null && previous !== key) void refresh();
+  }, [key, enabled, refresh]);
+}

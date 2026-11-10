@@ -1,12 +1,13 @@
 import { useState, type Ref } from 'react';
 import { Platform, StyleSheet, View, type TextInputInstance } from 'react-native';
 import { Text, TextInput } from '../Text';
-import { palette } from '../../theme';
+import { alpha, palette } from '../../theme';
 
 /**
- * Saisie d'un code en cases (code de livraison à 4 chiffres, code de connexion à 6 chiffres), au dessin Cobalt : cases
- * remplies (raised, coins de 16 px), chiffres 800 tabulaires, case suivante cerclée de cobalt (2 px) quand le champ a
- * le focus, toutes cerclées de rouge foncé en cas d'erreur.
+ * Saisie d'un code en cases (code de livraison à 4 chiffres, code de connexion à 6 chiffres), au dessin Cobalt, lisible
+ * en plein soleil : cases vides gris clair (raisedHigh) au contour gris de 2 px (3,1:1 au moins, sur la case comme sur
+ * la carte blanche), cases remplies blanches au contour gris foncé (inkMuted, 6:1), chiffres 800 tabulaires, case
+ * suivante cerclée de cobalt (2 px) quand le champ a le focus, toutes cerclées de rouge foncé en cas d'erreur.
  *
  * Un VRAI champ (transparent) couvre les cases : toucher une case ouvre le clavier numérique, un appui long propose
  * « Coller », le code collé (« 4 8 2 1 », « Code : 4821 ») est réduit à ses chiffres (pas de `maxLength`, qui
@@ -22,6 +23,7 @@ export function CodeInput({
   accessibilityLabel,
   oneTimeCode,
   onSubmit,
+  onFocus,
   inputRef,
   testID,
 }: {
@@ -34,6 +36,8 @@ export function CodeInput({
   /** Code reçu par SMS : complétion automatique du système. */
   oneTimeCode?: boolean;
   onSubmit?: () => void;
+  /** Le champ prend le focus (ex. faire défiler l'écran pour garder les cases au-dessus du clavier). */
+  onFocus?: () => void;
   inputRef?: Ref<TextInputInstance>;
   /** Sur le champ. */
   testID?: string;
@@ -87,7 +91,10 @@ export function CodeInput({
         autoCorrect={false}
         caretHidden
         selectionColor="transparent"
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          setFocused(true);
+          onFocus?.();
+        }}
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmit}
         accessibilityLabel={accessibilityLabel}
@@ -98,18 +105,21 @@ export function CodeInput({
   );
 }
 
+/** Contour d'une case vide : 3,4:1 sur la carte blanche, 3,1:1 sur la case (raisedHigh). */
+const EMPTY_BORDER = alpha(palette.inkMuted, 0.75);
+
 const styles = StyleSheet.create({
   wrap: { alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', justifyContent: 'center' },
   box: {
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: 'transparent',
-    backgroundColor: palette.raised,
+    borderColor: EMPTY_BORDER,
+    backgroundColor: palette.raisedHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  boxFilled: { backgroundColor: palette.white, borderColor: palette.line },
+  boxFilled: { backgroundColor: palette.white, borderColor: palette.inkMuted },
   // Anneau de focus : 2 px cobalt (6,1:1 sur blanc).
   boxActive: { borderColor: palette.cobalt, backgroundColor: palette.white },
   boxError: { borderColor: palette.coralText },

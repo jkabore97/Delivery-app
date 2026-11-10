@@ -39,8 +39,13 @@ export function useActiveDeliveries(enabled: boolean) {
       void load();
     }, [load]),
   );
-  // Mode socket : statuts (et nouvel itinéraire) par order.updated, positions par driver.location.
-  useSocketEvent('order.updated', () => void load());
+  // Mode socket : statuts (et nouvel itinéraire) par order.updated (écran affiché seulement : un écran caché relit au
+  // retour au premier plan), positions par driver.location.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  useSocketEvent('order.updated', () => {
+    if (enabledRef.current) void load();
+  });
   useOrderRooms((items ?? []).map((o) => o.id));
   useSocketEvent('driver.location', (e) => {
     setItems(

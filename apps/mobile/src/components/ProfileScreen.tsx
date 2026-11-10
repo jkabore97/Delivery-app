@@ -100,7 +100,6 @@ export function ProfileScreen({ color, buttonTextColor, top, children, beforeSig
           onPress={save}
           loading={busy}
           disabled={!name.trim() || unchanged}
-          small
         />
       </View>
       {children}

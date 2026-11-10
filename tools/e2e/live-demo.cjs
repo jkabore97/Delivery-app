@@ -223,7 +223,7 @@ async function karimToken(page) {
     const biz = await phone(browser, 'business');
     const bp = biz.page;
     await demoLogin(bp, 'Entreprise · Le Verdoyant');
-    await V(bp.getByText('Livraisons en cours')).waitFor({ timeout: 45000 });
+    await V(bp.getByTestId('kpi-chips')).waitFor({ timeout: 45000 });
     await bp.getByTestId('live-map').first().waitFor({ timeout: 30000 });
     await shot(bp, 'b10-business-deliveries');
     step('entreprise : connectée (Le Verdoyant), livraisons en cours et carte d’ensemble');

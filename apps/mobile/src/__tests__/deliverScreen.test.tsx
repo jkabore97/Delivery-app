@@ -1,4 +1,5 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { ApiError } from '../lib/api';
 import DeliverScreen from '../app/driver/deliver';
 import { delivery, driverProfile, order } from './fixtures';
@@ -52,6 +53,9 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     expect(mockApi.deliverOrder).toHaveBeenCalledWith('order-1', { code: '1234' });
     expect(r.getByTestId('delivery-code-input').props.value).toBe('');
     expect(mockDriver.setCurrentOrder).not.toHaveBeenCalled();
+    // Le livreur retape : le bandeau d'erreur disparaît avec les cases rouges.
+    await act(async () => fireEvent.changeText(r.getByTestId('delivery-code-input'), '4'));
+    expect(r.queryByText('Code incorrect (4 essais restants).')).toBeNull();
   });
 
   it('bon code : livraison confirmée, course terminée, gain et gains du jour, notation', async () => {
@@ -62,7 +66,9 @@ describe('DeliverScreen (confirmer la livraison)', () => {
     await act(async () => fireEvent.press(r.getByTestId('deliver-button')));
     await waitFor(() => expect(r.getByTestId('delivery-success')).toBeTruthy());
     expect(r.getByText('Livraison confirmée')).toBeTruthy();
-    expect(r.getByText('+1\u202f200\u202fFCFA')).toBeTruthy();
+    expect(r.getByTestId('delivery-gain-value')).toHaveTextContent('+1\u202f200\u202fFCFA', { normalizer: (t: string) => t });
+    // Une seule action pleine (« Retour aux courses ») : la note s'envoie par un bouton en contour.
+    expect(StyleSheet.flatten(r.getByTestId('rating-submit').props.style)).toMatchObject({ backgroundColor: '#FFFFFF' });
     expect(r.getByText('Gains du jour · 9 courses')).toBeTruthy();
     expect(r.getByText('Notez le client')).toBeTruthy();
     expect(mockDriver.setCurrentOrder).toHaveBeenCalledWith(null);

@@ -4,6 +4,7 @@ import { Text } from './Text';
 import * as Location from 'expo-location';
 import { approximateZone, OUAGADOUGOU_CENTER, type AddressDto } from '@yaar/shared';
 import { isPinAtDefault, PIN_NOT_PLACED_MESSAGE } from '../lib/address';
+import { MAP_PALETTE } from '../lib/map/style';
 import { palette, radii, shadows, spacing } from '../theme';
 import { Icon } from './design/Icon';
 import { CenterPin } from './map/CenterPin';
@@ -132,7 +133,7 @@ export function AddressPicker({
 }
 
 const styles = StyleSheet.create({
-  mapWrap: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: '#F3F5F8' },
+  mapWrap: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
   locateBtn: { position: 'absolute', right: spacing.sm, bottom: spacing.lg + 4 },
   locate: { borderColor: palette.white },
   error: { color: palette.coralText, fontSize: 13, lineHeight: 18, fontWeight: '600' },

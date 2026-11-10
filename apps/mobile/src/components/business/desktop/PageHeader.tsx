@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from '
 import { Platform, Pressable, StyleSheet, View, type TextInput as RNTextInput } from 'react-native';
 import { Text, TextInput } from '../../Text';
 import { Icon } from '../../design/Icon';
-import { palette, tabular } from '../../../theme';
+import { alpha, palette, shadows, tabular } from '../../../theme';
 import { frenchDate } from '../dashboardData';
 import { POINTER, type WebPressState } from '../parts';
 import { formatTime } from '../../../lib/format';
@@ -37,6 +37,7 @@ export function PageHeader({
   actions,
   back,
   titleAccessory,
+  wrap = false,
 }: {
   title: string;
   subtitle?: ReactNode;
@@ -44,9 +45,11 @@ export function PageHeader({
   actions?: ReactNode;
   back?: { onPress: () => void; label?: string };
   titleAccessory?: ReactNode;
+  /** Colonne étroite : la recherche et l'action passent sous le titre plutôt que de le couper. */
+  wrap?: boolean;
 }) {
   return (
-    <View style={styles.top}>
+    <View style={[styles.top, wrap && styles.topWrap]}>
       {back ? (
         <Pressable
           accessibilityRole="button"
@@ -60,7 +63,7 @@ export function PageHeader({
       ) : null}
       <View style={styles.titleBox}>
         <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+          <Text style={styles.title} numberOfLines={1} accessibilityRole="header" testID="page-title">
             {title}
           </Text>
           {titleAccessory}
@@ -83,11 +86,27 @@ export function PageHeader({
 
 /**
  * Recherche du tableau de bord (vraie : filtre les livraisons en cours et du jour par numéro ou destinataire). Pilule
- * blanche 48 px, raccourci clavier ⌘ K / Ctrl K (web) qui place le curseur dans le champ, Échap pour effacer.
+ * blanche 48 px, raccourci clavier ⌘ K / Ctrl K (web) qui place le curseur dans le champ, Échap pour effacer. Pilule
+ * étroite (fenêtre de 1 024 à ~1 250 px) : texte d'aide court (`shortPlaceholder`) et raccourci masqué sous 300 px.
  */
-export function SearchPill({ value, onChangeText, placeholder, testID }: { value: string; onChangeText: (t: string) => void; placeholder: string; testID?: string }) {
+export function SearchPill({
+  value,
+  onChangeText,
+  placeholder,
+  shortPlaceholder = 'Rechercher…',
+  testID,
+}: {
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder: string;
+  shortPlaceholder?: string;
+  testID?: string;
+}) {
   const ref = useRef<ComponentRef<typeof RNTextInput>>(null);
   const [focused, setFocused] = useState(false);
+  const [pillWidth, setPillWidth] = useState<number | null>(null);
+  const narrow = pillWidth !== null && pillWidth < 360;
+  const showKbd = pillWidth === null || pillWidth >= 300;
   const mac = isMac();
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -101,13 +120,19 @@ export function SearchPill({ value, onChangeText, placeholder, testID }: { value
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   return (
-    <View style={[styles.search, focused && styles.searchFocused]}>
+    <View
+      style={[styles.search, focused && styles.searchFocused]}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w > 0 && w !== pillWidth) setPillWidth(w);
+      }}
+    >
       <Icon name="search" size={18} color={palette.inkMuted} strokeWidth={2.3} />
       <TextInput
         ref={ref}
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={narrow ? shortPlaceholder : placeholder}
         placeholderTextColor={palette.inkMuted}
         accessibilityLabel={placeholder.replace(/…$/, '')}
         style={styles.searchInput}
@@ -123,7 +148,7 @@ export function SearchPill({ value, onChangeText, placeholder, testID }: { value
         <Pressable accessibilityRole="button" accessibilityLabel="Effacer la recherche" onPress={() => onChangeText('')} style={[styles.clear, POINTER]}>
           <Icon name="close" size={14} color={palette.ink} strokeWidth={2.6} />
         </Pressable>
-      ) : Platform.OS === 'web' ? (
+      ) : Platform.OS === 'web' && showKbd ? (
         <View style={styles.kbd} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {mac ? <Icon name="command" size={13} color={palette.inkMuted} strokeWidth={2.4} /> : <Text style={styles.kbdText}>Ctrl</Text>}
           <Text style={styles.kbdText}>K</Text>
@@ -135,14 +160,16 @@ export function SearchPill({ value, onChangeText, placeholder, testID }: { value
 
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 56 },
-  back: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 2px rgba(12, 18, 34, 0.05)' },
+  topWrap: { flexWrap: 'wrap', rowGap: 12 },
+  back: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', ...shadows.hairline },
   backHover: { backgroundColor: palette.raised },
-  titleBox: { flexShrink: 1, minWidth: 0 },
+  // Le titre garde toute sa largeur (« Vue d’ensemble » jamais coupé) : la recherche se resserre à sa place.
+  titleBox: { flexShrink: 0, maxWidth: '100%' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  title: { fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -0.9, color: palette.ink, flexShrink: 1 },
+  title: { fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -0.9, color: palette.ink, flexShrink: 0 },
   subtitle: { marginTop: 2, fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted },
   dateRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.mint, boxShadow: '0 0 0 3px rgba(22, 196, 127, 0.18)' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.mint, boxShadow: `0 0 0 3px ${alpha(palette.mint, 0.18)}` },
   date: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted },
   acts: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1, minWidth: 0 },
   search: {
@@ -157,7 +184,7 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     borderRadius: 24,
     backgroundColor: palette.card,
-    boxShadow: '0 1px 2px rgba(12, 18, 34, 0.05)',
+    ...shadows.hairline,
   },
   // Anneau de focus Cobalt : 2 px cobalt (le champ lui-même n'a pas de contour).
   searchFocused: { boxShadow: `0 0 0 2px ${palette.cobalt}` },

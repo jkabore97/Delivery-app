@@ -1,5 +1,5 @@
 import { Alert } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import DriverProfile from '../app/driver/(tabs)/profile';
 import { TrackingConsentModal } from '../components/TrackingConsentModal';
 import { hasTrackingConsent, trackingConsentStatus } from '../lib/consent';
@@ -67,6 +67,13 @@ describe('TrackingConsentModal', () => {
     await act(async () => fireEvent.press(r.getByTestId('accept-tracking-consent')));
     expect(mockDriver.acceptTrackingConsent).toHaveBeenCalled();
     await waitFor(() => expect(r.getByText('Connexion impossible.')).toBeTruthy());
+  });
+
+  it('petit téléphone : les boutons défilent avec le texte (« J’accepte » après tous les points, jamais par-dessus)', async () => {
+    const r = await render(<TrackingConsentModal />);
+    const scroll = r.getByTestId('tracking-consent-scroll');
+    expect(within(scroll).getByTestId('accept-tracking-consent')).toBeTruthy();
+    expect(within(scroll).getByTestId('decline-tracking-consent')).toBeTruthy();
   });
 
   it('« Pas maintenant » ferme sans consentir', async () => {

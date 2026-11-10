@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
-import { ORDER_STATUSES } from '@yaar/shared';
+import { Platform, StyleSheet } from 'react-native';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { Stars } from '../components/Rating';
+import { useRadioGroupKeys } from '../hooks/useRadioGroupKeys';
 import { CodeInput } from '../components/driver/CodeInput';
-import { CashMeter, Money, shortDateTime } from '../components/driver/DriverKit';
+import { AmountLine, CashMeter, ListRow, shortDateTime } from '../components/driver/DriverKit';
+import { FitAmount } from '../components/design/FitAmount';
+import { formatFcfa } from '../lib/format';
+import { estimateTextWidth } from '../fonts';
 import { ICON_PARTS } from '../components/design/iconPaths';
 import DriverDocuments from '../app/driver/(tabs)/documents';
-import { sellerBadge } from '../lib/orderProgress';
 import { SIGNUP_ROLES } from '../lib/roles';
 import { driverProfile } from './fixtures';
 
@@ -56,6 +59,14 @@ describe('saisie d’un code en cases (Cobalt)', () => {
     expect(input.props).toMatchObject({ textContentType: 'oneTimeCode', autoComplete: 'sms-otp', keyboardType: 'number-pad' });
   });
 
+  it('plein soleil : case vide gris clair au contour gris de 2 px (3:1), case remplie au contour gris foncé', async () => {
+    const r = await render(<CodeInput value="1" onChangeText={jest.fn()} length={4} accessibilityLabel="Code" />);
+    const filled = r.getByText('1', { includeHiddenElements: true }).parent;
+    expect(StyleSheet.flatten(filled?.props.style)).toMatchObject({ backgroundColor: '#FFFFFF', borderColor: '#5B6475' });
+    const empty = r.getAllByText('', { includeHiddenElements: true }).map((t) => StyleSheet.flatten(t.parent?.props.style));
+    expect(empty[0]).toMatchObject({ backgroundColor: '#E9EDF3', borderWidth: 2, borderColor: 'rgba(91, 100, 117, 0.75)' });
+  });
+
   it('erreur : toutes les cases cerclées de rouge foncé', async () => {
     const r = await render(<CodeInput value="12" onChangeText={jest.fn()} length={4} error accessibilityLabel="Code" />);
     const box = r.getByText('1', { includeHiddenElements: true }).parent;
@@ -63,17 +74,91 @@ describe('saisie d’un code en cases (Cobalt)', () => {
   });
 });
 
-describe('montants et espèces (Cobalt)', () => {
-  it('montant : un seul texte, « FCFA » plus petit, mêmes espaces fines insécables que formatFcfa', async () => {
-    const r = await render(<Money amount={16500} size={40} sign="+" testID="m" />);
-    expect(r.getByTestId('m')).toHaveTextContent('+16 500 FCFA', { normalizer: (t: string) => t });
-    expect(StyleSheet.flatten(r.getByTestId('m').props.style)).toMatchObject({ fontSize: 40, fontWeight: '800', fontVariant: ['tabular-nums'] });
+describe('note en étoiles', () => {
+  it('à choisir : groupe radio, l’étoile choisie cochée ; contours lisibles (vide inkMuted, pleine cerclée d’ambre)', async () => {
+    const onChange = jest.fn();
+    const r = await render(<Stars value={3} onChange={onChange} />);
+    expect(r.getByLabelText('Note').props.accessibilityRole).toBe('radiogroup');
+    const radios = r.getAllByRole('radio');
+    expect(radios).toHaveLength(5);
+    expect(radios.map((b) => b.props.accessibilityState.checked)).toEqual([false, false, true, false, false]);
+    await act(async () => fireEvent.press(r.getByTestId('star-5')));
+    expect(onChange).toHaveBeenCalledWith(5);
   });
 
-  it('espèces détenues : jauge soleil ; plafond atteint : texte et jauge rouges', async () => {
+  it('lecture seule : une image « 4 étoiles sur 5 », sans boutons', async () => {
+    const r = await render(<Stars value={4} />);
+    expect(r.getByLabelText('4 étoiles sur 5')).toBeTruthy();
+    expect(r.queryAllByRole('radio')).toHaveLength(0);
+  });
+
+  it('web : un seul arrêt de tabulation, flèches et Espace changent la note', async () => {
+    const os = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
+    try {
+      const onChange = jest.fn();
+      const { result } = await renderHook(() => useRadioGroupKeys([1, 2, 3, 4, 5], 3, onChange));
+      const props = [0, 1, 2, 3, 4].map((i) => result.current(i) as { tabIndex: number; onKeyDown: (e: unknown) => void });
+      expect(props.map((p) => p.tabIndex)).toEqual([-1, -1, 0, -1, -1]);
+      const key = (k: string) => ({ key: k, preventDefault: jest.fn() });
+      props[2]!.onKeyDown(key('ArrowRight'));
+      props[0]!.onKeyDown(key('ArrowLeft'));
+      props[1]!.onKeyDown(key(' '));
+      props[4]!.onKeyDown(key('Home'));
+      expect(onChange.mock.calls.map((c) => c[0])).toEqual([4, 5, 2, 1]);
+    } finally {
+      Object.defineProperty(Platform, 'OS', { value: os, configurable: true });
+    }
+  });
+});
+
+describe('montants et espèces (Cobalt)', () => {
+  /** Largeur (estimée) d'un montant rendu : chiffres, plus « FCFA » s'il est sur la même ligne. */
+  function renderedWidth(r: Awaited<ReturnType<typeof render>>, id: string) {
+    const box = r.getByTestId(id);
+    const [figure, unit] = box.props.children.filter(Boolean) as { props: { children: string; style: unknown } }[];
+    const fs = StyleSheet.flatten(figure!.props.style as never) as { fontSize: number; letterSpacing: number };
+    const us = StyleSheet.flatten(unit!.props.style as never) as { fontSize: number };
+    return { size: fs.fontSize, figure: estimateTextWidth(figure!.props.children, fs.fontSize, fs.letterSpacing), unit: estimateTextWidth(unit!.props.children, us.fontSize), texts: [figure, unit] };
+  }
+
+  // Tuiles de l'offre : moitié de la feuille moins les marges (≈ 142 px à 390 de large, 127 à 360).
+  it.each([
+    [12360, 390, 142],
+    [12360, 360, 127],
+    [1250000, 390, 142],
+    [1250000, 360, 127],
+  ])('montant %d dans une tuile (écran de %d px) : jamais coupé ni « … », plus petit ou « FCFA » à la ligne', async (amount, _screen, width) => {
+    const r = await render(<FitAmount amount={amount} size={34} testID="m" />);
+    await act(async () => fireEvent(r.getByTestId('m'), 'layout', { nativeEvent: { layout: { width, height: 40, x: 0, y: 0 } } }));
+    const m = renderedWidth(r, 'm');
+    for (const t of m.texts) expect((t as { props: { numberOfLines?: number } }).props.numberOfLines).toBeUndefined();
+    expect(m.size).toBeGreaterThanOrEqual(18);
+    // Sur une ligne (chiffres + FCFA) ou, sinon, les chiffres seuls tiennent dans la largeur.
+    expect(m.figure + m.unit <= width || m.figure <= width).toBe(true);
+    expect(r.getByTestId('m')).toHaveTextContent(formatFcfa(amount), { normalizer: (t: string) => t });
+  });
+
+  it('ligne libellé / montant : le montant tient dans 60 % de la ligne mesurée (jamais réglé sur son propre texte)', async () => {
+    const r = await render(<AmountLine label="Gains du jour · 6 courses" amount={1250000} size={18} testID="line" />);
+    await act(async () => fireEvent(r.getByTestId('line-line'), 'layout', { nativeEvent: { layout: { width: 200, height: 40, x: 0, y: 0 } } }));
+    const m = renderedWidth(r, 'line');
+    const budget = Math.floor((200 - 8) * 0.6);
+    expect(StyleSheet.flatten(r.getByTestId('line').props.style)).toMatchObject({ maxWidth: budget });
+    expect(m.figure + m.unit <= budget || m.figure <= budget).toBe(true);
+    expect(r.getByTestId('line')).toHaveTextContent('1 250 000 FCFA');
+  });
+
+  it('ligne de liste : montant signé à droite, entier', async () => {
+    const r = await render(<ListRow title="Course #1052" amount={{ value: 16500, sign: '+' }} testID="row" />);
+    expect(r.getByTestId('row')).toHaveTextContent('Course #1052+16 500 FCFA');
+  });
+
+  it('espèces détenues : jauge ambre sur piste soleil pâle (5,35:1, plein soleil) ; plafond atteint : texte et jauge rouges', async () => {
     const ok = await render(<CashMeter held={18500} limit={50000} />);
     expect(ok.getByRole('progressbar').props['aria-valuenow']).toBe(37);
-    expect(StyleSheet.flatten(ok.getByRole('progressbar').props.children.props.style)).toMatchObject({ backgroundColor: '#FFC93C' });
+    expect(StyleSheet.flatten(ok.getByRole('progressbar').props.style)).toMatchObject({ backgroundColor: '#FFF3CC' });
+    expect(StyleSheet.flatten(ok.getByRole('progressbar').props.children.props.style)).toMatchObject({ backgroundColor: '#8A5A00' });
     await ok.unmount();
     const full = await render(<CashMeter held={52000} limit={50000} blocked />);
     expect(StyleSheet.flatten(full.getByRole('progressbar').props.children.props.style)).toMatchObject({ backgroundColor: '#D92D20' });
@@ -88,15 +173,6 @@ describe('montants et espèces (Cobalt)', () => {
 });
 
 describe('libellés à la source, en minuscules (Cobalt n’écrit pas en capitales)', () => {
-  it('pastilles d’état des commandes', () => {
-    for (const s of ORDER_STATUSES) {
-      const { label } = sellerBadge(s);
-      expect(label).not.toBe(label.toUpperCase());
-      expect(label.charAt(0)).toBe(label.charAt(0).toUpperCase());
-    }
-    expect(sellerBadge('PICKED_UP').label).toBe('En livraison');
-  });
-
   it('profils de l’écran de connexion : pictogrammes du système de design, aucun émoji', () => {
     for (const r of SIGNUP_ROLES) {
       expect(ICON_PARTS[r.icon]).toBeDefined();

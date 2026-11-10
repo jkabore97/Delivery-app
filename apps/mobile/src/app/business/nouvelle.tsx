@@ -47,6 +47,7 @@ import {
   type FormErrors,
 } from '../../lib/delivery';
 import { formatFcfa, formatKm } from '../../lib/format';
+import { MAP_PALETTE } from '../../lib/map/style';
 import { formatPhone } from '../../lib/phone';
 import { useApi } from '../../state/auth';
 import { isBusinessApproved, useBusiness } from '../../state/business';
@@ -237,7 +238,8 @@ export default function NewDeliveryScreen() {
       <StatusBar style="dark" />
       <WizardHeader step={step} onBack={back} title={STEP_TITLES[step]} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* `key` : chaque étape s'ouvre en haut (pas à la position de défilement de la précédente). */}
+        <ScrollView key={step} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {fields}
           {tail}
         </ScrollView>
@@ -483,7 +485,7 @@ function DestinationFields({
           value={form.recipientIsBusiness}
           onValueChange={(v) => setForm((f) => ({ ...f, recipientIsBusiness: v }))}
           trackColor={{ true: palette.cobalt, false: palette.raisedHigh }}
-          thumbColor="#FFFFFF"
+          thumbColor={palette.white}
           accessibilityLabel="Le destinataire est une entreprise"
           testID="recipient-business"
         />
@@ -706,12 +708,20 @@ function SummaryStep({
       {form.feePaidBy === 'SENDER' && fee !== null ? (
         <AmountRow label="Vous payez au livreur au retrait" amount={fee} detail="Frais de livraison, en espèces." tone="text" />
       ) : null}
-      <AmountRow
-        label="Le destinataire paie à la livraison"
-        amount={recipientPays(fee, form.feePaidBy, cash)}
-        detail={cash > 0 ? 'Marchandise encaissée par le livreur, reversée à votre entreprise par Yaar.' : null}
-        testID="summary-recipient-pays"
-      />
+      {recipientPays(fee, form.feePaidBy, cash) > 0 ? (
+        <AmountRow
+          label="Le destinataire paie à la livraison"
+          amount={recipientPays(fee, form.feePaidBy, cash)}
+          detail={cash > 0 ? 'Marchandise encaissée par le livreur, reversée à votre entreprise par Yaar.' : null}
+          testID="summary-recipient-pays"
+        />
+      ) : (
+        // Rien à encaisser : une ligne neutre, pas une tuile soleil « 0 FCFA » (le soleil est réservé aux espèces).
+        <View style={styles.noPay} testID="summary-recipient-pays">
+          <Icon name="check" size={16} color={palette.inkMuted} strokeWidth={2.6} />
+          <Text style={styles.noPayText}>Le destinataire ne paie rien à la livraison.</Text>
+        </View>
+      )}
       <Text style={styles.small}>
         Après la demande, envoyez au destinataire son lien de suivi : il verra le livreur en direct et le code à lui donner.
       </Text>
@@ -774,7 +784,7 @@ function DesktopWizard({
           <MapTile markers={trip.markers} lines={trip.lines} fitPoints={trip.fitPoints} cameraKey={`trip-${step}`} animationMs={4000} style={styles.deskMap} testID="trip-map" />
         )}
         <View style={[styles.deskColumn, shadows.tile]}>
-          <ScrollView contentContainerStyle={styles.deskColumnContent} keyboardShouldPersistTaps="handled">
+          <ScrollView key={step} contentContainerStyle={styles.deskColumnContent} keyboardShouldPersistTaps="handled">
             {step === 1 ? null : (
               <View style={{ gap: 4 }}>
                 <StepTitle step={step} title={STEP_TITLES[step]} />
@@ -831,6 +841,8 @@ const styles = StyleSheet.create({
   sheetFooter: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, backgroundColor: palette.card },
   muted: { color: palette.inkMuted, fontSize: 14, lineHeight: 20, fontWeight: '500' },
   small: { color: palette.inkMuted, fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  noPay: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.lg, borderRadius: radii.banner, backgroundColor: palette.raised },
+  noPayText: { flex: 1, color: palette.inkMuted, fontSize: 14, lineHeight: 20, fontWeight: '600' },
   chips: { gap: spacing.sm, paddingRight: spacing.md },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xs, minHeight: 48 },
@@ -853,7 +865,7 @@ const styles = StyleSheet.create({
   page: { flex: 1, padding: PAGE_PADDING, backgroundColor: palette.canvas },
   deskRow: { flex: 1, flexDirection: 'row', gap: TILE_GAP, marginTop: 16, minHeight: 0 },
   deskMap: { flex: 1, minWidth: 0 },
-  deskMapTile: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: '#F3F5F8' },
+  deskMapTile: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
   deskColumn: { width: 480, borderRadius: radii.card, backgroundColor: palette.card, overflow: 'hidden' },
   deskColumnContent: { padding: 24, gap: spacing.md },
   deskFooter: { paddingHorizontal: 24, paddingTop: spacing.md, paddingBottom: 20, minHeight: MIN_TOUCH + 36, borderTopWidth: 1, borderTopColor: palette.line },

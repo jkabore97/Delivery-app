@@ -1,23 +1,34 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../components/Text';
 import Head from 'expo-router/head';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { arrivalClockFr, formatDurationFr, isTerminal, type TrackingDto } from '@yaar/shared';
+import { isTerminal, type TrackingDto } from '@yaar/shared';
 import { Wordmark } from '../../components/driver/Wordmark';
 import { avatarInitials } from '../../components/map/markerArt';
 import { FloatingChip, LiveTrackingLayout, WIDE_LAYOUT_MIN_WIDTH } from '../../components/tracking/LiveTrackingLayout';
-import { DeliveryCodeChip, DriverCard, InfoBlock, InfoRow, openLink, StateDisc, StepsProgress, TrackingRoundButton } from '../../components/tracking/TrackingParts';
+import {
+  AmountBox,
+  ArrivalHeadline,
+  DeliveryCodeChip,
+  DriverCard,
+  InfoBlock,
+  InfoRow,
+  openLink,
+  StateDisc,
+  StepsProgress,
+  TrackingRoundButton,
+} from '../../components/tracking/TrackingParts';
 import { TrackingIcon, type IconName } from '../../components/tracking/TrackingIcon';
 import { usePublicTracking } from '../../hooks/usePublicTracking';
-import { formatFcfa, formatOrderNumber, formatTime, NNBSP } from '../../lib/format';
+import { formatOrderNumber, formatTime } from '../../lib/format';
 import { buildScene, estimateArrivalMinutes, isLiveStage, trackingSceneInput } from '../../lib/liveScene';
 import { preloadMapEngine } from '../../lib/map/preload';
 import { publicApi } from '../../lib/publicApi';
 import { trackingPollMs } from '../../lib/publicConfig';
 import { telUrl } from '../../lib/tel';
-import { recipientToDriverText, trackingHeadline, trackingSteps, type Headline } from '../../lib/trackingSteps';
+import { recipientToDriverText, trackingHeadline, trackingSteps } from '../../lib/trackingSteps';
 import { hideWebSplash, takePrefetchedTracking } from '../../lib/webShell';
 import { useAppConfig } from '../../state/config';
 import { palette, radii, shadows, spacing } from '../../theme';
@@ -47,7 +58,9 @@ function fetchTracking(token: string): Promise<TrackingDto> {
 export default function PublicTrackingScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { config } = useAppConfig();
-  const state = usePublicTracking(token, { intervalMs: (data) => trackingPollMs(config, data?.status) || 60_000, fetcher: fetchTracking });
+  const [retryKey, setRetryKey] = useState(0);
+  const retry = () => setRetryKey((k) => k + 1);
+  const state = usePublicTracking(token, { intervalMs: (data) => trackingPollMs(config, data?.status) || 60_000, fetcher: fetchTracking, retryKey });
   useEffect(() => hideWebSplash(), []);
 
   return (
@@ -89,6 +102,7 @@ export default function PublicTrackingScreen() {
             // Réseau coupé : le titre le dit déjà, le texte donne la marche à suivre (pas « Connexion impossible » deux fois).
             text={`${state.network ? 'Vérifiez votre connexion Internet.' : sentence(state.message)} Nouvel essai automatique dans quelques secondes.`}
             retrying
+            onRetry={retry}
           />
         )
       ) : (
@@ -121,7 +135,22 @@ function CenteredCard({ children, testID }: { children: ReactNode; testID?: stri
 }
 
 /** Lien expiré, trop de demandes, connexion impossible : disque, titre, explication (et essai automatique). */
-function MessageCard({ icon, title, text, retrying, testID }: { icon: IconName; title: string; text: string; retrying?: boolean; testID: string }) {
+function MessageCard({
+  icon,
+  title,
+  text,
+  retrying,
+  onRetry,
+  testID,
+}: {
+  icon: IconName;
+  title: string;
+  text: string;
+  retrying?: boolean;
+  /** « Réessayer » : nouvel essai tout de suite, sans attendre l'essai automatique (de plus en plus espacé, 30 s au plus). */
+  onRetry?: () => void;
+  testID: string;
+}) {
   return (
     <CenteredCard testID={testID}>
       <StateDisc icon={icon} tone={icon === 'alert' ? 'danger' : 'neutral'} size={72} />
@@ -129,101 +158,33 @@ function MessageCard({ icon, title, text, retrying, testID }: { icon: IconName; 
         {title}
       </Text>
       <Text style={styles.cardText}>{text}</Text>
-      {retrying ? <ActivityIndicator size="small" color={palette.cobalt} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" /> : null}
+      {retrying && !onRetry ? (
+        <ActivityIndicator size="small" color={palette.cobalt} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
+      ) : null}
+      {onRetry ? (
+        <Pressable accessibilityRole="button" onPress={onRetry} style={({ pressed }) => [styles.retry, pressed && styles.retryPressed]} testID="tracking-retry">
+          <TrackingIcon name="refresh" size={18} color={palette.cobaltText} strokeWidth={2.4} />
+          <Text style={styles.retryText}>Réessayer</Text>
+        </Pressable>
+      ) : null}
     </CenteredCard>
   );
 }
 
 /**
- * Écran court (téléphone d'entrée de gamme, 360 × 640) : feuille un peu plus haute (0,6 de l'écran), heure et code plus
- * compacts, montant sur une ligne, pour que l'heure d'arrivée, le code ET le montant à payer se voient sans défiler.
+ * Écran court (téléphone d'entrée de gamme, 360 × 640) : feuille un peu plus haute (0,62 de l'écran), code compact,
+ * montant sur une ligne (AmountBox), pour que l'heure d'arrivée, le code ET le montant à payer se voient sans défiler.
  */
-const SHORT_SCREEN_MAX_HEIGHT = 700;
-/** Largeur moyenne des chiffres tabulaires 800 et du « : » de l'heure (part de la taille). */
-const CLOCK_CHAR_WIDTH = 0.62;
-
+const SHORT_SCREEN = 700;
 /**
- * Heure d'arrivée en chiffres héros (800 tabulaires, jusqu'à 64 px) avec « dans 12 min » en pastille sur la même ligne,
- * l'état de la livraison en cobalt dessous ; la taille de l'heure s'adapte à la largeur de la feuille. Lu en une phrase :
- * « Arrivée vers 14:32 · dans 12 min ». Sans estimation : l'état en titre.
+ * Tablette, petit ordinateur (440 à 899 px) : la feuille couvre la largeur de la fenêtre, mais son contenu garde une
+ * colonne de téléphone (480 px au plus), centrée ; lignes courtes, montant et code à leur taille.
  */
-function HeroEta({ etaMinutes, headline, short, guessWidth, now = Date.now() }: { etaMinutes: number | null; headline: Headline; short: boolean; guessWidth: number; now?: number }) {
-  const [boxWidth, setBoxWidth] = useState<number | null>(null);
-  const width = boxWidth ?? guessWidth;
-  const imminent = etaMinutes !== null && (!Number.isFinite(etaMinutes) || etaMinutes < 1);
-  const clock = etaMinutes !== null && !imminent ? arrivalClockFr(Math.round(etaMinutes), now) : null;
-  const pill = clock && etaMinutes !== null ? `dans ${formatDurationFr(etaMinutes)}` : null;
-  const label = clock ? `Arrivée vers ${clock} · ${pill}` : imminent ? 'Arrivée imminente' : null;
-  // Pastille : ≈ 9 px par caractère (16/800) + 28 px de marges ; 12 px entre l'heure et la pastille.
-  const room = width - (pill ? pill.length * 9 + 28 + 12 : 0);
-  const size = clock ? Math.max(36, Math.min(short ? 48 : 64, Math.floor(room / (CLOCK_CHAR_WIDTH * clock.length)))) : 0;
-  return (
-    <View
-      style={styles.headline}
-      testID="tracking-headline"
-      onLayout={(e) => {
-        const w = Math.round(e.nativeEvent.layout.width);
-        if (w > 0 && w !== boxWidth) setBoxWidth(w);
-      }}
-    >
-      {label ? (
-        <View accessible accessibilityRole="header" accessibilityLabel={label}>
-          {clock ? <Text style={styles.etaLabel}>Arrivée vers</Text> : null}
-          <View style={styles.etaRow}>
-            <Text style={[styles.eta, clock ? { fontSize: size, lineHeight: Math.round(size * 1.04), letterSpacing: -Math.round(size * 0.04 * 10) / 10 } : styles.etaImminent]}>
-              {clock ?? 'Arrivée imminente'}
-            </Text>
-            {pill ? (
-              <View style={styles.etaPill}>
-                <Text style={styles.etaPillText}>{pill}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-      {label ? (
-        <Text style={styles.state}>{headline.title}</Text>
-      ) : (
-        <Text style={styles.title} accessibilityRole="header">
-          {headline.title}
-        </Text>
-      )}
-      {/* Petit téléphone : avec une heure d'arrivée, la phrase du livreur cède sa place (son nom est sur sa carte). */}
-      {headline.subtitle && !(short && label) ? <Text style={styles.subtitle}>{headline.subtitle}</Text> : null}
-    </View>
-  );
-}
-
-/**
- * Montant à payer au livreur (espèces) : tuile SOLEIL, texte encre (12,2:1), montant 800 tabulaire. L'élément du montant
- * porte le testID `amount-to-pay-value` (vérifications exactes de bout en bout).
- */
-function PayCard({ amount, short }: { amount: number; short: boolean }) {
-  const full = formatFcfa(amount);
-  const cut = full.lastIndexOf(NNBSP);
-  return (
-    <View style={[styles.pay, short && styles.payShort, shadows.sun]} testID="amount-to-pay">
-      {/* Petit téléphone : sans pastille, pour que le libellé tienne sur une ligne à côté du montant. */}
-      {short ? null : (
-        <View style={styles.payIcon}>
-          <TrackingIcon name="cash" size={22} color={palette.ink} strokeWidth={2.2} />
-        </View>
-      )}
-      <View style={styles.payText}>
-        <Text style={styles.payLabel}>À payer à la réception</Text>
-        <Text style={styles.payDetail}>En espèces, au livreur.</Text>
-      </View>
-      <Text style={[styles.payValue, short && styles.payValueShort]} testID="amount-to-pay-value" numberOfLines={1}>
-        {full.slice(0, cut)}
-        <Text style={styles.payUnit}>{full.slice(cut)}</Text>
-      </Text>
-    </View>
-  );
-}
+const SHEET_COLUMN_MAX = 480;
 
 function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stale: boolean; animationMs: number }) {
   const { height, width: windowWidth } = useWindowDimensions();
-  const short = height < SHORT_SCREEN_MAX_HEIGHT;
+  const short = height < SHORT_SCREEN;
   const wide = windowWidth >= WIDE_LAYOUT_MIN_WIDTH;
   // Entreprise en épingle « avatar » à ses initiales ; « chez vous » garde l'épingle à maison.
   const input = useMemo(() => ({ ...trackingSceneInput(t), initials: { pickup: avatarInitials(t.sender.name) } }), [t]);
@@ -235,7 +196,7 @@ function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stal
   // Pas encore de livreur, ou livraison annulée : l'expéditeur est le contact.
   const callSender = !!senderPhone && (t.status === 'CANCELLED' || t.status === 'SEARCHING_DRIVER' || t.status === 'PENDING');
   // Largeur du contenu de la feuille avant sa mesure : téléphone (fenêtre − marges), panneau de 420 px sur un ordinateur.
-  const guessWidth = wide ? 388 : Math.min(windowWidth, 440) - 32;
+  const guessWidth = wide ? 388 : Math.min(windowWidth - 32, SHEET_COLUMN_MAX);
 
   return (
     <LiveTrackingLayout
@@ -246,6 +207,8 @@ function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stal
       animationMs={animationMs}
       allowWide
       sheetMaxRatio={short ? 0.62 : undefined}
+      // Le contenu qui défile s'efface sous un fondu blanc au bas de la feuille (pas de ligne coupée à mi-hauteur).
+      fadeBottom
       topCenter={
         wide ? null : (
           <FloatingChip testID="brand-chip">
@@ -256,71 +219,82 @@ function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stal
       }
       testID="public-tracking"
     >
-      {wide ? (
-        <View style={styles.panelBrand}>
-          <Wordmark size={26} />
-          <Text style={styles.panelBrandText}>{`Colis ${formatOrderNumber(t.number)} · ${t.sender.name}`}</Text>
-        </View>
-      ) : null}
-      {stale ? (
-        <View style={styles.stale} accessibilityRole="alert">
-          <TrackingIcon name="refresh" size={16} color={palette.sunText} strokeWidth={2.4} />
-          <Text style={styles.staleText}>Connexion instable : position mise à jour dès que possible…</Text>
-        </View>
-      ) : null}
-      {t.status === 'DELIVERED' ? <StateDisc icon="check" tone="success" size={short ? 52 : 64} /> : null}
-      {t.status === 'CANCELLED' ? <StateDisc icon="close" tone="danger" size={short ? 52 : 64} /> : null}
-      <HeroEta etaMinutes={eta} headline={headline} short={short} guessWidth={guessWidth} />
-      {t.status !== 'CANCELLED' ? <StepsProgress steps={trackingSteps(t.status, 'recipient')} /> : null}
+      <View style={[styles.column, !wide && windowWidth > SHEET_COLUMN_MAX + 32 && styles.columnCapped]} testID="sheet-column">
+        {wide ? (
+          <View style={styles.panelBrand}>
+            <Wordmark size={26} />
+            <Text style={styles.panelBrandText}>{`Colis ${formatOrderNumber(t.number)} · ${t.sender.name}`}</Text>
+          </View>
+        ) : null}
+        {stale ? (
+          <View style={styles.stale} accessibilityRole="alert">
+            <TrackingIcon name="refresh" size={16} color={palette.sunText} strokeWidth={2.4} />
+            <Text style={styles.staleText}>Connexion instable : position mise à jour dès que possible…</Text>
+          </View>
+        ) : null}
+        {t.status === 'DELIVERED' ? <StateDisc icon="check" tone="success" size={short ? 52 : 64} /> : null}
+        {t.status === 'CANCELLED' ? <StateDisc icon="close" tone="danger" size={short ? 52 : 64} /> : null}
+        <ArrivalHeadline size="hero" etaMinutes={eta} headline={headline} widthGuess={guessWidth} />
+        {t.status !== 'CANCELLED' ? <StepsProgress steps={trackingSteps(t.status, 'recipient')} /> : null}
 
-      {t.deliveryCode && !done ? <DeliveryCodeChip code={t.deliveryCode} compact={short} /> : null}
-      {t.amountToPay > 0 && !done ? <PayCard amount={t.amountToPay} short={short} /> : null}
+        {t.deliveryCode && !done ? <DeliveryCodeChip code={t.deliveryCode} compact={short} /> : null}
+        {t.amountToPay > 0 && !done ? (
+          <AmountBox
+            label="À payer à la réception"
+            detail="En espèces, au livreur."
+            amount={t.amountToPay}
+            icon="cash"
+            compact={short}
+            testID="amount-to-pay"
+          />
+        ) : null}
 
-      {t.driver && isLiveStage(scene.stage) ? (
-        <DriverCard
-          name={t.driver.firstName}
-          vehicleType={t.driver.vehicleType}
-          plate={t.driver.plate}
-          ratingAvg={t.driver.ratingAvg}
-          phone={t.driver.phone}
-          whatsappText={recipientToDriverText({ driver: t.driver.firstName, sender: t.sender.name, number: t.number })}
-        />
-      ) : null}
+        {t.driver && isLiveStage(scene.stage) ? (
+          <DriverCard
+            name={t.driver.firstName}
+            vehicleType={t.driver.vehicleType}
+            plate={t.driver.plate}
+            ratingAvg={t.driver.ratingAvg}
+            phone={t.driver.phone}
+            whatsappText={recipientToDriverText({ driver: t.driver.firstName, sender: t.sender.name, number: t.number })}
+          />
+        ) : null}
 
-      <InfoBlock>
-        <InfoRow
-          icon="store"
-          title={t.sender.name}
-          subtitle="Expéditeur"
-          right={
-            callSender && senderPhone ? (
-              <TrackingRoundButton
-                label="Appeler"
-                icon="phone"
-                size={48}
-                onPress={() => openLink(telUrl(senderPhone))}
-                accessibilityLabel={`Appeler ${t.sender.name} (${senderPhone})`}
-                testID="call-sender"
-              />
-            ) : null
-          }
-          testID="sender"
-        />
-        <InfoRow
-          icon="home"
-          title={t.dropoff.address}
-          subtitle={t.dropoff.landmark ? `Repère : ${t.dropoff.landmark}` : 'Livraison chez vous'}
-          testID="dropoff-address"
-        />
-        {t.packageDescription ? <InfoRow icon="package" title={t.packageDescription} subtitle={t.recipientName ? `Pour ${t.recipientName}` : null} /> : null}
-      </InfoBlock>
+        <InfoBlock>
+          <InfoRow
+            icon="store"
+            title={t.sender.name}
+            subtitle="Expéditeur"
+            right={
+              callSender && senderPhone ? (
+                <TrackingRoundButton
+                  label="Appeler"
+                  icon="phone"
+                  size={48}
+                  onPress={() => openLink(telUrl(senderPhone))}
+                  accessibilityLabel={`Appeler ${t.sender.name} (${senderPhone})`}
+                  testID="call-sender"
+                />
+              ) : null
+            }
+            testID="sender"
+          />
+          <InfoRow
+            icon="home"
+            title={t.dropoff.address}
+            subtitle={t.dropoff.landmark ? `Repère : ${t.dropoff.landmark}` : 'Livraison chez vous'}
+            testID="dropoff-address"
+          />
+          {t.packageDescription ? <InfoRow icon="package" title={t.packageDescription} subtitle={t.recipientName ? `Pour ${t.recipientName}` : null} /> : null}
+        </InfoBlock>
 
-      {t.status === 'DELIVERED' && t.deliveredAt ? (
-        <Text style={styles.meta}>Livré à {formatTime(t.deliveredAt)} · ce lien expire 24 h après la livraison.</Text>
-      ) : null}
-      <Text style={styles.meta}>
-        Colis {formatOrderNumber(t.number)} · Yaar Livraison, Ouagadougou{done ? '' : ' · mis à jour en direct'}
-      </Text>
+        {t.status === 'DELIVERED' && t.deliveredAt ? (
+          <Text style={styles.meta}>Livré à {formatTime(t.deliveredAt)} · ce lien expire 24 h après la livraison.</Text>
+        ) : null}
+        <Text style={styles.meta}>
+          Colis {formatOrderNumber(t.number)} · Yaar Livraison, Ouagadougou{done ? '' : ' · mis à jour en direct'}
+        </Text>
+      </View>
     </LiveTrackingLayout>
   );
 }
@@ -345,26 +319,32 @@ const styles = StyleSheet.create({
   chipText: { fontWeight: '700', color: palette.ink, fontSize: 14, lineHeight: 18 },
   panelBrand: { gap: 4, paddingBottom: spacing.sm },
   panelBrandText: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
-  stale: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radii.banner, backgroundColor: palette.sunTint },
+  stale: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radii.banner,
+    backgroundColor: palette.sunTint,
+  },
   staleText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '700', color: palette.sunText },
-  headline: { gap: 4 },
-  etaLabel: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.inkMuted },
-  etaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 12, rowGap: 4 },
-  eta: { fontWeight: '800', color: palette.ink, fontVariant: ['tabular-nums'] },
-  etaImminent: { fontSize: 32, lineHeight: 38, letterSpacing: -0.8 },
-  etaPill: { minHeight: 36, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.cobaltTint },
-  etaPillText: { fontSize: 16, lineHeight: 20, fontWeight: '800', color: palette.cobaltText, fontVariant: ['tabular-nums'] },
-  state: { fontSize: 16, lineHeight: 21, fontWeight: '800', color: palette.cobalt },
-  title: { fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.6, color: palette.ink },
-  subtitle: { fontSize: 14, lineHeight: 19, fontWeight: '500', color: palette.inkMuted },
-  pay: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 72, paddingVertical: 12, paddingHorizontal: spacing.lg, borderRadius: 24, backgroundColor: palette.sun },
-  payShort: { minHeight: 60, paddingVertical: 8, paddingHorizontal: 14, gap: 10, borderRadius: 20 },
-  payIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(12, 18, 34, 0.08)' },
-  payText: { flex: 1, gap: 1 },
-  payLabel: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: palette.ink, letterSpacing: -0.1 },
-  payDetail: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.onSun2 },
-  payValue: { flexShrink: 0, fontSize: 24, lineHeight: 29, fontWeight: '800', letterSpacing: -0.6, color: palette.ink, fontVariant: ['tabular-nums'] },
-  payValueShort: { fontSize: 22, lineHeight: 27 },
-  payUnit: { fontSize: 14, letterSpacing: 0 },
+  // Contenu de la feuille (même écart que la feuille) ; colonne de 480 px au plus, centrée, de 512 à 899 px de large.
+  column: { gap: spacing.md },
+  columnCapped: { width: '100%', maxWidth: SHEET_COLUMN_MAX, alignSelf: 'center' },
+  retry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    borderColor: palette.cobalt,
+    backgroundColor: palette.card,
+  },
+  retryPressed: { backgroundColor: palette.cobaltTint },
+  retryText: { fontSize: 16, lineHeight: 20, fontWeight: '800', color: palette.cobaltText },
   meta: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.inkMuted, textAlign: 'center' },
 });

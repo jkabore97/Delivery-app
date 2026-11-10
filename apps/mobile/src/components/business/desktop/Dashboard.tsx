@@ -14,12 +14,12 @@ import { DarkBanner } from '../DarkForm';
 import { focusedDelivery, isSearching, matchesSearch, neighbourhood } from '../dashboardData';
 import { NewDeliveryButton } from '../parts';
 import { MapSummaryPill } from '../phone/HomeParts';
-import { useBusinessSummary, useSummaryRefresh } from '../summary';
+import { useBusinessSummary, useSummaryRefresh, useSummaryRefreshOnChange } from '../summary';
 import { useActiveDeliveries, useDeliveredToday } from '../useDeliveries';
 import { PAGE_PADDING, SIDEBAR_WIDTH, TILE_GAP } from './layout';
 import { MapTile } from './MapTile';
 import { LiveDateLine, PageHeader, SearchPill } from './PageHeader';
-import { CashTile, EmptyHeroTile, HeroTile, KpiTile, LiveListTile, RecentTile } from './Tiles';
+import { CashTile, EmptyHeroTile, ErrorHeroTile, HeroTile, KpiTile, LiveListTile, LoadingHeroTile, RecentTile } from './Tiles';
 
 /** Largeur des tuiles de droite (chiffres, héros, listes) : celle de la planche (656 px), la carte prend le reste. */
 const RIGHT_WIDTH = 656;
@@ -37,7 +37,8 @@ const MIN_MAP_WIDTH = 280;
 export function BusinessDashboard() {
   const { store, stores, error: storeError, refreshStores } = useBusiness();
   const { pollIntervalMs } = useSocket();
-  const { summary } = useBusinessSummary();
+  const { summary, error: summaryError } = useBusinessSummary();
+  const summaryOff = !summary && !!summaryError;
   const { width, height } = useWindowDimensions();
   const focused = useIsFocused();
   const enabled = focused && !!store;
@@ -46,6 +47,7 @@ export function BusinessDashboard() {
   const activeKey = (items ?? []).map((o) => o.id).join(',');
   const recent = useDeliveredToday(enabled, activeKey);
   useSummaryRefresh(enabled);
+  useSummaryRefreshOnChange(items ? items.map((o) => o.id).sort().join(',') : null, enabled);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Caméra : 'all' (toutes les livraisons) ou la livraison choisie dans la liste ; `recenter` force un recadrage.
   const [cameraOn, setCameraOn] = useState<string>('all');
@@ -54,12 +56,17 @@ export function BusinessDashboard() {
   const [retrying, setRetrying] = useState(false);
 
   const list = useMemo(() => deliveries ?? [], [deliveries]);
-  const hero = focusedDelivery(list, selectedId);
+  // Recherche : la tuile héros et la carte suivent la première livraison trouvée (sauf si la livraison choisie en fait
+  // partie).
+  const live = useMemo(() => list.filter((o) => matchesSearch(o, query)), [list, query]);
+  const searchFocus = query.trim() && live.length > 0 && !live.some((o) => o.id === selectedId) ? live[0]!.id : null;
+  const hero = focusedDelivery(list, searchFocus ?? selectedId);
   const overview = useMemo(
     () => overviewScene(store ? { lat: store.lat, lng: store.lng } : null, list, store?.name, { recipientInitials: true }),
     [list, store?.lat, store?.lng, store?.name], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const focusOrder = cameraOn === 'all' ? null : (list.find((o) => o.id === cameraOn) ?? null);
+  const cameraTarget = searchFocus ?? (cameraOn === 'all' ? null : cameraOn);
+  const focusOrder = cameraTarget === null ? null : (list.find((o) => o.id === cameraTarget) ?? null);
   const fitPoints = useMemo(() => {
     // Vue d'ensemble : la grande carte du tableau de bord montre toutes les épingles (jusqu'à 8 livraisons ; au-delà,
     // le cadrage des livraisons en route, sans dézoomer sur toute la ville).
@@ -85,15 +92,14 @@ export function BusinessDashboard() {
   const content = width - SIDEBAR_WIDTH - PAGE_PADDING * 2;
   const mapWidth = content - TILE_GAP - RIGHT_WIDTH;
   const stacked = mapWidth < MIN_MAP_WIDTH;
-  // Hauteurs de la planche (900 px : 132 / 320 / 280) ; plus bas (800 px) tuiles un peu plus basses, listes de 220 px
-  // au moins ; la mosaïque remplit la fenêtre sous l'en-tête (page qui défile seulement si la fenêtre est trop basse).
+  // Hauteurs de la planche (900 px : 132 / 320 / 280) ; plus bas (800, 768 px) tuiles plus basses, listes de 196 px
+  // au moins ; la mosaïque remplit la fenêtre sous l'en-tête (1 366 × 768 tient sans défiler).
   const tall = height >= 860;
   const kpiHeight = tall ? 132 : 124;
-  const heroHeight = tall ? 320 : 288;
-  const listMin = 220;
+  const heroHeight = tall ? 320 : 272;
+  const listMin = tall ? 220 : 196;
   const bentoHeight = Math.max(kpiHeight + heroHeight + listMin + TILE_GAP * 2, height - PAGE_PADDING * 2 - 56 - 16);
   const searching = list.filter(isSearching).length;
-  const live = list.filter((o) => matchesSearch(o, query));
   const doneToday = recent.items ? recent.items.filter((o) => matchesSearch(o, query)) : null;
 
   const kpis = (
@@ -101,16 +107,16 @@ export function BusinessDashboard() {
       <KpiTile
         icon="check"
         tint="mint"
-        value={summary ? String(summary.today.delivered) : '…'}
+        value={summary ? String(summary.today.delivered) : summaryOff ? '—' : '…'}
         label="Livrées aujourd’hui"
-        accessibilityLabel={summary ? `${summary.today.delivered} livraisons livrées aujourd’hui` : 'Livrées aujourd’hui : chargement'}
+        accessibilityLabel={summary ? `${summary.today.delivered} livraisons livrées aujourd’hui` : `Livrées aujourd’hui\u202f: ${summaryOff ? 'indisponible' : 'chargement'}`}
         style={styles.kpiSmall}
         testID="kpi-delivered"
       />
       <KpiTile
         icon="clock"
         tint="cobalt"
-        value={summary ? (summary.today.avgDeliveryMinutes === null ? '—' : String(summary.today.avgDeliveryMinutes)) : '…'}
+        value={summary ? (summary.today.avgDeliveryMinutes === null ? '—' : String(summary.today.avgDeliveryMinutes)) : summaryOff ? '—' : '…'}
         unit={summary?.today.avgDeliveryMinutes !== null && summary ? 'min' : null}
         label="Délai moyen"
         accessibilityLabel={
@@ -118,18 +124,25 @@ export function BusinessDashboard() {
             ? summary.today.avgDeliveryMinutes === null
               ? 'Délai moyen : pas encore de livraison aujourd’hui'
               : `Délai moyen de livraison : ${summary.today.avgDeliveryMinutes} minutes`
-            : 'Délai moyen : chargement'
+            : `Délai moyen\u202f: ${summaryOff ? 'indisponible' : 'chargement'}`
         }
         style={styles.kpiSmall}
         testID="kpi-delay"
       />
-      <CashTile summary={summary} style={styles.kpiWide} />
+      <CashTile summary={summary} unavailable={summaryOff} style={styles.kpiWide} />
     </View>
   );
+  // Liste pas encore lue : chargement ; illisible (rien d'affiché avant) : erreur et « Réessayer » ; « Aucune
+  // livraison en cours » seulement quand la liste lue est vide.
+  const listState: 'ready' | 'loading' | 'error' = store && items === null ? (error ? 'error' : 'loading') : 'ready';
   const heroNode = hero ? (
     <HeroTile order={hero} now={now} businessName={store?.name ?? null} onOpen={() => openDelivery(hero)} short={!tall} style={{ height: heroHeight }} />
+  ) : listState === 'loading' ? (
+    <LoadingHeroTile style={{ height: heroHeight }} />
+  ) : listState === 'error' ? (
+    <ErrorHeroTile onRetry={() => void retry()} retrying={retrying} style={{ height: heroHeight }} />
   ) : (
-    <EmptyHeroTile stores={stores} store={store} style={{ height: heroHeight }} />
+    <EmptyHeroTile store={store} style={{ height: heroHeight }} />
   );
   const lists = (
     <View style={[styles.lists, { minHeight: listMin }]}>
@@ -143,15 +156,16 @@ export function BusinessDashboard() {
         }}
         now={now}
         query={query}
+        state={listState}
         style={styles.liveTile}
       />
       <RecentTile
-        list={doneToday}
-        loading={recent.items === null}
+        // Sans entreprise, rien à charger : « Pas encore de livraison livrée aujourd’hui » (pas « Chargement… »).
+        list={store ? doneToday : []}
+        loading={!!store && recent.items === null}
         error={recent.error}
         query={query}
         onOpen={openDelivery}
-        onSeeAll={() => router.navigate('/business/history')}
         style={styles.doneTile}
       />
     </View>
@@ -161,8 +175,8 @@ export function BusinessDashboard() {
       markers={overview.markers}
       lines={overview.lines}
       fitPoints={fitPoints}
-      cameraKey={`${stageKey}#${cameraOn}#${recenter}`}
-      overlay={list.length > 0 ? <MapSummaryPill total={list.length} searching={!stacked && mapWidth < 400 ? 0 : searching} /> : null}
+      cameraKey={`${stageKey}#${cameraTarget ?? 'all'}#${recenter}`}
+      overlay={list.length > 0 ? <MapSummaryPill total={list.length} searching={searching} /> : null}
       recenterLabel="Recentrer la carte sur toutes les livraisons"
       animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
       onRecenter={() => {
@@ -191,11 +205,12 @@ export function BusinessDashboard() {
       ) : null}
       {!store ? <Text style={styles.noStore}>Créez le profil de votre entreprise (adresse de retrait) pour demander des livraisons.</Text> : null}
       {stacked ? (
+        // Fenêtre de 1 024 à ~1 250 px : les livraisons d'abord (chiffres, héros, listes), la carte ensuite.
         <View style={styles.stack}>
           {kpis}
           {heroNode}
-          {map}
           {lists}
+          {map}
         </View>
       ) : (
         <View style={[styles.bento, { height: bentoHeight }]}>
@@ -225,6 +240,6 @@ const styles = StyleSheet.create({
   liveTile: { flex: 368 },
   doneTile: { flex: 272 },
   stack: { marginTop: 16, gap: TILE_GAP },
-  mapStacked: { height: 420 },
+  mapStacked: { height: 360 },
   mapSide: { flex: 1, minWidth: 0 },
 });

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
-import { DEMO_DATA_WARNING, LABELS, type DocumentType } from '@yaar/shared';
+import { LABELS, type DocumentType } from '@yaar/shared';
 import { Text } from '../../../components/Text';
+import { DemoDataWarning } from '../../../components/DemoNotice';
 import { GalleryIcon } from '../../../components/design/GalleryIcon';
 import { Icon, type IconName } from '../../../components/design/Icon';
 import { IconDisc, Meter, ScreenTitle, TagChip, WhiteCard, type KitTone } from '../../../components/driver/DriverKit';
@@ -51,7 +52,7 @@ export default function DriverDocuments() {
       <ScreenTitle title="Mes documents" />
       {/* Démo publique : aucune vraie pièce d'identité ne doit être déposée. */}
       {config?.demoMode ? (
-        <Banner message={DEMO_DATA_WARNING} tone="orange" icon={(c) => <Icon name="alert" size={18} color={c} testID="demo-warning-icon" />} />
+        <DemoDataWarning />
       ) : null}
       <WhiteCard testID="kyc-summary">
         <View style={styles.summaryTop}>
@@ -163,7 +164,6 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
           title={item.type === 'SELFIE' ? (item.state === 'ok' ? 'Refaire le selfie' : 'Prendre le selfie') : item.state === 'ok' ? 'Remplacer' : 'Photographier'}
           icon={(c) => <Icon name="camera" size={18} color={c} />}
           variant={item.state === 'ok' ? 'outline' : 'solid'}
-          small
           style={styles.flex}
           onPress={() => void upload('camera')}
           loading={busy}
@@ -174,7 +174,6 @@ function DocumentCard({ item, disabled }: { item: DocumentChecklistItem; disable
             title="Galerie"
             icon={(c) => <GalleryIcon size={18} color={c} />}
             variant="outline"
-            small
             onPress={() => void upload('library')}
             disabled={disabled || busy}
           />
@@ -195,7 +194,7 @@ const styles = StyleSheet.create({
   privacyText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted },
   docHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   docTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: palette.ink },
-  docMeta: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
+  docMeta: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
   hint: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted },
   previewWrap: { borderRadius: radii.input, overflow: 'hidden' },
   preview: { width: '100%', height: 140 },

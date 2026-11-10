@@ -44,7 +44,6 @@ export function DisputeBox({
         variant="ghost"
         color={palette.inkMuted}
         icon={(c) => <TrackingIcon name="flag" size={16} color={c} strokeWidth={2.3} />}
-        small
         onPress={() => setOpen(true)}
         style={styles.link}
         testID="dispute-open"
@@ -55,7 +54,7 @@ export function DisputeBox({
     <View style={styles.card}>
       <View style={styles.head}>
         <TrackingIcon name="flag" size={18} color={palette.coralText} strokeWidth={2.4} />
-        <Text style={styles.title} accessibilityRole="header">
+        <Text style={styles.title} accessibilityRole="header" aria-level={2}>
           Signaler un problème
         </Text>
       </View>

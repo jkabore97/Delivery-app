@@ -138,8 +138,8 @@ export default function VerifyScreen() {
 
         <Button title="Valider" onPress={submit} loading={busy} disabled={code.length !== OTP_LENGTH} testID="verify-submit" />
         <View style={styles.links}>
-          {demo ? null : <Button title="Renvoyer le code" variant="ghost" onPress={resend} small />}
-          <Button title="Changer de numéro ou de profil" variant="ghost" color={palette.inkMuted} onPress={() => router.back()} small />
+          {demo ? null : <Button title="Renvoyer le code" variant="ghost" onPress={resend} />}
+          <Button title="Changer de numéro ou de profil" variant="ghost" color={palette.inkMuted} onPress={() => router.back()} />
         </View>
       </Screen>
     </KeyboardAvoidingView>

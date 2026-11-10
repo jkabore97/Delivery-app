@@ -70,12 +70,6 @@ export function sortActiveDeliveries(list: OrderDto[]): OrderDto[] {
   });
 }
 
-/** Pastille de la carte d'ensemble : « 1 recherche d’un livreur », « 3 recherches d’un livreur » (même nom que la puce). */
-export function searchingCountText(n: number): string {
-  const label = `${SEARCHING_LABEL.charAt(0).toLowerCase()}${SEARCHING_LABEL.slice(1)}`;
-  return `${n} ${n > 1 ? label.replace(/^recherche/, 'recherches') : label}`;
-}
-
 /**
  * Libellés de statut côté entreprise, en minuscules (Cobalt écrit les états comme des phrases : « En livraison »).
  * `tone` : couleur Cobalt de la puce d'état (spec : recherche gris à point cobalt, livreur vers le retrait soleil, en

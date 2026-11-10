@@ -739,14 +739,17 @@ list has none either), any approval status; other roles get `403 FORBIDDEN`. "To
   "today": { "delivered": 14, "cancelled": 1, "avgDeliveryMinutes": 24, "goodsCollected": 87500, "deliveryFees": 21400 }
 }
 ```
-- `active`: deliveries in progress (`PENDING`, `SEARCHING_DRIVER`, `ASSIGNED`, `PICKED_UP`), whatever their day.
+- `active`: deliveries in progress, i.e. every non-terminal status (anything but `DELIVERED` and `CANCELLED`: `PENDING`,
+  `SEARCHING_DRIVER`, `ASSIGNED`, `PICKED_UP`), whatever their day.
 - `today.delivered` / `today.cancelled`: deliveries with `deliveredAt` / `cancelledAt` in the day (a delivery requested
   yesterday at 23:40 and delivered at 00:15 counts today).
 - `today.avgDeliveryMinutes`: average of `deliveredAt − createdAt` over today's delivered deliveries, rounded to the
   minute; `null` when none.
-- `today.goodsCollected`: the goods (`cashToCollect`) collected for the business on today's delivered deliveries, i.e.
-  what Yaar pays back to it ("À reverser · encaissé pour vous"; the same money model as the cash table below and as
-  `owedToBusiness`).
+- `today.goodsCollected`: the goods (`cashToCollect`) collected for the business on today's delivered deliveries (the
+  same money model as the cash table below and as `owedToBusiness`). It is **today's figure only**: it starts again from
+  0 at 00:00 UTC, whether or not Yaar has paid the money back (paybacks are not tracked yet). The app labels it
+  accordingly: "Encaissé pour vous aujourd'hui" (dashboard tile) and "87 500 FCFA encaissés aujourd'hui" (phone chip),
+  never "à reverser".
 - `today.deliveryFees`: the `deliveryFee` of today's delivered deliveries, whoever paid them.
 
 The app reads it when the dashboard gets the focus and, in poll mode (§ Mode polling), every 30 s while it is shown (the

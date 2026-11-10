@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { LABELS } from '@yaar/shared';
+import { LABELS, type DriverStatus } from '@yaar/shared';
 import { Text } from '../../../components/Text';
 import { Icon } from '../../../components/design/Icon';
 import { IconDisc, WhiteCard } from '../../../components/driver/DriverKit';
@@ -39,7 +39,7 @@ function TrackingConsentCard() {
       <View style={styles.heading}>
         <IconDisc icon="pin" tone={consented ? 'mint' : 'cobalt'} size={44} />
         <View style={styles.flex}>
-          <Text style={styles.headingText} accessibilityRole="header">
+          <Text style={styles.headingText} accessibilityRole="header" aria-level={2}>
             Suivi GPS
           </Text>
           <View style={styles.consentRow}>
@@ -60,7 +60,6 @@ function TrackingConsentCard() {
           onPress={withdraw}
           loading={consentBusy}
           disabled={currentOrder !== null}
-          small
           testID="withdraw-consent"
         />
       ) : (
@@ -77,6 +76,9 @@ function TrackingConsentCard() {
     </WhiteCard>
   );
 }
+
+/** État du dossier en un mot (la case est étroite) ; sur un très petit écran, « En attente » passe sur 2 lignes, jamais coupé. */
+const DOSSIER_SHORT: Record<DriverStatus, string> = { PENDING: 'En attente', APPROVED: 'Validé', REJECTED: 'Refusé', SUSPENDED: 'Suspendu' };
 
 /** Profil du livreur (Cobalt) : compte, note / véhicule / dossier en trois cases, suivi GPS, historique, déconnexion. */
 export default function DriverProfile() {
@@ -114,8 +116,8 @@ export default function DriverProfile() {
           </View>
           <View style={styles.factRule} />
           <View style={styles.fact}>
-            <Text style={styles.factValue} numberOfLines={1}>
-              {LABELS.driverStatus[profile.status]}
+            <Text style={[styles.factValue, styles.factCenter]} testID="driver-facts-status">
+              {DOSSIER_SHORT[profile.status]}
             </Text>
             <Text style={styles.factLabel}>Dossier</Text>
           </View>
@@ -144,16 +146,17 @@ const styles = StyleSheet.create({
   heading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headingText: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: palette.ink },
   consentRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  consentLabel: { fontSize: 13.5, lineHeight: 19, fontWeight: '600', color: palette.inkMuted },
-  consentValue: { fontSize: 13.5, lineHeight: 19, fontWeight: '700', color: palette.ink, fontVariant: ['tabular-nums'] },
+  consentLabel: { fontSize: 13, lineHeight: 19, fontWeight: '600', color: palette.inkMuted },
+  consentValue: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: palette.ink, fontVariant: ['tabular-nums'] },
   body: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: palette.inkMuted },
   small: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.inkMuted },
   facts: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: palette.card, borderRadius: radii.card, paddingVertical: 18, paddingHorizontal: 8 },
   fact: { flex: 1, alignItems: 'center', gap: 4, paddingHorizontal: 6 },
   factRule: { width: 1, backgroundColor: palette.line, marginVertical: 4 },
+  factCenter: { textAlign: 'center' },
   factValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   factValue: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: palette.ink, fontVariant: ['tabular-nums'] },
-  factLabel: { fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
+  factLabel: { fontSize: 13, lineHeight: 17, fontWeight: '600', color: palette.inkMuted, fontVariant: ['tabular-nums'] },
   link: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: spacing.lg, borderRadius: radii.card, backgroundColor: palette.card },
   linkPressed: { backgroundColor: palette.raised },
   linkTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: palette.ink },

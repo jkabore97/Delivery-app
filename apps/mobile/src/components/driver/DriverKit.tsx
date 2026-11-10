@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
+import { FitAmount } from '../design/FitAmount';
 import { Icon, type IconName } from '../design/Icon';
 import { formatFcfa } from '../../lib/format';
 import { cashRatio } from '../../lib/driverStatus';
@@ -40,11 +41,76 @@ export function IconDisc({ icon, tone = 'cobalt', size = 40, style }: { icon: Ic
   );
 }
 
+/** Part de la ligne qu'un montant peut prendre à côté de son libellé (le libellé garde le reste). */
+const LINE_AMOUNT_SHARE = 0.6;
+
+/**
+ * Ligne libellé / montant (récapitulatifs : gain de la course, gains du jour, espèces encaissées) : le libellé à gauche
+ * (il passe à la ligne au besoin), le montant à droite en `FitAmount`, dans au plus 60 % de la ligne MESURÉE : il
+ * rapetisse pour tenir, puis « FCFA » passe à la ligne, jamais coupé ni « … ». `pill` : le montant dans une pilule
+ * soleil (espèces). Le montant porte `testID` (texte : `formatFcfa`), la ligne `<testID>-line`.
+ */
+export function AmountLine({
+  label,
+  amount,
+  size = 18,
+  color = palette.ink,
+  sign,
+  pill = false,
+  labelStyle,
+  style,
+  testID,
+}: {
+  label: string;
+  amount: number;
+  size?: number;
+  color?: string;
+  sign?: '+' | '−';
+  pill?: boolean;
+  labelStyle?: StyleProp<TextStyle>;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  const [row, setRow] = useState<number | null>(null);
+  const width = row === null ? null : Math.max(48, Math.floor((row - spacing.sm) * LINE_AMOUNT_SHARE) - (pill ? 2 * PILL_PAD : 0));
+  const figure = <FitAmount amount={amount} size={size} color={color} sign={sign} align="end" width={width ?? MAX_LINE} testID={testID} />;
+  return (
+    <View
+      style={[styles.line, style]}
+      testID={testID ? `${testID}-line` : undefined}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w > 0 && w !== row) setRow(w);
+      }}
+    >
+      <Text style={[styles.lineLabel, labelStyle]}>{label}</Text>
+      {pill ? <View style={styles.linePill}>{figure}</View> : figure}
+    </View>
+  );
+}
+
+/** Marge intérieure de la pilule soleil d'une `AmountLine`. */
+const PILL_PAD = 12;
+/** Avant la mesure de la ligne : aucune contrainte (taille maximale). */
+const MAX_LINE = 10_000;
+
 /**
  * Barre de progression épaisse (10 px) : dossier (cobalt sur gris), espèces (ambre foncé sur piste soleil pâle, 5,35:1,
  * lisible en plein soleil), plafond atteint (rouge).
  */
-export function Meter({ value, color = palette.sun, track = palette.raisedHigh, height = 10, label }: { value: number; color?: string; track?: string; height?: number; label?: string }) {
+export function Meter({
+  value,
+  color = palette.sun,
+  track = palette.raisedHigh,
+  height = 10,
+  label,
+}: {
+  value: number;
+  color?: string;
+  track?: string;
+  height?: number;
+  label?: string;
+}) {
   const pct = Math.round(Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)) * 100);
   return (
     <View
@@ -92,7 +158,12 @@ export function CashMeter({
           {formatFcfa(held)}
         </Text>
       </View>
-      <Meter value={ratio} color={over ? palette.coralFill : palette.amberText} track={over ? palette.coralTint : palette.sunTint} label={`${label} : ${Math.round(ratio * 100)} % du plafond`} />
+      <Meter
+        value={ratio}
+        color={over ? palette.coralFill : palette.amberText}
+        track={over ? palette.coralTint : palette.sunTint}
+        label={`${label} : ${Math.round(ratio * 100)} % du plafond`}
+      />
       <Text style={[styles.caption, over && styles.captionAlert]} testID={`${testID}-limit`}>
         <Text style={styles.captionStrong}>{`Plafond ${formatFcfa(limit)}`}</Text>
         {caption ? ` · ${caption}` : ''}
@@ -134,12 +205,19 @@ export function WhiteCard({ children, style, testID }: { children: ReactNode; st
   );
 }
 
-/** Ligne d'une liste en carte blanche : pastille, titre et sous-titre, valeur à droite ; filet au-dessus sauf la première. */
+/** Part de la ligne d'une liste que peut prendre son montant à droite. */
+const ROW_AMOUNT_SHARE = 0.4;
+
+/**
+ * Ligne d'une liste en carte blanche : pastille, titre et sous-titre, valeur à droite ; filet au-dessus sauf la première.
+ * `amount` : montant à droite (17/800, `FitAmount` dans au plus 40 % de la ligne mesurée : jamais coupé).
+ */
 export function ListRow({
   leading,
   title,
   subtitle,
   right,
+  amount,
   rightSub,
   first,
   testID,
@@ -148,12 +226,25 @@ export function ListRow({
   title: string;
   subtitle?: string | null;
   right?: ReactNode;
+  amount?: { value: number; sign?: '+' | '−'; color?: string } | null;
   rightSub?: string | null;
   first?: boolean;
   testID?: string;
 }) {
+  const [row, setRow] = useState<number | null>(null);
   return (
-    <View style={[styles.row, !first && styles.rowRule]} testID={testID}>
+    <View
+      style={[styles.row, !first && styles.rowRule]}
+      testID={testID}
+      onLayout={
+        amount
+          ? (e) => {
+              const w = Math.round(e.nativeEvent.layout.width);
+              if (w > 0 && w !== row) setRow(w);
+            }
+          : undefined
+      }
+    >
       {leading}
       <View style={styles.rowText}>
         <Text style={styles.rowTitle} numberOfLines={2}>
@@ -161,9 +252,22 @@ export function ListRow({
         </Text>
         {subtitle ? <Text style={styles.rowSub}>{subtitle}</Text> : null}
       </View>
-      {right || rightSub ? (
-        <View style={styles.rowEnd}>
-          {typeof right === 'string' ? <Text style={styles.rowValue}>{right}</Text> : right}
+      {right || amount || rightSub ? (
+        <View style={[styles.rowEnd, amount && row !== null ? { maxWidth: Math.floor(row * ROW_AMOUNT_SHARE) } : null]}>
+          {amount ? (
+            <FitAmount
+              amount={amount.value}
+              sign={amount.sign}
+              size={17}
+              color={amount.color ?? palette.ink}
+              align="end"
+              width={row === null ? MAX_LINE : Math.floor(row * ROW_AMOUNT_SHARE)}
+            />
+          ) : typeof right === 'string' ? (
+            <Text style={styles.rowValue}>{right}</Text>
+          ) : (
+            right
+          )}
           {rightSub ? <Text style={styles.rowSub}>{rightSub}</Text> : null}
         </View>
       ) : null}
@@ -187,7 +291,7 @@ export function ScreenTitle({ title, subtitle }: { title: string; subtitle?: str
 export function SectionHeading({ children, right }: { children: string; right?: ReactNode }) {
   return (
     <View style={styles.sectionRow}>
-      <Text style={styles.section} accessibilityRole="header">
+      <Text style={styles.section} accessibilityRole="header" aria-level={2}>
         {children}
       </Text>
       {right}
@@ -197,6 +301,9 @@ export function SectionHeading({ children, right }: { children: string; right?: 
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  lineLabel: { flexShrink: 1, fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.ink },
+  linePill: { minHeight: 36, paddingHorizontal: PILL_PAD, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.sun },
   meterTrack: { overflow: 'hidden', alignSelf: 'stretch' },
   meterFill: { height: '100%' },
   cash: { gap: 10 },

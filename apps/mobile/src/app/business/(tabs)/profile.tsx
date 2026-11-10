@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../../components/Text';
 import type { AddressDto, StoreDto } from '@yaar/shared';
 import { AddressPicker } from '../../../components/AddressPicker';
-import { PAGE_PADDING, TILE_GAP, useIsDesktop } from '../../../components/business/desktop/layout';
+import { PAGE_PADDING, SIDEBAR_WIDTH, TILE_GAP, useIsDesktop } from '../../../components/business/desktop/layout';
 import { PageHeader } from '../../../components/business/desktop/PageHeader';
 import { BusinessMark, NewDeliveryButton, POINTER, type WebPressState } from '../../../components/business/parts';
 import { Icon } from '../../../components/design/Icon';
@@ -215,11 +215,15 @@ function BusinessProfileCard({ wide = false }: { wide?: boolean }) {
 /**
  * Profil de l'entreprise. Téléphone : l'écran de profil commun (compte, déconnexion) avec l'entreprise en tête.
  * Ordinateur : page « Établissements » (entreprise, établissements, adresse de retrait) à gauche, le compte (« Mon
- * profil ») dans une colonne à droite.
+ * profil ») dans une colonne à droite (400 px, 320 sous 1 280 px). Champs sur deux colonnes seulement si le formulaire
+ * a au moins 560 px ; l'action de l'en-tête passe à la ligne si le titre ne laisse pas la place.
  */
 export default function BusinessProfile() {
   const desktop = useIsDesktop();
   const { stores, store } = useBusiness();
+  const { width } = useWindowDimensions();
+  const accountWidth = width < 1280 ? 320 : 400;
+  const formWidth = Math.min(880, width - SIDEBAR_WIDTH - accountWidth - PAGE_PADDING * 2 - TILE_GAP);
   if (!desktop) return <ProfileScreen color={palette.cobalt} buttonTextColor={palette.onCobalt} top={<BusinessProfileCard />} />;
   return (
     <View style={styles.page} testID="profile-desktop">
@@ -228,12 +232,13 @@ export default function BusinessProfile() {
           title="Établissements"
           subtitle="Votre entreprise, ses points de retrait et son adresse"
           actions={<NewDeliveryButton stores={stores} store={store} variant="desktop" />}
+          wrap
         />
         <View style={styles.deskBody}>
-          <BusinessProfileCard wide />
+          <BusinessProfileCard wide={formWidth >= 560} />
         </View>
       </ScrollView>
-      <View style={[styles.account, shadows.tile]}>
+      <View style={[styles.account, { width: accountWidth }, shadows.tile]}>
         <ProfileScreen color={palette.cobalt} buttonTextColor={palette.onCobalt} />
       </View>
     </View>
@@ -261,5 +266,5 @@ const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: 'row', backgroundColor: palette.canvas },
   pageContent: { padding: PAGE_PADDING, paddingRight: TILE_GAP },
   deskBody: { marginTop: 16, gap: spacing.md, maxWidth: 880 },
-  account: { width: 400, marginVertical: PAGE_PADDING, marginRight: PAGE_PADDING, borderRadius: 24, overflow: 'hidden', backgroundColor: palette.canvas },
+  account: { marginVertical: PAGE_PADDING, marginRight: PAGE_PADDING, borderRadius: 24, overflow: 'hidden', backgroundColor: palette.canvas },
 });

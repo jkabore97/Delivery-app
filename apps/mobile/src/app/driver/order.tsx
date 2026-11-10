@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Linking, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { FitAmount } from '../../components/design/FitAmount';
 import { Text } from '../../components/Text';
 import { router } from 'expo-router';
 import { formatDistanceFr, formatDurationFr, type AddressDto } from '@yaar/shared';
@@ -10,6 +9,7 @@ import { MapIconButton, Pill } from '../../components/design/Pill';
 import { RoundButton } from '../../components/design/RoundButton';
 import { AmountRow, SurfaceScreen } from '../../components/design/Surfaces';
 import { DisputeBox } from '../../components/DisputeBox';
+import { AmountLine } from '../../components/driver/DriverKit';
 import { SosButton } from '../../components/DriverWidgets';
 import { avatarInitials } from '../../components/map/markerArt';
 import { FloatingChip, LiveTrackingLayout } from '../../components/tracking/LiveTrackingLayout';
@@ -60,6 +60,11 @@ function firstName(name: string | null | undefined, business: boolean): string |
 const SHORT_SCREEN = 700;
 /** Hauteur du fondu posé au-dessus du pied de feuille fixé (le contenu qui défile s'y efface, jamais coupé net). */
 const FADE = 28;
+/**
+ * Petit téléphone : nombre de lignes de la cible et de l'adresse ; le repère, lui, n'est jamais coupé et passe juste
+ * sous la cible, au-dessus du fondu, même avec un long nom ou une longue adresse.
+ */
+const SHORT_LINES = 2;
 
 /**
  * Course en cours (comme les applications de coursiers), au dessin Cobalt : carte claire avec l'itinéraire vers la
@@ -126,8 +131,7 @@ export default function DriverOrderScreen() {
   const contactName = pickupStage ? storeName : recipient;
   const title = pickupStage ? (storeName ?? 'Point de retrait') : `Colis pour ${recipient ?? 'le destinataire'}`;
   const step = nextStep(o, me);
-  const metrics =
-    step && step.distanceM !== null && step.minutes !== null ? `${formatDistanceFr(step.distanceM)} · ${formatDurationFr(step.minutes)}` : null;
+  const metrics = step && step.distanceM !== null && step.minutes !== null ? `${formatDistanceFr(step.distanceM)} · ${formatDurationFr(step.minutes)}` : null;
   const amounts = amountsToCollect(o);
   // Espèces de l'étape en cours : fixées au-dessus des boutons (testID collect-at-pickup / collect-at-dropoff).
   const stageCash = stageCollect(o.status, amounts);
@@ -140,6 +144,17 @@ export default function DriverOrderScreen() {
   const primarySize = short ? 72 : 84;
   const contactSize = short ? 'small' : 'medium';
   const secondaryDiameter = short ? 48 : 64;
+
+  // Repère de la cible : bloc cobalt doux, jamais coupé.
+  const landmark = target?.landmark ? (
+    <View style={styles.landmark} testID="order-landmark">
+      <Icon name="flag" size={16} color={palette.cobaltText} strokeWidth={2.4} />
+      <Text style={styles.landmarkText}>
+        <Text style={styles.landmarkLabel}>Repère : </Text>
+        {target.landmark}
+      </Text>
+    </View>
+  ) : null;
 
   const pickup = async () => {
     setBusy(true);
@@ -170,10 +185,10 @@ export default function DriverOrderScreen() {
       topCenter={<FloatingChip testID="driver-order-chip">{`Course ${num} · ${pickupStage ? 'Retrait' : 'Livraison'}`}</FloatingChip>}
       topRight={<SosButton size={48} />}
       testID="driver-order"
+      // Fondu blanc sur le bas du contenu qui défile : rien ne paraît coupé net au-dessus du pied fixé.
+      fadeBottom={FADE}
       footer={
         <>
-          {/* Fondu blanc sur le bas du contenu qui défile : rien ne paraît coupé net au-dessus du pied fixé. */}
-          <View pointerEvents="none" style={styles.fade} testID="sheet-fade" />
           {stageCash ? (
             <AmountRow label={stageCash.label} amount={stageCash.amount} testID={stageCash.at === 'pickup' ? 'collect-at-pickup' : 'collect-at-dropoff'} />
           ) : null}
@@ -214,7 +229,14 @@ export default function DriverOrderScreen() {
                 testID="directions-button"
               />
             ) : null}
-            <WhatsAppRoundButton phone={contactPhone} text={whatsappText} contactName={contactName} size={contactSize} slot={primarySize} testID="whatsapp-contact" />
+            <WhatsAppRoundButton
+              phone={contactPhone}
+              text={whatsappText}
+              contactName={contactName}
+              size={contactSize}
+              slot={primarySize}
+              testID="whatsapp-contact"
+            />
             <CallRoundButton phone={contactPhone} contactName={contactName} size={contactSize} slot={primarySize} testID="call-contact" />
           </View>
         </>
@@ -226,25 +248,31 @@ export default function DriverOrderScreen() {
           {pickupStage ? 'Étape 1 sur 2' : 'Étape 2 sur 2'}
           {metrics ? <Text style={styles.stepMetrics}>{` · ${metrics}`}</Text> : null}
         </Text>
-        <Text style={styles.stepVerb} accessibilityRole="header">
-          {pickupStage ? 'Récupérer' : 'Livrer'}
-        </Text>
-        <Text style={styles.target}>{title}</Text>
+        {/* Petit téléphone : l'étape et la cible sur une ligne (« Livrer · Colis pour Awa »), le repère avant l'adresse. */}
+        {short ? (
+          <Text style={[styles.stepVerb, styles.stepVerbShort]} accessibilityRole="header" numberOfLines={SHORT_LINES}>
+            {pickupStage ? 'Récupérer' : 'Livrer'}
+            <Text style={styles.targetInline}>{` · ${title}`}</Text>
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.stepVerb} accessibilityRole="header">
+              {pickupStage ? 'Récupérer' : 'Livrer'}
+            </Text>
+            <Text style={styles.target}>{title}</Text>
+          </>
+        )}
         {target ? (
-          <View style={styles.place}>
+          <View style={[styles.place, short && styles.placeShort]}>
+            {/* Petit téléphone : le repère d'abord (jamais sous le fondu), puis l'adresse sur 2 lignes au plus. */}
+            {short ? landmark : null}
             <View style={styles.placeRow}>
               <Icon name="pin" size={18} color={palette.ink} strokeWidth={2.3} />
-              <Text style={styles.address}>{target.address}</Text>
+              <Text style={styles.address} numberOfLines={short ? SHORT_LINES : undefined}>
+                {target.address}
+              </Text>
             </View>
-            {target.landmark ? (
-              <View style={styles.landmark}>
-                <Icon name="flag" size={16} color={palette.cobaltText} strokeWidth={2.4} />
-                <Text style={styles.landmarkText}>
-                  <Text style={styles.landmarkLabel}>Repère : </Text>
-                  {target.landmark}
-                </Text>
-              </View>
-            ) : null}
+            {short ? null : landmark}
           </View>
         ) : null}
       </View>
@@ -307,14 +335,16 @@ export default function DriverOrderScreen() {
         </View>
       ) : null}
       {o.driverEarning !== null ? (
-        <View style={styles.earning}>
-          <Text style={styles.earningLabel}>Votre gain sur cette course</Text>
-          <FitAmount amount={o.driverEarning} size={20} color={palette.cobalt} />
-        </View>
+        <AmountLine
+          label="Votre gain sur cette course"
+          amount={o.driverEarning}
+          size={20}
+          color={palette.cobalt}
+          labelStyle={styles.earningLabel}
+          testID="order-earning"
+        />
       ) : null}
       <DisputeBox orderId={o.id} placeholder="Décrivez le problème (destinataire absent, retrait impossible…)" />
-      {/* Place du fondu : la dernière ligne peut remonter au-dessus de lui. */}
-      <View style={{ height: FADE - spacing.md }} />
     </LiveTrackingLayout>
   );
 }
@@ -324,11 +354,22 @@ const styles = StyleSheet.create({
   stepKicker: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.cobaltText, fontVariant: ['tabular-nums'] },
   stepMetrics: { color: palette.ink },
   stepVerb: { fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -0.9, color: palette.ink },
+  stepVerbShort: { fontSize: 24, lineHeight: 29, letterSpacing: -0.6 },
+  targetInline: { fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
   target: { fontSize: 18, lineHeight: 24, fontWeight: '700', letterSpacing: -0.2, color: palette.ink },
   place: { gap: 8, marginTop: 4 },
+  placeShort: { gap: 6, marginTop: 2 },
   placeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   address: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '600', color: palette.ink },
-  landmark: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: radii.banner, backgroundColor: palette.cobaltTint },
+  landmark: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radii.banner,
+    backgroundColor: palette.cobaltTint,
+  },
   landmarkText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600', color: palette.cobaltText },
   landmarkLabel: { fontWeight: '800' },
   detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
@@ -338,18 +379,9 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   lineText: { flex: 1, color: palette.ink, fontSize: 15, lineHeight: 21, fontWeight: '700' },
   // Instructions de l'expéditeur : guillemets français, pas d'italique (la police n'en a pas).
-  notes: { flex: 1, color: palette.ink, fontSize: 14.5, lineHeight: 20, fontWeight: '500' },
+  notes: { flex: 1, color: palette.ink, fontSize: 15, lineHeight: 21, fontWeight: '500' },
   muted: { flex: 1, color: palette.inkMuted, fontSize: 14, lineHeight: 20, fontWeight: '500' },
-  earning: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  earningLabel: { flexShrink: 1, color: palette.inkMuted, fontSize: 14, lineHeight: 19, fontWeight: '700' },
-  fade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: -FADE,
-    height: FADE,
-    backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0), #FFFFFF)',
-  },
+  earningLabel: { color: palette.inkMuted, fontSize: 14, lineHeight: 19, fontWeight: '700' },
   actions: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 20, paddingTop: spacing.xs },
   actionsShort: { gap: 14, paddingTop: 0 },
   empty: { alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.xl * 2 },

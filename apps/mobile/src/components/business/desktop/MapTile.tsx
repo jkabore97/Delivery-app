@@ -1,26 +1,12 @@
-import { useRef, type ComponentRef, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useRef, type ReactNode } from 'react';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Icon, type IconName } from '../../design/Icon';
 import { LiveMap } from '../../map/LiveMap';
-import type { MapPoint, SceneLine, SceneMarker } from '../../map/types';
+import type { LiveMapHandle, MapPoint, SceneLine, SceneMarker } from '../../map/types';
+import { MAP_PALETTE } from '../../../lib/map/style';
 import { useFollowCamera } from '../../../hooks/useFollowCamera';
-import { palette, shadows } from '../../../theme';
+import { FOCUS_RING_INNER, FOCUS_SHAPE, palette, shadows } from '../../../theme';
 import { POINTER, type WebPressState } from '../parts';
-
-/**
- * Zoom de la carte web : la carte MapLibre a son raccourci clavier « + » / « − » (un niveau, en douceur) sur son
- * conteneur ; les boutons le lui envoient. Le déplacement compte comme un geste de l'utilisateur (la caméra cesse de
- * suivre, « Recentrer » la remet). Sans effet hors du web.
- */
-export function zoomWebMap(root: unknown, direction: 1 | -1): boolean {
-  if (Platform.OS !== 'web' || typeof KeyboardEvent === 'undefined') return false;
-  const el = (root as { querySelector?: (s: string) => Element | null } | null)?.querySelector?.('.maplibregl-canvas-container');
-  if (!el) return false;
-  const event = new KeyboardEvent('keydown', { key: direction > 0 ? '+' : '-', code: direction > 0 ? 'Equal' : 'Minus', bubbles: true, cancelable: true });
-  Object.defineProperty(event, 'keyCode', { get: () => (direction > 0 ? 187 : 189) });
-  el.dispatchEvent(event);
-  return true;
-}
 
 /**
  * Bouton de la carte (48 px). Ses coins sont les siens (`shape`) : le groupe qui le porte ne rogne rien, l'anneau de
@@ -56,7 +42,7 @@ function MapButton({
 /**
  * Tuile carte de l'ordinateur (tableau de bord, détail d'une livraison) : carte en direct (entreprise, livreurs,
  * destinataires, itinéraires), pastille posée en haut à gauche (`overlay`, ex. « 3 en cours | 1 en recherche »), zoom
- * (web) et « Recentrer ». La caméra cadre `fitPoints` et recadre à chaque nouveau `cameraKey`.
+ * « + » / « − » (`zoomRef` de LiveMap, web et Android / iOS) et « Recentrer ». La caméra cadre `fitPoints` et recadre à chaque nouveau `cameraKey`.
  */
 export function MapTile({
   markers,
@@ -86,10 +72,9 @@ export function MapTile({
   testID?: string;
 }) {
   const camera = useFollowCamera(cameraKey, fitPoints.length);
-  const root = useRef<ComponentRef<typeof View>>(null);
-  const web = Platform.OS === 'web';
+  const zoom = useRef<LiveMapHandle>(null);
   return (
-    <View ref={root} style={[styles.tile, shadows.tile, style]} testID={testID}>
+    <View style={[styles.tile, shadows.tile, style]} testID={testID}>
       {visible ? (
         <LiveMap
           style={StyleSheet.absoluteFill}
@@ -101,6 +86,7 @@ export function MapTile({
           onUserGesture={camera.onUserGesture}
           padding={{ top: 80, right: 84, bottom: 56, left: 56 }}
           animationMs={animationMs}
+          zoomRef={zoom}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.blank]} />
@@ -111,13 +97,11 @@ export function MapTile({
         </View>
       ) : null}
       <View style={styles.controls} pointerEvents="box-none">
-        {web ? (
-          <View style={[styles.zoom, shadows.float]}>
-            <MapButton icon="plus" label="Zoomer" shape="top" onPress={() => zoomWebMap(root.current, 1)} testID="map-zoom-in" />
-            <View style={styles.zoomSep} />
-            <MapButton icon="minus" label="Dézoomer" shape="bottom" onPress={() => zoomWebMap(root.current, -1)} testID="map-zoom-out" />
-          </View>
-        ) : null}
+        <View style={[styles.zoom, shadows.float]}>
+          <MapButton icon="plus" label="Zoomer" shape="top" onPress={() => zoom.current?.zoomBy(1)} testID="map-zoom-in" />
+          <View style={styles.zoomSep} />
+          <MapButton icon="minus" label="Dézoomer" shape="bottom" onPress={() => zoom.current?.zoomBy(-1)} testID="map-zoom-out" />
+        </View>
         <View style={[styles.round, shadows.float]}>
           <MapButton
             icon="recenter"
@@ -136,8 +120,8 @@ export function MapTile({
 }
 
 const styles = StyleSheet.create({
-  tile: { borderRadius: 24, overflow: 'hidden', backgroundColor: '#F3F5F8' },
-  blank: { backgroundColor: '#F3F5F8' },
+  tile: { borderRadius: 24, overflow: 'hidden', backgroundColor: MAP_PALETTE.background },
+  blank: { backgroundColor: MAP_PALETTE.background },
   pill: { position: 'absolute', left: 16, top: 16, right: 76, alignItems: 'flex-start' },
   controls: { position: 'absolute', right: 16, top: 16, alignItems: 'center', gap: 8 },
   zoom: { borderRadius: 24, backgroundColor: palette.card },

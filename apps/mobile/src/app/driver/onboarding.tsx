@@ -47,7 +47,7 @@ export default function DriverOnboarding() {
     <SurfaceScreen
       edges={['top', 'bottom']}
       header={profile && router.canGoBack() ? <ScreenHeader title="" onBack={() => router.back()} /> : null}
-      footer={<Button title="Continuer" icon={(c) => <Icon name="chevronRight" size={20} color={c} strokeWidth={2.6} />} onPress={save} loading={busy} disabled={!vehicle || !plateOk} testID="onboarding-continue" />}
+      footer={<Button title="Continuer" onPress={save} loading={busy} disabled={!vehicle || !plateOk} testID="onboarding-continue" />}
     >
       {profile ? null : (
         <View style={styles.steps} accessibilityLabel="Étape 1 sur 3 : véhicule">

@@ -25,6 +25,8 @@ export interface PublicTrackingOptions {
   intervalMs: number | ((data: TrackingDto | null) => number);
   visibility?: VisibilitySource;
   fetcher?: (token: string) => Promise<TrackingDto>;
+  /** Change à chaque « Réessayer » : relance le suivi tout de suite (sans attendre l'essai automatique, 30 s au plus). */
+  retryKey?: number;
 }
 
 /**
@@ -90,9 +92,9 @@ export function usePublicTracking(token: string | undefined, opts: PublicTrackin
       stop();
       scheduler.dispose();
     };
-    // nextDelay lit des refs : seuls le jeton et un intervalle fixe relancent le suivi.
+    // nextDelay lit des refs : seuls le jeton, un intervalle fixe et « Réessayer » relancent le suivi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, fixedKey]);
+  }, [token, fixedKey, opts.retryKey]);
 
   return state;
 }

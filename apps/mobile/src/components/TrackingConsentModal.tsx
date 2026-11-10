@@ -17,7 +17,8 @@ const POINT_ICONS: IconName[] = ['pin', 'route', 'shield', 'clock', 'logout'];
 
 /**
  * Consentement éclairé au suivi GPS (obligatoire avant le premier passage en ligne), en feuille blanche Cobalt
- * (coins de 32 px, poignée) : pastille, titre, points illustrés, « J'accepte… » en pilule cobalt, « Pas maintenant ».
+ * (coins de 32 px, poignée) : pastille, titre, points illustrés, « J'accepte… » en pilule cobalt, « Pas maintenant ». Tout
+ * défile ensemble (barre de défilement visible) : les boutons viennent après le texte, jamais par-dessus.
  * Ouverte par `setOnline(true)` sans consentement, sur `403 CONSENT_REQUIRED`, ou depuis le profil.
  */
 export function TrackingConsentModal() {
@@ -39,12 +40,12 @@ export function TrackingConsentModal() {
       <View style={styles.backdrop}>
         <View style={[styles.sheet, shadows.sheet]} testID="tracking-consent" accessibilityViewIsModal>
           <View style={styles.handle} />
-          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator persistentScrollbar testID="tracking-consent-scroll">
             <View style={styles.heading}>
               <View style={styles.disc}>
                 <Icon name="pin" size={26} color={palette.cobaltText} strokeWidth={2.3} />
               </View>
-              <Text style={styles.title} accessibilityRole="header">
+              <Text style={styles.title} accessibilityRole="header" aria-level={2}>
                 {TRACKING_CONSENT_TITLE}
               </Text>
             </View>
@@ -59,11 +60,15 @@ export function TrackingConsentModal() {
                 </View>
               ))}
             </View>
+            {/* Les boutons défilent avec le texte : sur un petit téléphone, « J'accepte » ne s'atteint qu'après avoir vu
+                tous les points (pas de bouton fixé par-dessus un texte coupé). */}
+            <View style={styles.actions}>
+              {error ? <Banner message={error} /> : null}
+              <Button title={TRACKING_CONSENT_ACCEPT} onPress={accept} loading={consentBusy} testID="accept-tracking-consent" />
+              <Button title="Pas maintenant" variant="ghost" disabled={consentBusy} onPress={close} testID="decline-tracking-consent" />
+              <Text style={styles.note}>Sans ce consentement, vous ne pouvez pas passer en ligne ni recevoir de courses.</Text>
+            </View>
           </ScrollView>
-          {error ? <Banner message={error} /> : null}
-          <Button title={TRACKING_CONSENT_ACCEPT} onPress={accept} loading={consentBusy} testID="accept-tracking-consent" />
-          <Button title="Pas maintenant" variant="ghost" disabled={consentBusy} onPress={close} testID="decline-tracking-consent" />
-          <Text style={styles.note}>Sans ce consentement, vous ne pouvez pas passer en ligne ni recevoir de courses.</Text>
         </View>
       </View>
     </Modal>
@@ -88,6 +93,7 @@ const styles = StyleSheet.create({
   },
   handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: palette.handle, marginBottom: spacing.sm },
   scroll: { gap: spacing.md, paddingBottom: spacing.sm },
+  actions: { gap: spacing.sm, marginTop: spacing.xs },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   disc: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.cobaltTint },
   title: { flex: 1, fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4, color: palette.ink },

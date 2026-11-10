@@ -8,7 +8,7 @@ import { TrackingIcon } from './tracking/TrackingIcon';
 
 /**
  * Écran de connexion en mode démo (GET /config → demoMode), carte blanche Cobalt : code 123456 (bandeau cobalt doux),
- * avertissement « démonstration publique » (pictogramme d'alerte, rouge foncé) et comptes de démonstration
+ * avertissement « démonstration publique » (pictogramme d'alerte, bandeau soleil pâle, comme sur l'écran des pièces) et comptes de démonstration
  * (entreprises et livreurs) en lignes remplies à toucher pour remplir le numéro.
  */
 export function DemoNotice({ onPick }: { onPick: (phone: string, role: 'SELLER' | 'DRIVER') => void }) {
@@ -49,11 +49,14 @@ export function DemoNotice({ onPick }: { onPick: (phone: string, role: 'SELLER' 
   );
 }
 
-/** « Démonstration publique : n'utilisez pas de vraies pièces d'identité… » (connexion, pièces KYC), pictogramme dessiné. */
+/**
+ * « Démonstration publique : n'utilisez pas de vraies pièces d'identité… » (connexion, pièces KYC) : un seul dessin
+ * partout, bandeau soleil pâle, pictogramme et texte brun (sunText, 6,4:1 sur sunTint).
+ */
 export function DemoDataWarning() {
   return (
     <View style={styles.warningRow} testID="demo-data-warning">
-      <TrackingIcon name="alert" size={18} color={palette.coralText} strokeWidth={2.4} />
+      <TrackingIcon name="alert" size={18} color={palette.sunText} strokeWidth={2.4} testID="demo-warning-icon" />
       <Text style={styles.warning}>{DEMO_DATA_WARNING}</Text>
     </View>
   );
@@ -64,8 +67,8 @@ const styles = StyleSheet.create({
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   codeDisc: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.cobaltTint },
   title: { flex: 1, fontWeight: '800', color: palette.ink, fontSize: 16, lineHeight: 21, fontVariant: ['tabular-nums'] },
-  warningRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: radii.banner, backgroundColor: palette.coralTint },
-  warning: { flex: 1, color: palette.coralText, fontWeight: '600', fontSize: 13, lineHeight: 18 },
+  warningRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: radii.banner, backgroundColor: palette.sunTint },
+  warning: { flex: 1, color: palette.sunText, fontWeight: '600', fontSize: 13, lineHeight: 18 },
   sub: { color: palette.inkMuted, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   accounts: { gap: 8 },
   account: {

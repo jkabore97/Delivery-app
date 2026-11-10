@@ -1,5 +1,6 @@
+import { cloneElement, type ReactElement } from 'react';
 import { Pressable, StyleSheet, View, type PressableStateCallbackType, type StyleProp, type ViewStyle } from 'react-native';
-import { router } from 'expo-router';
+import { Link, router, type Href } from 'expo-router';
 import type { OrderDto, StoreDto } from '@yaar/shared';
 import { Text } from '../Text';
 import { Icon, type IconName } from '../design/Icon';
@@ -15,6 +16,23 @@ import { POINTER } from './desktop/layout';
 export type WebPressState = PressableStateCallbackType & { hovered?: boolean; focused?: boolean };
 
 export { POINTER } from './desktop/layout';
+
+/**
+ * Lien d'une tuile ou de la barre latérale : un vrai lien `<a href>` sur le web (Entrée l'ouvre, le clic du milieu
+ * ouvre un onglet), la navigation d'expo-router ailleurs. `children` : l'élément pressable (sans `onPress`), dont le
+ * style doit être FIXE (pas une fonction de l'état) : le `Slot` du lien fusionne les styles en objet (un tableau y
+ * deviendrait `{0: …, 1: …}`, refusé par le navigateur), il est donc aplati ici.
+ */
+export function NavLink({ href, children }: { href: Href; children: ReactElement<{ style?: StyleProp<ViewStyle> }> }) {
+  const child = cloneElement(children, { style: StyleSheet.flatten(children.props.style) });
+  return (
+    <Link href={href} asChild>
+      {child}
+    </Link>
+  );
+}
+
+
 
 /* ------------------------------------------------------------------------------------------------------------------ */
 /* Pastilles                                                                                                            */

@@ -1,5 +1,16 @@
-import { useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ScrollViewInstance,
+} from 'react-native';
 import { FitAmount } from '../../components/design/FitAmount';
 import { Text } from '../../components/Text';
 import { router } from 'expo-router';
@@ -8,7 +19,7 @@ import { Icon, type IconName } from '../../components/design/Icon';
 import { Pill } from '../../components/design/Pill';
 import { AmountRow, ScreenHeader, SurfaceScreen } from '../../components/design/Surfaces';
 import { CodeInput } from '../../components/driver/CodeInput';
-import { CashMeter, IconDisc, WhiteCard } from '../../components/driver/DriverKit';
+import { AmountLine, CashMeter, IconDisc, WhiteCard } from '../../components/driver/DriverKit';
 import { RatingCard } from '../../components/Rating';
 import { Banner } from '../../components/ui';
 import { errorMessage, isApiError } from '../../lib/api';
@@ -18,9 +29,14 @@ import { useAsync } from '../../hooks/useAsync';
 import { capturePhoto } from '../../lib/photo';
 import { useApi } from '../../state/auth';
 import { useDriver } from '../../state/driver';
-import { palette, radii, shadows, spacing } from '../../theme';
+import { alpha, palette, radii, shadows, spacing } from '../../theme';
 
 const CODE_LENGTH = 4;
+/**
+ * Petit téléphone (hauteur < 700 px, ex. 360 × 640) : le clavier numérique couvrirait les cases du code. Le montant à
+ * encaisser passe sur une ligne et, clavier ouvert, l'écran défile jusqu'à la carte du code.
+ */
+const SHORT_SCREEN = 700;
 
 /** Grand bouton d'action pleine largeur (pilule cobalt de 56 px) en pied d'écran. */
 function PrimaryAction({
@@ -40,16 +56,6 @@ function PrimaryAction({
 }) {
   return (
     <Pill label={title} icon={icon} tone="cobalt" size="lg" onPress={onPress} disabled={disabled} loading={loading} style={styles.primary} testID={testID} />
-  );
-}
-
-/** Ligne libellé / montant d'un récapitulatif (gains, espèces). */
-function SumRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.sumRow}>
-      <Text style={styles.sumLabel}>{label}</Text>
-      {children}
-    </View>
   );
 }
 
@@ -73,6 +79,19 @@ export default function DeliverScreen() {
   const today = earnings.data?.today ?? null;
   const todayLabel = today ? `Gains du jour · ${today.deliveries} course${today.deliveries > 1 ? 's' : ''}` : null;
   const goHome = () => router.dismissTo('/driver');
+  const short = useWindowDimensions().height < SHORT_SCREEN;
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const codeCardY = useRef(0);
+  const codeFocused = useRef(false);
+  // Clavier ouvert sur un petit téléphone (natif ; le navigateur fait défiler le champ lui-même) : la carte du code en
+  // haut de l'écran, ses cases au-dessus du clavier et du bouton fixé.
+  useEffect(() => {
+    if (!short) return undefined;
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      if (codeFocused.current) scrollRef.current?.scrollTo({ y: Math.max(0, codeCardY.current - spacing.sm), animated: true });
+    });
+    return () => sub.remove();
+  }, [short]);
 
   if (delivered) {
     return (
@@ -97,14 +116,18 @@ export default function DeliverScreen() {
           // La tuile héros cobalt de l'écran : le gain de la course, en très grand.
           <View style={[styles.gainHero, shadows.hero]} testID="delivery-gain">
             <Text style={styles.gainLabel}>Votre gain</Text>
-            <FitAmount amount={delivered.driverEarning} sign="+" size={48} color={palette.white} />
+            <FitAmount amount={delivered.driverEarning} sign="+" size={48} color={palette.white} testID="delivery-gain-value" />
             {today && todayLabel ? (
               <>
                 <View style={styles.gainRule} />
-                <View style={styles.gainDay}>
-                  <Text style={styles.gainDayLabel}>{todayLabel}</Text>
-                  <FitAmount amount={today.earnings} size={18} color={palette.white} />
-                </View>
+                <AmountLine
+                  label={todayLabel}
+                  amount={today.earnings}
+                  size={18}
+                  color={palette.white}
+                  labelStyle={styles.gainDayLabel}
+                  testID="delivery-gain-day"
+                />
               </>
             ) : null}
           </View>
@@ -112,22 +135,18 @@ export default function DeliverScreen() {
         {delivered.cashCollected !== null || (todayLabel && delivered.driverEarning === null) ? (
           <WhiteCard style={styles.sumCard}>
             {delivered.cashCollected !== null ? (
-              <SumRow label="Espèces encaissées">
-                <View style={styles.sunPill}>
-                  <FitAmount amount={delivered.cashCollected} size={16} />
-                </View>
-              </SumRow>
+              <AmountLine label="Espèces encaissées" amount={delivered.cashCollected} size={16} pill testID="delivery-cash-collected" />
             ) : null}
             {todayLabel && today && delivered.driverEarning === null ? (
-              <SumRow label={todayLabel}>
-                <FitAmount amount={today.earnings} size={17} color={palette.cobalt} />
-              </SumRow>
+              <AmountLine label={todayLabel} amount={today.earnings} size={17} color={palette.cobalt} />
             ) : null}
           </WhiteCard>
         ) : null}
         {!rated ? (
           <RatingCard
             title={delivered.store ? 'Notez l’entreprise' : 'Notez le client'}
+            // L'action principale de l'écran est « Retour aux courses » (cobalt plein) : la note en contour.
+            submitVariant="outline"
             onSubmit={async (score, comment) => {
               await api.rateOrder(delivered.id, { score, ...(comment ? { comment } : {}) });
               setRated(true);
@@ -196,106 +215,119 @@ export default function DeliverScreen() {
   const over = limit > 0 && cashAfter >= limit;
 
   return (
-    <SurfaceScreen
-      edges={['top', 'bottom']}
-      header={<ScreenHeader title="Confirmer la livraison" subtitle={`Course ${formatOrderNumber(o.number)} · ${recipient}`} onBack={() => router.back()} />}
-      footer={
-        <PrimaryAction
-          title="Valider la livraison"
-          icon="check"
-          onPress={submit}
-          loading={busy}
-          disabled={code.length !== CODE_LENGTH}
-          testID="deliver-button"
-        />
-      }
-    >
-      {amounts.atDropoff > 0 ? (
-        <AmountRow
-          hero
-          label={`1. Encaissez auprès de ${recipient}`}
-          amount={amounts.atDropoff}
-          detail={collectDetail(amounts)}
-          testID="amount-to-collect"
-        />
-      ) : (
-        <View style={styles.paid}>
-          <IconDisc icon="check" tone="mint" size={36} />
-          <Text style={styles.paidText}>Rien à encaisser : la livraison est déjà payée.</Text>
-        </View>
-      )}
-
-      <WhiteCard style={styles.codeCard}>
-        <View style={styles.codeHead}>
-          <Text style={styles.codeTitle} accessibilityRole="header">
-            {amounts.atDropoff > 0 ? '2. ' : ''}Demandez le code au destinataire
-          </Text>
-          <Text style={styles.codeHint}>Il s’affiche sur sa page de suivi (lien reçu par SMS / WhatsApp).</Text>
-        </View>
-        <CodeInput
-          value={code}
-          onChangeText={(t) => {
-            setCode(t);
-            if (codeError) setCodeError(false);
-          }}
-          length={CODE_LENGTH}
-          autoFocus
-          error={codeError}
-          onSubmit={() => void submit()}
-          accessibilityLabel="Code de livraison"
-          testID="delivery-code-input"
-        />
-        {error ? <Banner message={error} /> : null}
-      </WhiteCard>
-
-      <Pressable
-        onPress={takePhoto}
-        style={({ pressed }) => [styles.photoBox, shadows.tile, pressed && styles.photoPressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Photo du colis remis (facultatif)"
-      >
-        {photo ? (
-          <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="cover" />
-        ) : (
-          <View style={styles.photoEmpty}>
-            <IconDisc icon="camera" tone="cobalt" size={44} />
-            <View style={styles.flex}>
-              <Text style={styles.photoTitle}>Photo du colis remis</Text>
-              <Text style={styles.photoSub}>Facultatif · preuve en cas de litige</Text>
-            </View>
-            <Icon name="chevronRight" size={20} color={palette.inkMuted} />
-          </View>
-        )}
-      </Pressable>
-      {photo ? <Pill label="Retirer la photo" icon="close" tone="outline" onPress={() => setPhoto(null)} style={styles.center} /> : null}
-
-      <WhiteCard>
-        {profile ? (
-          <CashMeter
-            held={cashAfter}
-            limit={limit}
-            blocked={over}
-            label="Espèces détenues après cette course"
-            caption="au-delà, vous ne recevez plus de courses avant dépôt."
-            testID="cash-after"
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SurfaceScreen
+        edges={['top', 'bottom']}
+        scroll={false}
+        header={<ScreenHeader title="Confirmer la livraison" subtitle={`Course ${formatOrderNumber(o.number)} · ${recipient}`} onBack={() => router.back()} />}
+        footer={
+          <PrimaryAction
+            title="Valider la livraison"
+            icon="check"
+            onPress={submit}
+            loading={busy}
+            disabled={code.length !== CODE_LENGTH}
+            testID="deliver-button"
           />
-        ) : null}
-        {o.driverEarning !== null ? (
-          <SumRow label="Votre gain sur cette course">
-            <FitAmount amount={o.driverEarning} size={18} color={palette.cobalt} />
-          </SumRow>
-        ) : null}
-        {today && todayLabel ? (
-          <SumRow label={todayLabel}>
-            <FitAmount amount={today.earnings} size={18} />
-          </SumRow>
-        ) : null}
-      </WhiteCard>
-    </SurfaceScreen>
+        }
+      >
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          {amounts.atDropoff > 0 ? (
+            <AmountRow
+              hero={!short}
+              label={`1. Encaissez auprès de ${recipient}`}
+              amount={amounts.atDropoff}
+              detail={collectDetail(amounts)}
+              testID="amount-to-collect"
+            />
+          ) : (
+            <View style={styles.paid}>
+              <IconDisc icon="check" tone="mint" size={36} />
+              <Text style={styles.paidText}>Rien à encaisser : la livraison est déjà payée.</Text>
+            </View>
+          )}
+
+          <View
+            onLayout={(e) => {
+              codeCardY.current = e.nativeEvent.layout.y;
+            }}
+          >
+            <WhiteCard style={styles.codeCard}>
+              <View style={styles.codeHead}>
+                <Text style={styles.codeTitle} accessibilityRole="header" aria-level={2}>
+                  {amounts.atDropoff > 0 ? '2. ' : ''}Demandez le code au destinataire
+                </Text>
+                <Text style={styles.codeHint}>Il s’affiche sur sa page de suivi (lien reçu par SMS / WhatsApp).</Text>
+              </View>
+              <CodeInput
+                value={code}
+                onChangeText={(t) => {
+                  setCode(t);
+                  // Le livreur retape le code : l'erreur précédente (cases et bandeau rouges) disparaît.
+                  if (codeError) setCodeError(false);
+                  if (error) setError(null);
+                }}
+                length={CODE_LENGTH}
+                autoFocus
+                error={codeError}
+                onSubmit={() => void submit()}
+                onFocus={() => {
+                  codeFocused.current = true;
+                }}
+                accessibilityLabel="Code de livraison"
+                testID="delivery-code-input"
+              />
+              {error ? <Banner message={error} /> : null}
+            </WhiteCard>
+          </View>
+
+          <Pressable
+            onPress={takePhoto}
+            style={({ pressed }) => [styles.photoBox, shadows.tile, pressed && styles.photoPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Photo du colis remis (facultatif)"
+          >
+            {photo ? (
+              <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="cover" />
+            ) : (
+              <View style={styles.photoEmpty}>
+                <IconDisc icon="camera" tone="cobalt" size={44} />
+                <View style={styles.flex}>
+                  <Text style={styles.photoTitle}>Photo du colis remis</Text>
+                  <Text style={styles.photoSub}>Facultatif · preuve en cas de litige</Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={palette.inkMuted} />
+              </View>
+            )}
+          </Pressable>
+          {photo ? <Pill label="Retirer la photo" icon="close" tone="outline" onPress={() => setPhoto(null)} style={styles.center} /> : null}
+
+          <WhiteCard>
+            {profile ? (
+              <CashMeter
+                held={cashAfter}
+                limit={limit}
+                blocked={over}
+                label="Espèces détenues après cette course"
+                caption="au-delà, vous ne recevez plus de courses avant dépôt."
+                testID="cash-after"
+              />
+            ) : null}
+            {o.driverEarning !== null ? (
+              <AmountLine label="Votre gain sur cette course" amount={o.driverEarning} color={palette.cobalt} testID="deliver-earning" />
+            ) : null}
+            {today && todayLabel ? <AmountLine label={todayLabel} amount={today.earnings} testID="deliver-today" /> : null}
+          </WhiteCard>
+        </ScrollView>
+      </SurfaceScreen>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  // Comme le contenu défilant de SurfaceScreen (ici, un défilement à nous : retour à la carte du code).
+  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2, gap: spacing.md },
   flex: { flex: 1, gap: 2 },
   center: { alignSelf: 'center' },
   primary: { alignSelf: 'stretch', justifyContent: 'center' },
@@ -312,22 +344,34 @@ const styles = StyleSheet.create({
   photoSub: { fontSize: 13, lineHeight: 18, fontWeight: '600', color: palette.inkMuted },
   photo: { width: '100%', height: 180 },
   sumCard: { gap: 14 },
-  sumRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  sumLabel: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.ink },
-  sunPill: { minHeight: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center', backgroundColor: palette.sun },
   emptyCard: { alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.xl },
   emptyText: { color: palette.ink, fontSize: 18, lineHeight: 24, fontWeight: '800' },
   successContent: { gap: spacing.lg },
   success: { alignItems: 'center', gap: 6, paddingTop: spacing.xl, paddingBottom: spacing.xs },
-  checkHalo: { width: 124, height: 124, borderRadius: 62, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.mintTint, marginBottom: spacing.sm },
+  checkHalo: {
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.mintTint,
+    marginBottom: spacing.sm,
+  },
   bigCheck: { width: 96, height: 96, borderRadius: 48, backgroundColor: palette.mint, alignItems: 'center', justifyContent: 'center' },
   successTitle: { fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -0.9, color: palette.ink, textAlign: 'center' },
   successSub: { color: palette.inkMuted, fontSize: 15, lineHeight: 20, fontWeight: '600', fontVariant: ['tabular-nums'] },
   gainHero: { borderRadius: radii.hero, padding: 24, gap: 4, backgroundColor: palette.cobalt },
   gainLabel: { fontSize: 14, lineHeight: 18, fontWeight: '700', color: palette.onCobalt2 },
-  gainRule: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.18)', marginVertical: 12 },
-  gainDay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  gainDayLabel: { flex: 1, fontSize: 14, lineHeight: 19, fontWeight: '600', color: palette.onCobalt2 },
-  thanks: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: spacing.lg, borderRadius: 20, backgroundColor: palette.mintTint },
+  gainRule: { height: 1, backgroundColor: alpha(palette.white, 0.18), marginVertical: 12 },
+  gainDayLabel: { fontSize: 14, lineHeight: 19, fontWeight: '600', color: palette.onCobalt2 },
+  thanks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: spacing.lg,
+    borderRadius: 20,
+    backgroundColor: palette.mintTint,
+  },
   thanksText: { color: palette.mintText, fontWeight: '800', fontSize: 15, lineHeight: 20 },
 });

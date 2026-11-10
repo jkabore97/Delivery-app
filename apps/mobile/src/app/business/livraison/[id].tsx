@@ -41,7 +41,7 @@ import { trackingHeadline } from '../../../lib/trackingSteps';
 import { useApi } from '../../../state/auth';
 import { useBusiness } from '../../../state/business';
 import { useOrderRoom, usePolling, useSocket, useSocketEvent } from '../../../state/socket';
-import { palette, radii, shadows, spacing, tabular } from '../../../theme';
+import { ON_COBALT_SURFACE, palette, radii, shadows, spacing, tabular } from '../../../theme';
 
 /**
  * Suivi d'une livraison par l'entreprise (comme Uber Direct). Téléphone : carte claire en direct (livreur animé,
@@ -396,19 +396,32 @@ function DesktopDelivery({
           fitPoints={scene.fitPoints}
           cameraKey={stageKey}
           animationMs={animationMs}
-          overlay={<FloatingChip testID="order-chip">{`Livraison ${formatOrderNumber(o.number)}`}</FloatingChip>}
+          // Pas de pastille « Livraison #… » sur la carte : le titre de la page le dit déjà.
           style={styles.deskMap}
           testID="delivery-map"
         />
         <ScrollView style={styles.deskColumn} contentContainerStyle={styles.deskColumnContent} showsVerticalScrollIndicator={false}>
           {liveStage || o.status === 'SEARCHING_DRIVER' || o.status === 'PENDING' ? (
-            <View style={[styles.etaTile, shadows.hero]} testID="tracking-headline">
-              <Text style={styles.etaKicker}>{toPickup ? 'Livreur au retrait vers' : eta.kind === 'request' ? 'Demandée à' : 'Arrivée vers'}</Text>
-              <View style={styles.etaRow}>
-                <Text style={[styles.etaClock, !eta.clock && styles.etaWord]}>{eta.clock ?? eta.label}</Text>
-                {eta.clock && eta.inText ? <Text style={styles.etaIn}>{eta.inText}</Text> : null}
-              </View>
-              <Text style={styles.etaHeadline}>{headline}</Text>
+            <View style={[styles.etaTile, shadows.hero]} testID="tracking-headline" {...ON_COBALT_SURFACE}>
+              {eta.kind === 'request' ? (
+                // Recherche d'un livreur : l'état en grand, l'heure de la demande en petit (pas une heure géante qui se
+                // lirait comme une arrivée).
+                <>
+                  <Text style={styles.etaKicker}>{`Demandée à ${eta.clock}${eta.inText ? ` · ${eta.inText}` : ''}`}</Text>
+                  <Text style={[styles.etaClock, styles.etaWord]} testID="tracking-state">
+                    {headline}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.etaKicker}>{toPickup ? 'Livreur au retrait vers' : 'Arrivée vers'}</Text>
+                  <View style={styles.etaRow}>
+                    <Text style={[styles.etaClock, !eta.clock && styles.etaWord]}>{eta.clock ?? eta.label}</Text>
+                    {eta.clock && eta.inText ? <Text style={styles.etaIn}>{eta.inText}</Text> : null}
+                  </View>
+                  <Text style={styles.etaHeadline}>{headline}</Text>
+                </>
+              )}
               {toPickup && deliveryEta !== null ? (
                 <Text style={styles.etaSub} testID="eta-secondary">
                   {deliveryEtaLine(deliveryEta, now, recipient, pickupEta)}
@@ -430,7 +443,7 @@ function DesktopDelivery({
             </View>
           )}
           {steps.length > 0 && !liveStage && o.status === 'DELIVERED' ? (
-            <View style={[styles.tile, shadows.tile]}>
+            <View style={[styles.tile, shadows.tile, styles.tilePad]}>
               <SegmentedProgress steps={steps} labels />
             </View>
           ) : null}
@@ -449,7 +462,7 @@ function DesktopDelivery({
             </View>
           ) : null}
           <View style={[styles.tile, shadows.tile, styles.tilePad]}>
-            <RecipientBlock order={o} terminal={isTerminal(o.status)} />
+            <RecipientBlock order={o} terminal={isTerminal(o.status)} onCard />
           </View>
           {shareCard && !promptShare ? <View style={[styles.tile, shadows.tile, styles.tilePad]}>{shareCard}</View> : null}
           <View style={[styles.tile, shadows.tile, styles.tilePad]}>
