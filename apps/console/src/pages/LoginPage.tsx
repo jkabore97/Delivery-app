@@ -94,7 +94,6 @@ export function LoginPage() {
             <circle cx="220" cy="220" r="64" />
             <circle cx="220" cy="220" r="116" />
             <circle cx="220" cy="220" r="168" />
-            <circle cx="220" cy="220" r="218" />
           </svg>
           <span className="login-marker" aria-hidden="true">
             <Icon name="moto" size={24} />

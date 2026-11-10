@@ -112,14 +112,20 @@ blanches de rayon 24 à ombre douce sur le fond `canvas`, sans bordure.
   libellé (`aria-label` pour un bouton sans texte).
 - **Composants** (`src/components/ui.tsx`) : `Badge` (puces 24 px : `green` livrée, `blue` en livraison, `sun` livreur
   vers le retrait, `search` recherche d'un livreur, `orange` à valider, `red` annulée / problème, `coral` SOS, `grey`),
-  `Banner` (info, avertissement, erreur, réussite), `Avatar` (livreurs en soleil, comptes en cobalt pâle), `BizMark`
-  (entreprise : carré encre aux initiales), `Rating` (étoile dessinée), `DateTimeCell`, `FilterSelect`, `Empty`,
-  `Loading`, `Pagination`, `Modal`. `PageTitle` (`src/components/PageTitle.tsx`) : chaque écran déclare son titre, que
+  `Banner` (info, avertissement, erreur, réussite), `Avatar` (cobalt pâle dans les listes ; soleil pour le livreur mis
+  en avant), `BizMark` (entreprise : carré encre aux mêmes initiales que sur les cartes, `markerInitials`), `Rating` (étoile dessinée), `DateTimeCell`, `FilterSelect`, `Empty`,
+  `Loading`, `Pagination`, `Modal` (portail, fond inerte, focus piégé puis rendu à l'ouvreur, Échap), `TableWrap`. `PageTitle` (`src/components/PageTitle.tsx`) : chaque écran déclare son titre, que
   la coque affiche dans la barre du haut. `KpiTile` (`KpiCards.tsx`), `DeliveryHero` (tuile héros de la fiche de
   livraison : heure d'arrivée, étapes, livreur, destinataire, pilule soleil des espèces).
 - **Tableaux** : dans une tuile blanche, filets fins, en-tête collant, chiffres tabulaires, montants alignés à droite.
+  `TableWrap` mesure le tableau : trop large pour sa carte, il défile dans la carte (jamais la page) ; sinon il garde
+  son en-tête collant.
+- **Barre latérale** : 248 px dès 1280 px ; barre étroite de pictogrammes (nom en info-bulle) de 821 à 1279 px ; menu
+  escamotable sous 821 px (voile, Échap).
+- **Boutons** : une seule action cobalt pleine par écran ; les déclencheurs destructifs (annuler, refuser, suspendre)
+  sont en `btn-danger-soft`, le corail plein est réservé au bouton qui confirme dans la fenêtre.
 - **Accessibilité** : anneau de focus cobalt de 2 px (`:focus-visible`), vrais boutons et liens, boutons-pictogrammes
-  libellés, cibles de 44 px sur écran tactile (`pointer: coarse`), « / » place le curseur dans la recherche.
+  libellés, cibles de 48 px sur écran tactile (`pointer: coarse`), « / » place le curseur dans la recherche.
 
 ### Police
 

@@ -4,12 +4,17 @@ import { formatRelative } from '../lib/format';
 import { Icon } from './Icon';
 import { Card, Empty, incidentTypeLabel } from './ui';
 
+/** Typographie française dans un texte saisi : espace insécable avant « : ; ! ? » (jamais en début de ligne). */
+export function frenchSpacing(text: string): string {
+  return text.replace(/ ([:;!?])/g, '\u00a0$1');
+}
+
 export function alertText(i: IncidentDto): string {
   const who = i.reporter.name ?? 'Inconnu';
-  if (i.type === 'SOS') return `SOS · Livreur ${who}${i.description ? ` · ${i.description}` : ''}`;
+  if (i.type === 'SOS') return `SOS · Livreur ${who}${i.description ? ` · ${frenchSpacing(i.description)}` : ''}`;
   const order = i.orderNumber ? ` #${i.orderNumber}` : '';
   // Espace insécable avant « : » (typographie française : jamais de deux-points en début de ligne).
-  return `${incidentTypeLabel(i.type)}${order}\u00a0: ${i.description}`;
+  return `${incidentTypeLabel(i.type)}${order}\u00a0: ${frenchSpacing(i.description)}`;
 }
 
 /**

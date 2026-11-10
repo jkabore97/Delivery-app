@@ -3510,9 +3510,6 @@ a.person-name:hover {
 .login-radar circle:nth-child(3) {
   stroke-opacity: 0.1;
 }
-.login-radar circle:nth-child(4) {
-  stroke-opacity: 0.06;
-}
 .login-marker {
   position: absolute;
   top: 54px;
