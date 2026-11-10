@@ -39,12 +39,51 @@ describe('LiveTrackingLayout', () => {
   it('poignée : zone à toucher plus haute posée par-dessus le haut de la feuille, sans déplacer le contenu', async () => {
     const r = await render(wrap(layout()));
     const handle = r.getByLabelText('Afficher tout le détail');
-    expect(StyleSheet.flatten(handle.props.style)).toMatchObject({ position: 'absolute', top: 0, height: 28 });
+    expect(StyleSheet.flatten(r.getByTestId('sheet-handle-zone').props.style)).toMatchObject({ position: 'absolute', top: 0, height: 28 });
     const { height } = Dimensions.get('window');
     expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(height * 0.56));
     await act(async () => fireEvent.press(handle));
     expect(r.getByLabelText('Réduire le détail')).toBeTruthy();
     expect(StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight).toBe(Math.round(height * 0.86));
+  });
+
+  it('feuille tirée : vers le bas, réduite (la carte s’agrandit) ; vers le haut, ouverte en grand', async () => {
+    const r = await render(wrap(layout()));
+    const { height } = Dimensions.get('window');
+    const maxH = () => StyleSheet.flatten(r.getByTestId('tracking-sheet').props.style).maxHeight as number;
+    const zone = () => r.getByTestId('sheet-handle-zone');
+    let t = 1000;
+    const touch = (y0: number, y: number) => ({
+      nativeEvent: { touches: [{}], changedTouches: [{}], pageX: 100, pageY: y, timestamp: t },
+      touchHistory: {
+        numberActiveTouches: 1,
+        indexOfSingleActiveTouch: 0,
+        mostRecentTimeStamp: t,
+        touchBank: [{ touchActive: true, startPageX: 100, startPageY: y0, startTimeStamp: 1000, currentPageX: 100, currentPageY: y, currentTimeStamp: t, previousPageX: 100, previousPageY: y0, previousTimeStamp: 1000 }],
+      },
+    });
+    const drag = async (dy: number) => {
+      t += 600;
+      const p = zone().props;
+      await act(async () => {
+        p.onStartShouldSetResponderCapture(touch(400, 400));
+        p.onMoveShouldSetResponderCapture(touch(400, 400 + dy));
+        expect(p.onMoveShouldSetResponder(touch(400, 400 + dy))).toBe(true);
+        p.onResponderGrant(touch(400, 400 + dy));
+        t += 16;
+        p.onResponderMove(touch(400, 400 + dy));
+      });
+      await act(async () => p.onResponderRelease(touch(400, 400 + dy)));
+    };
+    const normal = Math.round(height * 0.56);
+    expect(maxH()).toBe(normal);
+    await drag(160);
+    expect(maxH()).toBeLessThan(normal);
+    expect(r.getByLabelText('Afficher le détail')).toBeTruthy();
+    await drag(-160);
+    expect(maxH()).toBe(normal);
+    await drag(-160);
+    expect(maxH()).toBe(Math.round(height * 0.86));
   });
 
   it('sans bouton flottant à gauche ni à droite, la pastille du milieu a toute la largeur', async () => {

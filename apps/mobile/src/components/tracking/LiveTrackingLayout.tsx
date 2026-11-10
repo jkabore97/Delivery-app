@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { PanResponder, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFollowCamera } from '../../hooks/useFollowCamera';
@@ -17,7 +17,8 @@ const SIDE_SHEET_WIDTH = 420;
 
 /**
  * Écran de suivi façon Uber / DoorDash, au dessin Cobalt : carte plein écran, pastilles et boutons blancs flottants en
- * haut, feuille blanche en bas (coins de 32 px, ombre de feuille, poignée 40 × 5, repliable en touchant la poignée),
+ * haut, feuille blanche en bas (coins de 32 px, ombre de feuille, poignée 40 × 5). La feuille se tire : vers le bas, elle
+ * se réduit à son haut (la carte s'agrandit) ; vers le haut, elle s'ouvre en grand ; toucher la poignée fait de même,
  * pastille blanche « Recentrer » dès que l'utilisateur déplace la carte. La caméra cadre ce qui reste visible au-dessus
  * de la feuille (marges : feuille + 90 px en bas, 60 px au moins sur les côtés). Sur un grand écran (≥ 900 px), la
  * carte occupe la gauche et la feuille devient un panneau blanc à droite. Sous des onglets, la feuille garde la place de
@@ -105,12 +106,62 @@ export function LiveTrackingLayout({
   const insets = useSafeAreaInsets();
   const { height, width: windowWidth } = useWindowDimensions();
   const [width, setWidth] = useState(windowWidth);
-  const [expanded, setExpanded] = useState(false);
+  const [mode, setMode] = useState<SheetMode>('normal');
+  const [dragHeight, setDragHeight] = useState<number | null>(null);
   const [sheetHeight, setSheetHeight] = useState(Math.round(height * 0.45));
   const [aboveHeight, setAboveHeight] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
   const camera = useFollowCamera(stageKey, fitPoints.length);
-  const maxSheet = Math.round(height * (expanded ? 0.86 : sheetMaxRatio));
+  const tabInsetForPeek = useTabBarInset();
+  // Feuille réduite : la poignée, l'en-tête éventuel et le haut du contenu (l'heure d'arrivée), au-dessus des onglets.
+  const peekHeight = Math.round(
+    HANDLE_SPACE + PEEK_CONTENT + (tabInsetForPeek > 0 ? tabInsetForPeek : insetBottomPeek(insets.bottom)),
+  );
+  const fullHeight = Math.round(height * 0.86);
+  const restHeight = mode === 'peek' ? peekHeight : mode === 'full' ? fullHeight : Math.round(height * sheetMaxRatio);
+  const maxSheet = dragHeight ?? restHeight;
+
+  // Glisser la feuille : depuis la poignée, toujours ; ailleurs dans la feuille, vers le bas quand son contenu est
+  // en haut, vers le haut quand elle est réduite ou que son contenu tient sans défiler (sinon le contenu défile).
+  const live = useRef({ mode, sheetHeight, scrollY: 0, scrollable: false, start: 0, peekHeight, fullHeight });
+  live.current = { ...live.current, mode, sheetHeight, peekHeight, fullHeight };
+  const [scrollable, setScrollable] = useState(false);
+  const viewport = useRef(0);
+  const contentH = useRef(0);
+  const updateScrollable = () => {
+    const next = contentH.current > viewport.current + 1;
+    live.current.scrollable = next;
+    setScrollable((v) => (v === next ? v : next));
+  };
+  const pans = useMemo(() => {
+    const make = (fromHandle: boolean) =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => {
+          if (Math.abs(g.dy) < 6 || Math.abs(g.dy) < Math.abs(g.dx)) return false;
+          if (fromHandle) return true;
+          const l = live.current;
+          if (g.dy > 0) return l.mode !== 'peek' && l.scrollY <= 0;
+          return l.mode === 'peek' || (l.mode === 'normal' && !l.scrollable);
+        },
+        onPanResponderGrant: () => {
+          live.current.start = live.current.sheetHeight;
+        },
+        onPanResponderMove: (_e, g) => {
+          const l = live.current;
+          setDragHeight(Math.max(l.peekHeight, Math.min(l.fullHeight, Math.round(l.start - g.dy))));
+        },
+        onPanResponderRelease: (_e, g) => {
+          setDragHeight(null);
+          const down = g.dy > SNAP_DISTANCE || g.vy > SNAP_VELOCITY;
+          const up = g.dy < -SNAP_DISTANCE || g.vy < -SNAP_VELOCITY;
+          setMode((m) => (down ? (m === 'full' ? 'normal' : 'peek') : up ? (m === 'peek' ? 'normal' : 'full') : m));
+        },
+        onPanResponderTerminate: () => setDragHeight(null),
+        onPanResponderTerminationRequest: () => false,
+      });
+    return { handle: make(true), sheet: make(false) };
+  }, []);
+  const handleLabel = mode === 'peek' ? 'Afficher le détail' : mode === 'full' ? 'Réduire le détail' : 'Afficher tout le détail';
   const wide = allowWide && width >= WIDE_LAYOUT_MIN_WIDTH;
   const mapWidth = wide ? width - SIDE_SHEET_WIDTH : width;
   const above = aboveSheet && !wide ? aboveHeight + ABOVE_SHEET_GAP : 0;
@@ -227,8 +278,9 @@ export function LiveTrackingLayout({
         style={
           wide
             ? [styles.sideSheet, { paddingTop: insets.top + spacing.md, paddingBottom: bottomPad }]
-            : [styles.sheet, shadows.sheet, { maxHeight: maxSheet, paddingBottom: bottomPad }]
+            : [styles.sheet, shadows.sheet, { maxHeight: maxSheet, paddingBottom: bottomPad }, Platform.OS === 'web' && styles.sheetWeb]
         }
+        {...(wide ? {} : pans.sheet.panHandlers)}
         onLayout={(e) => {
           if (!wide) setSheetHeight(Math.round(e.nativeEvent.layout.height));
         }}
@@ -241,20 +293,36 @@ export function LiveTrackingLayout({
               le haut de la feuille (zIndex), est plus haute (HANDLE_TOUCH, et 4 px au-dessus du bord sur le web).
             */}
             <View style={styles.handleSpace} />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={expanded ? 'Réduire le détail' : 'Afficher tout le détail'}
-              onPress={() => setExpanded((v) => !v)}
-              style={[styles.handleZone, Platform.OS === 'web' && styles.handleZoneWeb]}
-              testID="sheet-handle"
-            >
-              <View style={styles.handle} />
-            </Pressable>
+            <View style={[styles.handleZone, Platform.OS === 'web' && styles.handleZoneWeb]} testID="sheet-handle-zone" {...pans.handle.panHandlers}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={handleLabel}
+                accessibilityHint="Glissez vers le haut ou le bas pour agrandir ou réduire"
+                onPress={() => setMode((m) => (m === 'normal' ? 'full' : 'normal'))}
+                style={[styles.handlePress, Platform.OS === 'web' && styles.handlePressWeb]}
+                testID="sheet-handle"
+              >
+                <View style={styles.handle} />
+              </Pressable>
+            </View>
           </>
         )}
         {sheetHeader ? <View style={styles.sheetHeader}>{sheetHeader}</View> : null}
         <ScrollView
-          style={styles.scroll}
+          style={[styles.scroll, Platform.OS === 'web' && (scrollable && mode !== 'peek' ? styles.scrollWebPan : styles.scrollWebNoPan)]}
+          scrollEnabled={mode !== 'peek'}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            live.current.scrollY = e.nativeEvent.contentOffset.y;
+          }}
+          onLayout={(e) => {
+            viewport.current = e.nativeEvent.layout.height;
+            updateScrollable();
+          }}
+          onContentSizeChange={(_w, h) => {
+            contentH.current = h;
+            updateScrollable();
+          }}
           contentContainerStyle={[styles.content, fade ? { paddingBottom: spacing.md + fade - spacing.sm } : null]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -305,6 +373,13 @@ const PIN_CLEARANCE = 56;
 export const SHEET_FADE = 24;
 /** Place de la poignée en haut de la feuille (8 + 5 + 4 px). */
 const HANDLE_SPACE = 17;
+type SheetMode = 'peek' | 'normal' | 'full';
+/** Feuille réduite : hauteur du contenu gardé visible sous la poignée (l'heure d'arrivée, le titre de l'étape). */
+const PEEK_CONTENT = 150;
+const insetBottomPeek = (bottom: number) => Math.max(bottom, spacing.sm);
+/** Seuils du glissement : distance (px) ou vitesse (px/ms) pour passer à la position suivante. */
+const SNAP_DISTANCE = 40;
+const SNAP_VELOCITY = 0.5;
 /** Hauteur de la zone à toucher de la poignée (déborde de 11 px sur le haut du contenu, qui n'y est jamais actif). */
 const HANDLE_TOUCH = 28;
 /** Web : la zone commence 4 px au-dessus du bord de la feuille (juste sous la mention des données de la carte). */
@@ -369,8 +444,14 @@ const styles = StyleSheet.create({
   },
   handleSpace: { height: HANDLE_SPACE },
   // Coins de la feuille : l'anneau de focus du clavier (web) suit le haut arrondi de la feuille.
-  handleZone: { position: 'absolute', top: 0, left: 0, right: 0, height: HANDLE_TOUCH, zIndex: 2, alignItems: 'center', paddingTop: 8, borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS },
-  handleZoneWeb: { top: -HANDLE_ABOVE_WEB, height: HANDLE_TOUCH + HANDLE_ABOVE_WEB, paddingTop: 8 + HANDLE_ABOVE_WEB },
+  handleZone: { position: 'absolute', top: 0, left: 0, right: 0, height: HANDLE_TOUCH, zIndex: 2, borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS },
+  handleZoneWeb: { top: -HANDLE_ABOVE_WEB, height: HANDLE_TOUCH + HANDLE_ABOVE_WEB, touchAction: 'none', cursor: 'grab' } as object,
+  handlePress: { flex: 1, alignItems: 'center', paddingTop: 8, borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS },
+  handlePressWeb: { paddingTop: 8 + HANDLE_ABOVE_WEB },
+  // Web : le navigateur ne fait ni « tirer pour actualiser » ni défiler la page quand on tire la feuille.
+  sheetWeb: { overscrollBehavior: 'contain', touchAction: 'none' } as object,
+  scrollWebPan: { touchAction: 'pan-y', overscrollBehavior: 'contain' } as object,
+  scrollWebNoPan: { touchAction: 'none' } as object,
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: palette.handle },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
