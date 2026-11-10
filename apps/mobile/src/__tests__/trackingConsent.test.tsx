@@ -96,7 +96,7 @@ describe('Profil livreur : suivi GPS', () => {
     const r = await render(<DriverProfile />);
     expect(r.getByText('Accepté le 01/11/2026 08:05')).toBeTruthy();
     await act(async () => fireEvent.press(r.getByTestId('withdraw-consent')));
-    expect(alert.mock.calls[0]?.[0]).toBe('Retirer votre consentement ?');
+    expect(alert.mock.calls[0]?.[0]).toBe('Retirer votre consentement\u202f?');
     const buttons = alert.mock.calls[0]?.[2] ?? [];
     await act(async () => buttons.find((b) => b.style === 'destructive')?.onPress?.());
     expect(mockDriver.withdrawTrackingConsent).toHaveBeenCalled();

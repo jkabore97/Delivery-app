@@ -110,7 +110,7 @@ export function useDriverLocationTracking(opts: DriverTrackingOptions): DriverTr
           optsRef.current
             .send(toLocationPing(loc.coords))
             .catch((e: unknown) => {
-              if (optsRef.current.isOfflineError?.(e)) stop('rejected', 'Vous êtes hors ligne : suivi GPS arrêté.');
+              if (optsRef.current.isOfflineError?.(e)) stop('rejected', 'Vous êtes hors ligne : suivi GPS arrêté.');
             })
             .finally(() => {
               sending = false;

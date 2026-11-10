@@ -220,7 +220,7 @@ export default function DeliverScreen() {
       ) : (
         <View style={styles.paid}>
           <IconDisc icon="check" tone="mint" size={36} />
-          <Text style={styles.paidText}>Rien à encaisser : la livraison est déjà payée.</Text>
+          <Text style={styles.paidText}>Rien à encaisser : la livraison est déjà payée.</Text>
         </View>
       )}
 

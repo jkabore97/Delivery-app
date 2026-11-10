@@ -46,9 +46,10 @@ if (fs.existsSync(from)) {
 /* Préchargement des polices (toutes les pages)                         */
 /* ------------------------------------------------------------------ */
 
-// Graisses chargées au démarrage : `LOADED_WEIGHTS` de src/fonts.ts (le seul fichier qui connaît la police). Les
-// fichiers des paquets @expo-google-fonts portent leur graisse dans leur nom (« …_800ExtraBold.<hash>.ttf ») ; les
-// fichiers non chargés au démarrage (ex. 400) sont dans la sortie mais ne sont pas préchargés.
+// Graisses chargées au démarrage : `LOADED_WEIGHTS` de src/fonts.ts (le seul module qui connaît la police). Sur le web,
+// les fichiers sont les sous-ensembles WOFF2 latins de assets/fonts/ (src/fontFiles.web.ts), qui portent leur graisse
+// dans leur nom (« PlusJakartaSans_800ExtraBold.latin.<hash>.woff2 ») ; les fichiers non chargés au démarrage (ex. 400)
+// sont dans la sortie mais ne sont pas préchargés. Une graisse trouvée en plusieurs fichiers : le WOFF2 seul.
 const FONT_PLACEHOLDER = '/*YAAR_FONT_PRELOAD*/[]';
 const fontsSrc = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'src', 'fonts.ts'), 'utf8');
 const weightsMatch = /export const LOADED_WEIGHTS[^=]*=\s*\[([^\]]*)\]/.exec(fontsSrc);
@@ -65,6 +66,18 @@ const walkFonts = (dir) => {
   }
 };
 if (fs.existsSync(path.join(outDir, 'assets'))) walkFonts(path.join(outDir, 'assets'));
+{
+  // Une graisse, un fichier : le plus léger format (woff2 > woff > otf/ttf) si un TTF est aussi dans la sortie.
+  const rank = (u) => (/\.woff2$/i.test(u) ? 0 : /\.woff$/i.test(u) ? 1 : 2);
+  const byWeight = new Map();
+  for (const u of fontFiles) {
+    const w = /_(\d{3})[A-Za-z]*\./.exec(path.basename(u))?.[1];
+    const prev = byWeight.get(w);
+    if (!prev || rank(u) < rank(prev)) byWeight.set(w, u);
+  }
+  if (byWeight.size < fontFiles.length) console.warn(`web-postexport : ${fontFiles.length - byWeight.size} police(s) en double ignorée(s) (le WOFF2 est préchargé)`);
+  fontFiles.splice(0, fontFiles.length, ...byWeight.values());
+}
 fontFiles.sort();
 {
   const html = fs.readFileSync(indexPath, 'utf8');

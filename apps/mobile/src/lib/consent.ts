@@ -9,14 +9,14 @@ import { formatDateTime } from './format';
 export const TRACKING_CONSENT_TITLE = 'Suivi de votre position';
 
 export const TRACKING_CONSENT_INTRO =
-  'Pour vous proposer des courses et permettre leur suivi, Yaar a besoin de votre position GPS. Avant de passer en ligne, lisez comment elle est utilisée :';
+  'Pour vous proposer des courses et permettre leur suivi, Yaar a besoin de votre position GPS. Avant de passer en ligne, lisez comment elle est utilisée :';
 
 export const TRACKING_CONSENT_POINTS: readonly string[] = [
-  'Votre position est collectée uniquement lorsque vous êtes « En ligne » ou pendant une course. Hors ligne, aucune position n’est collectée et la dernière est effacée.',
+  'Votre position est collectée uniquement lorsque vous êtes « En ligne » ou pendant une course. Hors ligne, aucune position n’est collectée et la dernière est effacée.',
   'Elle sert à vous attribuer les courses proches et à suivre les livraisons.',
   'Elle est partagée avec le client uniquement pendant sa livraison, et avec les contrôleurs Yaar (sécurité, SOS, litiges).',
   'Les positions sont conservées 12 mois, puis supprimées.',
-  'Vous pouvez retirer votre consentement à tout moment (Profil › Suivi GPS) : vous passerez alors hors ligne et ne recevrez plus de courses.',
+  'Vous pouvez retirer votre consentement à tout moment (Profil › Suivi GPS) : vous passerez alors hors ligne et ne recevrez plus de courses.',
 ];
 
 export const TRACKING_CONSENT_ACCEPT = 'J’accepte le suivi de ma position';

@@ -91,7 +91,7 @@ describe('adresses', () => {
     const a = { lat: 12.12345678, lng: -1.987654321, address: ' Patte d’Oie ', landmark: ' station Total ' };
     expect(toAddressInput(a)).toEqual({ lat: 12.123457, lng: -1.987654, address: 'Patte d’Oie', landmark: 'station Total' });
     expect(addressLine({ address: 'Zogona', landmark: '' })).toBe('Zogona');
-    expect(addressLine({ address: 'Zogona', landmark: 'Boutique' })).toBe('Zogona · Repère : Boutique');
+    expect(addressLine({ address: 'Zogona', landmark: 'Boutique' })).toBe('Zogona · Repère\u202f: Boutique');
   });
 });
 

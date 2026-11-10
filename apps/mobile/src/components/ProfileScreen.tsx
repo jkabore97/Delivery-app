@@ -113,7 +113,7 @@ export function ProfileScreen({ color, buttonTextColor, top, children, beforeSig
         onPress={() =>
           void confirmAsync({
             title: 'Déconnexion',
-            message: 'Voulez-vous vous déconnecter ?',
+            message: 'Voulez-vous vous déconnecter ?',
             confirmText: 'Se déconnecter',
             destructive: true,
           }).then((ok) => {

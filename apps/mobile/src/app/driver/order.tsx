@@ -40,9 +40,9 @@ async function launchDirections(dest: AddressDto, label: string) {
  */
 function openDirections(dest: AddressDto, label: string) {
   void confirmAsync({
-    title: 'Ouvrir l’itinéraire ?',
+    title: 'Ouvrir l’itinéraire ?',
     message:
-      'Tant que Yaar n’est pas à l’écran, votre position n’est plus transmise : le destinataire et Yaar verront votre dernière position connue. Revenez dans Yaar dès que possible.',
+      'Tant que Yaar n’est pas à l’écran, votre position n’est plus transmise : le destinataire et Yaar verront votre dernière position connue. Revenez dans Yaar dès que possible.',
     cancelText: 'Rester dans Yaar',
     confirmText: 'Ouvrir le GPS',
   }).then((ok) => {
@@ -134,8 +134,8 @@ export default function DriverOrderScreen() {
   const num = formatOrderNumber(o.number);
   const hello = firstName(recipient, !!o.recipientIsBusiness);
   const whatsappText = pickupStage
-    ? `Bonjour, je suis ${profile?.name ?? 'le livreur'} de Yaar Livraison : j’arrive pour récupérer la course ${num}.`
-    : `Bonjour${hello ? ` ${hello}` : ''}, je suis votre livreur Yaar Livraison : j’arrive avec votre colis (${num}).`;
+    ? `Bonjour, je suis ${profile?.name ?? 'le livreur'} de Yaar Livraison : j’arrive pour récupérer la course ${num}.`
+    : `Bonjour${hello ? ` ${hello}` : ''}, je suis votre livreur Yaar Livraison : j’arrive avec votre colis (${num}).`;
   // Boutons ronds : 84 / 64 px (72 / 48 px, zone tactile de 56, sur un petit téléphone : place au détail).
   const primarySize = short ? 72 : 84;
   const contactSize = short ? 'small' : 'medium';
@@ -240,7 +240,7 @@ export default function DriverOrderScreen() {
               <View style={styles.landmark}>
                 <Icon name="flag" size={16} color={palette.cobaltText} strokeWidth={2.4} />
                 <Text style={styles.landmarkText}>
-                  <Text style={styles.landmarkLabel}>Repère : </Text>
+                  <Text style={styles.landmarkLabel}>Repère : </Text>
                   {target.landmark}
                 </Text>
               </View>
@@ -302,7 +302,7 @@ export default function DriverOrderScreen() {
         <View style={styles.detailRow}>
           <Icon name="route" size={18} color={palette.inkMuted} />
           <Text style={styles.muted}>
-            Ensuite : livrer à {recipient ?? 'le destinataire'} · {o.dropoff.address}
+            Ensuite : livrer à {recipient ?? 'le destinataire'} · {o.dropoff.address}
           </Text>
         </View>
       ) : null}

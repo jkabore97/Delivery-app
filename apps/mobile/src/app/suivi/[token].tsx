@@ -78,7 +78,7 @@ export default function PublicTrackingScreen() {
             testID="tracking-rate-limited"
             icon="clock"
             title="Trop de demandes depuis votre connexion"
-            text="Beaucoup de personnes suivent un colis depuis le même réseau. Gardez cette page ouverte : le suivi reprend tout seul dans moins d’une minute."
+            text="Beaucoup de personnes suivent un colis depuis le même réseau. Gardez cette page ouverte : le suivi reprend tout seul dans moins d’une minute."
             retrying
           />
         ) : (
@@ -265,7 +265,7 @@ function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stal
       {stale ? (
         <View style={styles.stale} accessibilityRole="alert">
           <TrackingIcon name="refresh" size={16} color={palette.sunText} strokeWidth={2.4} />
-          <Text style={styles.staleText}>Connexion instable : position mise à jour dès que possible…</Text>
+          <Text style={styles.staleText}>Connexion instable : position mise à jour dès que possible…</Text>
         </View>
       ) : null}
       {t.status === 'DELIVERED' ? <StateDisc icon="check" tone="success" size={short ? 52 : 64} /> : null}
@@ -309,7 +309,7 @@ function TrackingView({ data: t, stale, animationMs }: { data: TrackingDto; stal
         <InfoRow
           icon="home"
           title={t.dropoff.address}
-          subtitle={t.dropoff.landmark ? `Repère : ${t.dropoff.landmark}` : 'Livraison chez vous'}
+          subtitle={t.dropoff.landmark ? `Repère : ${t.dropoff.landmark}` : 'Livraison chez vous'}
           testID="dropoff-address"
         />
         {t.packageDescription ? <InfoRow icon="package" title={t.packageDescription} subtitle={t.recipientName ? `Pour ${t.recipientName}` : null} /> : null}

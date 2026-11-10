@@ -57,10 +57,10 @@ export function roleLabel(role: Role): string {
   }
 }
 
-export const BACK_OFFICE_MESSAGE = 'Ce compte est un compte de contrôle : utilisez la console web.';
+export const BACK_OFFICE_MESSAGE = 'Ce compte est un compte de contrôle : utilisez la console web.';
 
 export const CLIENT_ACCOUNT_MESSAGE =
-  'Bonjour ! Yaar Livraison est réservé aux entreprises et aux livreurs. Vous attendez un colis ? Pas besoin de compte : ouvrez le lien de suivi reçu par SMS ou WhatsApp pour suivre votre livreur en direct.';
+  'Bonjour ! Yaar Livraison est réservé aux entreprises et aux livreurs. Vous attendez un colis ? Pas besoin de compte : ouvrez le lien de suivi reçu par SMS ou WhatsApp pour suivre votre livreur en direct.';
 
 /** Message affiché quand un compte sans espace mobile se connecte (null : compte autorisé). */
 export function blockedAccountMessage(role: Role): string | null {

@@ -91,7 +91,7 @@ export default function LoginScreen() {
   const submit = async () => {
     const normalized = normalizePhone(phone);
     if (!normalized) {
-      setError('Numéro invalide : 8 chiffres (ex. 70 12 34 56).');
+      setError('Numéro invalide : 8 chiffres (ex. 70 12 34 56).');
       return;
     }
     setError(null);
@@ -167,7 +167,7 @@ export default function LoginScreen() {
         <Text style={styles.hint} testID="login-code-hint">
           {demo
             ? `Entrez votre numéro de téléphone, puis le code de démonstration ${DEMO_OTP_CODE} (aucun SMS n’est envoyé).`
-            : `Entrez votre numéro de téléphone : vous recevrez un code par ${channel}.`}
+            : `Entrez votre numéro de téléphone : vous recevrez un code par ${channel}.`}
         </Text>
         <PhoneField value={phone} onChangeText={setPhone} onSubmit={() => void submit()} error={error} />
         <Button
@@ -184,8 +184,8 @@ export default function LoginScreen() {
             <Icon name="package" size={22} color={palette.cobaltText} strokeWidth={2.2} />
           </View>
           <View style={styles.recipientText}>
-            <Text style={styles.recipientTitle}>Vous attendez un colis ?</Text>
-            <Text style={styles.recipientBody}>Pas besoin de compte : ouvrez le lien de suivi reçu par SMS ou WhatsApp pour suivre votre livreur.</Text>
+            <Text style={styles.recipientTitle}>Vous attendez un colis ?</Text>
+            <Text style={styles.recipientBody}>Pas besoin de compte : ouvrez le lien de suivi reçu par SMS ou WhatsApp pour suivre votre livreur.</Text>
           </View>
         </View>
       </Screen>

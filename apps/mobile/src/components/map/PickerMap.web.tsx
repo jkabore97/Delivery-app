@@ -72,7 +72,7 @@ export const PickerMap = forwardRef<PickerMapHandle, PickerMapProps>(function Pi
       {status !== 'ready' ? (
         <View style={styles.overlay} pointerEvents="none">
           <Text style={styles.overlayText}>
-            {status === 'loading' ? 'Chargement de la carte…' : 'Carte indisponible : indiquez l’adresse et le repère.'}
+            {status === 'loading' ? 'Chargement de la carte…' : 'Carte indisponible : indiquez l’adresse et le repère.'}
           </Text>
         </View>
       ) : null}

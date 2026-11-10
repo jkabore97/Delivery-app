@@ -31,7 +31,7 @@ export function DisputeBox({
     setState({ busy: true, msg: null, ok: false });
     try {
       await api.disputeOrder(orderId, text.trim());
-      setState({ busy: false, msg: 'Signalement envoyé : un contrôleur va vous contacter.', ok: true });
+      setState({ busy: false, msg: 'Signalement envoyé : un contrôleur va vous contacter.', ok: true });
     } catch (e) {
       setState({ busy: false, msg: errorMessage(e), ok: false });
     }

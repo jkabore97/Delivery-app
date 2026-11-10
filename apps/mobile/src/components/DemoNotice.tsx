@@ -18,10 +18,10 @@ export function DemoNotice({ onPick }: { onPick: (phone: string, role: 'SELLER' 
         <View style={styles.codeDisc}>
           <TrackingIcon name="info" size={18} color={palette.cobaltText} strokeWidth={2.4} />
         </View>
-        <Text style={styles.title}>Mode démo : utilisez le code {DEMO_OTP_CODE}</Text>
+        <Text style={styles.title}>Mode démo : utilisez le code {DEMO_OTP_CODE}</Text>
       </View>
       <DemoDataWarning />
-      <Text style={styles.sub}>Comptes de démonstration (touchez pour remplir) :</Text>
+      <Text style={styles.sub}>Comptes de démonstration (touchez pour remplir) :</Text>
       <View style={styles.accounts}>
         {DEMO_ACCOUNTS.map((a) => (
           <Pressable

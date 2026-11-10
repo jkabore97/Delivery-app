@@ -230,7 +230,7 @@ describe('Accueil de l’entreprise (téléphone) : carte, chiffres du jour et l
     expect(r.getByText('Entreprise en attente de validation')).toBeTruthy();
     expect(r.queryByTestId('new-delivery')).toBeNull();
     const off = r.getByTestId('new-delivery-unavailable');
-    expect(off.props.accessibilityLabel).toBe('Nouvelle livraison, indisponible : entreprise en attente de validation');
+    expect(off.props.accessibilityLabel).toBe('Nouvelle livraison, indisponible\u202f: entreprise en attente de validation');
     await fireEvent.press(off);
     expect(mockPush).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith('Entreprise en attente de validation', expect.stringMatching(/Yaar vérifie votre entreprise/));

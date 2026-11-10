@@ -57,7 +57,7 @@ const PACKAGE_SUGGESTIONS = ['Documents', 'Petit colis', 'Carton', 'Repas', 'Mé
 type Step = 1 | 2 | 3;
 type SetForm = (fn: (f: DeliveryForm) => DeliveryForm) => void;
 
-const STEP_TITLES: Record<Step, string> = { 1: 'Où livrer ?', 2: 'Colis et prix', 3: 'Récapitulatif' };
+const STEP_TITLES: Record<Step, string> = { 1: 'Où livrer ?', 2: 'Colis et prix', 3: 'Récapitulatif' };
 
 /**
  * Nouvelle livraison (comme Uber Direct), en Cobalt : 1. destination sur la carte (épingle centrale, quartiers proches
@@ -556,7 +556,7 @@ function PackageStep({
   return (
     <>
       <DarkField
-        label="Que livrez-vous ?"
+        label="Que livrez-vous ?"
         placeholder="Ex. 2 cartons, une enveloppe de documents"
         value={form.packageDescription}
         onChangeText={(t) => set('packageDescription', t)}
@@ -581,13 +581,13 @@ function PackageStep({
       {quote ? <VehicleChoices options={quote.options} selected={vehicle} onSelect={(v) => set('vehicleType', v)} /> : null}
       {quote ? (
         <Text style={styles.small}>
-          Distance estimée : <Text style={tabular}>{formatKm(quote.distanceKm)}</Text> · retrait chez {storeName}.
+          Distance estimée : <Text style={tabular}>{formatKm(quote.distanceKm)}</Text> · retrait chez {storeName}.
         </Text>
       ) : null}
       {quoteError ? <DarkBanner message={quoteError} /> : null}
       {errors.vehicleType ? <DarkBanner message={errors.vehicleType} /> : null}
 
-      <SectionLabel>Qui paie la livraison ?</SectionLabel>
+      <SectionLabel>Qui paie la livraison ?</SectionLabel>
       <View style={{ gap: spacing.sm }} accessibilityRole="radiogroup">
         {(['SENDER', 'RECIPIENT'] as FeePayer[]).map((p) => (
           <ChoiceRow
@@ -687,7 +687,7 @@ function SummaryStep({
             </Text>
             <Text style={styles.small}>
               {d?.address}
-              {d?.landmark ? ` · Repère : ${d.landmark}` : ''}
+              {d?.landmark ? ` · Repère : ${d.landmark}` : ''}
             </Text>
             <Text style={[styles.small, tabular]}>{formatPhone(form.recipientPhone.trim()) || form.recipientPhone}</Text>
           </View>
@@ -713,7 +713,7 @@ function SummaryStep({
         testID="summary-recipient-pays"
       />
       <Text style={styles.small}>
-        Après la demande, envoyez au destinataire son lien de suivi : il verra le livreur en direct et le code à lui donner.
+        Après la demande, envoyez au destinataire son lien de suivi : il verra le livreur en direct et le code à lui donner.
       </Text>
     </>
   );

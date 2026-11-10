@@ -6,7 +6,7 @@ utilisée avec parcimonie, des cartes blanches à ombre douce sur un fond gris-b
 **Pas de mode sombre** : les livreurs travaillent en plein soleil, où une interface claire au texte encre se lit le
 mieux.
 
-Code : `apps/mobile/src/theme.ts` (jetons), `apps/mobile/src/fonts.ts` (police), `apps/mobile/src/components/Text.tsx`
+Code : `apps/mobile/src/theme.ts` (jetons), `apps/mobile/src/fonts.ts` (police, avec `fontFiles(.web).ts`), `apps/mobile/src/components/Text.tsx`
 (textes), `apps/mobile/src/components/design/` (composants), `apps/mobile/src/components/tracking/` (suivi),
 `apps/mobile/src/components/ui.tsx` (composants de base). Planche de référence : `boards/cobalt.png` du dossier de
 conception.
@@ -43,6 +43,14 @@ Contrastes WCAG 2 mesurés (texte normal : 4,5:1 au moins ; c'est vérifié par 
 | `coralTint` | `#FFE4E1` | bandeaux d'erreur | |
 | `coralText` | `#B42318` | texte d'erreur | 5,46 coralTint · 6,57 blanc · 6,07 raised |
 | `overlay` | `rgba(12,18,34,.45)` | voile derrière une fenêtre | |
+| `backdrop` | `#DCE1E9` | web : fond de la page autour de la colonne « téléphone » | |
+
+**Transparences : `alpha(couleur, opacité)`** (`theme.ts`) donne `rgba(…)` à partir d'un jeton : voile sur un fond
+(`alpha(palette.ink, 0.08)` derrière un pictogramme sur soleil), filet ou pastille translucide sur la tuile cobalt
+(`alpha(palette.white, 0.16)`), halo d'un point d'état (`alpha(palette.mint, 0.18)`), ombre. Jamais de `rgba(…)` écrit à
+la main dans un écran. Les ombres de `shadows` en sont faites (`shadows.hairline` : filet d'ombre d'un bouton blanc sur
+une carte blanche). Les cartes ont leur propre palette (`lib/map/palette.ts`, partagée avec la console) et leur
+`rgba(hex, a)`.
 
 **Règles**
 
@@ -53,37 +61,17 @@ Contrastes WCAG 2 mesurés (texte normal : 4,5:1 au moins ; c'est vérifié par 
 - Pas de dégradé (au plus un reflet à peine visible en haut de la tuile héros), pas de liseré coloré sur le côté d'une
   carte, pas d'émoji (pictogrammes dessinés : `Icon`).
 
-### Anciens jetons (écrans pas encore redessinés)
+### Anciens jetons et alias : supprimés
 
-`colors`, `dark`, `radius`, `typeScale` et `roleColor` restent exportés, **marqués `@deprecated`**, avec des valeurs
-Cobalt claires : les écrans pas encore redessinés forment déjà une application claire et lisible. Chaque couple
-texte / fond de ces jetons a été vérifié (4,5:1 au moins, test `designSystem.test.tsx`).
-
-| Ancien jeton | Devient | Remarque |
-|---|---|---|
-| `dark.background` | `canvas` | écrans pleins |
-| `dark.surface` | `card` (blanc) | feuilles |
-| `dark.raised` / `dark.raisedHigh` | `raised` / `raisedHigh` | |
-| `dark.border` | `line` | |
-| `dark.text` | `ink` | |
-| `dark.textMuted`, `dark.textFaint` | `inkMuted` | 5,07:1 au moins sur tous les fonds clairs |
-| `dark.green` | `cobalt` | action, gain ; texte 5,23:1 au moins |
-| `dark.greenInk` | blanc | texte sur l'action |
-| `dark.greenSoft` | `cobaltTint` | |
-| `dark.red` | `coralText` `#B42318` | `#D92D20` n'aurait que 4,01:1 sur coralTint |
-| `dark.redFill` | `coralFill` | |
-| `dark.redSoft` | `coralTint` | |
-| `dark.amber` | `amberText` `#8A5A00` (texte) | un FOND d'espèces s'écrit `palette.sun` (`DarkProgress` le fait seul) |
-| `dark.amberSoft` | `sunTint` | |
-| `dark.overlay` / `dark.chip` | voile encre / blanc | |
-| `colors.green`, `colors.orange`, `colors.blue` | `cobalt` | accents des espaces |
-| `colors.greenLight`, `colors.orangeLight`, `colors.blueLight` | `cobaltTint` | |
-| `colors.red` / `colors.redLight` | `coralText` / `coralTint` | |
-| `colors.text` / `textMuted` / `border` / `background` | `ink` / `inkMuted` / `line` / `canvas` | |
-| `roleColor.*` | `cobalt` | un seul accent pour tous |
-| `radius.sm` / `md` / `lg` | 12 / 16 / 24 | |
-| `typeScale.*` | valeurs Cobalt (800 au plus) | `typeScale.hero` = `typography.display` |
-| `BUSINESS_ACCENT`, `ORANGE_INK`, `ORANGE_TEXT` (`components/business/accent.ts`) | cobalt, blanc, cobalt | |
+Tous les écrans sont redessinés : les jetons `colors`, `dark`, `roleColor`, `radius`, `typeScale` (theme.ts) et
+`BUSINESS_ACCENT` / `ORANGE_INK` / `ORANGE_TEXT` (components/business/accent.ts) n'existent plus, comme les alias et
+props sans effet : `DarkScreen`, `DarkHeader`, `DarkProgress`, les tons `green` / `amber` / `dark` de `Pill` (le ton
+neutre s'appelle `neutral`, défaut), `Surface 'dark'`, les props `theme` (éléments de suivi, `SheetSurface`, `AmountRow`,
+`MapIconButton`, `PackageCard`, `MapAttribution`, `LiveMap`), `surface` de `StatusChip`, `tone` (`RatingCard`,
+`DisputeBox`, `StoreApprovalBanner`, `ShareFeedback`, `ShareTrackingCard`), `sheetTheme` / `mapTheme` de
+`LiveTrackingLayout`, `TRACKING_PALETTES` / `TrackingTheme` / `RECIPIENT_SHEET_THEME`, `VEHICLE_EMOJI`, `TabIcon`,
+`label` de `FloatingButton`, et côté carte `MapTheme`, `MAP_PALETTES`, `FALLBACK_STYLE_DARK`, `MAP_STYLE_DARK_URL`,
+`DEFAULT_MAP_STYLE_DARK_URL`, `ANDROID_MAP_STYLE_DARK`, `BaseMap.setTheme`. Le compilateur refuse leur retour.
 
 ## 2. Forme, profondeur, espacement
 
@@ -123,8 +111,10 @@ toute heure, montant, nombre, plaque et code : la police a des chiffres proporti
 
 Ordinateur : même échelle, héros 72–76, display 32.
 
-**Typographie française** : espace insécable avant « : ? ! » et comme séparateur des milliers (`formatFcfa`) ;
-guillemets « » ; apostrophe ’ ; heures « 12:09 ». La police n'a pas l'espace fine insécable U+202F : le `Text` de
+**Typographie française** : espace fine insécable (U+202F) avant « : ; ? ! », à l'intérieur des guillemets « » et
+comme séparateur des milliers (`formatFcfa`) ; apostrophe ’ ; heures « 12:09 ». Le test
+`src/__tests__/frenchTypography.test.ts` refuse une espace ordinaire à ces places dans les textes de `apps/mobile/src`
+(sauf `lib/share.ts` : un SMS avec U+202F passerait en UCS-2). La police n'a pas l'espace fine insécable U+202F : le `Text` de
 l'application la dessine en espace insécable U+00A0 (`FONT_MISSING_CHARS` de `fonts.ts`), les données gardent U+202F.
 Elle n'a pas « ⌘ » (pictogramme `command`) ; « ★ » et « ≈ » existent mais s'écrivent avec les pictogrammes `star`,
 `approx` dans les grands textes.
@@ -144,22 +134,48 @@ Elle n'a pas « ⌘ » (pictogramme `command`) ; « ★ » et « ≈ » existent
 - **Chargement** (`src/app/_layout.tsx`) : l'écran de démarrage reste affiché (web : celui du HTML,
   `public/index.html`) jusqu'au chargement, **2,5 s au plus** ; erreur ou délai : police du système (Android / iOS :
   décision figée pour la session ; web : le navigateur substitue la police quand elle arrive, `font-display: swap`).
+- **Fichiers** : Android / iOS, les TTF complets du paquet (`src/fontFiles.ts`, ≈ 95 ko par graisse, dans
+  l'application) ; **web, des sous-ensembles WOFF2 « latins »** (`assets/fonts/PlusJakartaSans_<graisse><Nom>.latin.woff2`,
+  listés par `src/fontFiles.web.ts`, que Metro choisit pour le web) : ≈ 11 ko par graisse, **44 ko pour les 4 graisses**
+  au lieu de 175 ko compressés. Ils couvrent U+0000–00FF, Œ œ Ÿ, U+2000–206F (’ « » … – — espaces), €, →, −, ≈ : tout
+  le texte français de l'application (et de l'API). Un caractère absent (nom dans une autre écriture) est dessiné par la
+  police du système, qui suit dans chaque famille.
 - **Web** : `scripts/web-postexport.mjs` écrit dans `index.html` la liste des polices chargées au démarrage, que la page
-  précharge dès ses premiers octets, en parallèle du JavaScript (4 fichiers, 370 ko, ≈ 175 ko compressés).
+  précharge dès ses premiers octets, en parallèle du JavaScript (4 fichiers WOFF2, 44 ko).
 - **Page publique de suivi** (`/suivi/…`, ouverte depuis un SMS, souvent en 3G) : le suivi d'abord. Les polices n'y
-  sont pas préchargées (elles prendraient la bande passante du JavaScript), l'attente est de 0,2 s au plus
-  (`FONT_PUBLIC_TIMEOUT_MS`) : première visite en police du système, remplacée à l'arrivée des polices ; visites
-  suivantes en cache. Connexion très lente (2G, économie de données) : aucune police téléchargée.
+  sont pas préchargées, la mise en page racine les demande au démarrage (44 ko : elles arrivent peu après le JavaScript,
+  sans retarder la carte) et les attend 0,2 s au plus (`FONT_PUBLIC_TIMEOUT_MS`) : première visite en police du système,
+  remplacée à l'arrivée des polices (décalage mesuré : 0,003) ; visites suivantes en cache (`vercel.json` : fichiers
+  hachés `/_expo/static/…` et `/assets/…` en cache un an, `immutable` ; `index.html` et `/map/cobalt-style.json` non).
+  Connexion très lente (2G, économie de données) : aucune police téléchargée. Aucun écran ne charge de police lui-même.
 
 ### Changer de police
 
 1. Dans `apps/mobile` : `npx expo install @expo-google-fonts/<nouvelle-police>` (sans réseau vers l'API d'Expo :
    `EXPO_OFFLINE=1 npx expo install …`), puis retirer `@expo-google-fonts/plus-jakarta-sans` du `package.json`.
-2. Dans `src/fonts.ts`, et nulle part ailleurs : les `import` des fichiers (une graisse par sous-dossier, ex.
-   `@expo-google-fonts/inter/600SemiBold`), `FONT_NAME`, `FAMILY_PREFIX`, `FONT_FILES` (une ligne par graisse,
-   italique facultatif), `LOADED_WEIGHTS` si les graisses changent, et `FONT_MISSING_CHARS` (caractères que la
-   nouvelle police n'a pas : la vider si elle a U+202F).
-3. Vérifier : `npx jest src/__tests__/fonts.test.tsx src/__tests__/textImports.test.ts` (adapter les noms de familles
+2. Android / iOS : dans `src/fontFiles.ts`, les `import` des fichiers (une graisse par sous-dossier, ex.
+   `@expo-google-fonts/inter/600SemiBold`), une ligne par graisse (italique facultatif).
+3. Web : refaire les sous-ensembles WOFF2 dans `assets/fonts/` (fontTools : `pip install fonttools brotli`), une
+   commande par graisse, puis les lister dans `src/fontFiles.web.ts` :
+
+   ```sh
+   cd apps/mobile
+   for w in 400Regular 500Medium 600SemiBold 700Bold 800ExtraBold; do
+     pyftsubset node_modules/@expo-google-fonts/<police>/$w/<Police>_$w.ttf \
+       --unicodes="U+0000-00FF,U+0152-0153,U+0178,U+2000-206F,U+20AC,U+2192,U+2212,U+2248" \
+       --layout-features+=tnum,case --flavor=woff2 \
+       --output-file=assets/fonts/<Police>_$w.latin.woff2
+   done
+   ```
+
+   `tnum` est indispensable (chiffres tabulaires de toutes les heures et de tous les montants). Garder
+   « `_<graisse><Nom>.` » dans le nom : le script du web y lit la graisse. Un nouveau caractère dans un texte (hors de
+   ces plages) : l'ajouter à `--unicodes`.
+4. Dans `src/fonts.ts` : `FONT_NAME`, `FAMILY_PREFIX`, `LOADED_WEIGHTS` si les graisses changent,
+   `FONT_MISSING_CHARS` (caractères que la nouvelle police n'a pas : la vider si elle a U+202F) et `GLYPH_EM` (avances
+   des chiffres, de l'espace, des lettres : elles règlent `FitAmount` et la taille des heures ; à mesurer sur les
+   fichiers).
+5. Vérifier : `npx jest src/__tests__/fonts.test.tsx src/__tests__/textImports.test.ts` (adapter les noms de familles
    attendus), `npm run export:web` (le message « N police(s) préchargée(s) » doit lister les graisses), puis regarder
    les écrans : une autre police a d'autres proportions (titres longs, chiffres tabulaires `tnum`, hauteur de ligne).
 
@@ -173,21 +189,57 @@ la graisse. Une police d'une autre source doit garder ce motif de nom (ou adapte
 | `Text`, `TextInput` | `components/Text.tsx` | tout texte, tout champ |
 | `Icon` (+ `ICON_PARTS`) | `design/Icon.tsx`, `design/iconPaths.ts` | pictogrammes dessinés, grille 24, trait 2,2 arrondi : 50 noms (dont `search`, `bell`, `settings`, `chart`, `grid`, `eye`, `shield`, `approx`, `command`, chevrons, `star` / `starOutline`, `moto` / `bike` / `car`, `logout`) |
 | `TrackingIcon` | `tracking/TrackingIcon(.web).tsx` | mêmes tracés sans react-native-svg sur le web : à utiliser dans tout ce que charge la page publique (`ui.tsx`, `tracking/*`) |
-| `Pill` | `design/Pill.tsx` | pilule 40 px (étiquette) ou bouton (44 / 56 px `lg`) : `cobalt` action principale, `outline` secondaire (blanc, filet fin), `red` destructif, `sun` espèces, `tint` choix actif, `light` + `floating` sur la carte |
+| `Pill` | `design/Pill.tsx` | pilule 40 px (étiquette) ou bouton (44 / 56 px `lg`) : `neutral` étiquette (défaut, raised), `cobalt` action principale, `outline` secondaire (blanc, filet fin), `red` destructif, `sun` espèces, `tint` choix actif, `light` + `floating` sur la carte |
 | `StatusChip` | `design/Pill.tsx` | puce d'état 28 px 13/700, en minuscules : en livraison `blue` (cobaltTint), vers vous / retrait `amber` (soleil), recherche `grey` + `dot`, livrée `green`, annulée `red` |
 | `MapIconButton`, `FloatingButton`, `FloatingChip` | `design/Pill.tsx`, `tracking/LiveTrackingLayout.tsx` | disques et pastilles blancs à ombre flottante posés sur la carte |
 | `RoundButton`, `CallRoundButton`, `WhatsAppRoundButton` | `design/` | disques 48 / 64 / 84 : `primary` cobalt (une action évidente), `neutral` blanc à ombre et pictogramme cobalt (contacts), `danger` rouge plein ; libellé 13/600 dessous ; `surface="cobalt"` sur la tuile héros |
 | `CountdownRing` | `design/` | anneau cobalt qui se vide (rouge les 10 dernières secondes) autour de « Accepter » |
 | `PackageCard` | `design/` | carte de colis blanche (24, ombre `tile`), pastille aux initiales cobaltTint, puce d'état, repère, montant en pilule soleil, contacts à côté (jamais dans) la partie qui ouvre |
-| `SheetSurface`, `SurfaceScreen`, `ScreenHeader`, `ProgressTrack`, `AmountRow` | `design/Surfaces.tsx` | feuille blanche 32, écran canvas, barre de titre, barre fine (soleil pour les espèces), ligne de montant (tuile soleil pour les espèces) |
+| `SheetSurface`, `SurfaceScreen`, `ScreenHeader`, `ProgressTrack`, `AmountRow` | `design/Surfaces.tsx` | feuille blanche 32, écran canvas, barre de titre, barre fine (soleil pour les espèces), ligne de montant (tuile soleil pour les espèces ; montant `FitAmount`, 60 % de la ligne au plus, « FCFA » à 0,6 ; `hero` : 40 px sur toute la largeur) |
+| `FitAmount`, `fitAmountSize`, `fitFontSize`, `useFitFontSize` | `design/FitAmount.tsx` (sans react-native-svg) | **un montant n'est jamais coupé ni terminé par « … »** : la plus grande taille qui tient sur une ligne (de `size` à `minSize`, 18 par défaut), puis « FCFA » à la ligne ; chiffres 800 tabulaires, « FCFA » à `unitScale` (0,5), `sign` « + » / « − », `align`, `width` connue ou mesurée (la place doit alors s'étirer : colonne, ou `flex: 1` dans une ligne). Le texte de l'élément `testID` est `formatFcfa` à l'identique. Pour un autre texte en grands chiffres (heure, KPI) : `useFitFontSize(texte, max, min)` |
 | `FloatingTabBar`, `TabBarInsetProvider`, `tabIcon` | `design/TabBar.tsx` | barre d'onglets en pilule blanche flottante, onglet actif en capsule cobalt ; les mises en page gardent sa place (`useTabBarInset`) |
-| `LiveTrackingLayout` | `tracking/` | carte plein écran + feuille blanche (32, poignée, ombre), pastilles blanches, « Recentrer » ; panneau à droite sur ordinateur |
-| `ArrivalHeadline`, `StepsProgress`, `DeliveryCodeChip`, `AmountBox`, `DriverCard`, `InfoBlock` / `InfoRow`, `StateDisc` | `tracking/TrackingParts.tsx` | heure d'arrivée en très grand (800 tabulaire) + pastille « dans 12 min », pilules segmentées (faite cobalt, en cours à moitié, à venir grise), code en tuile cobalt (le héros de la page publique), montant en tuile soleil, livreur (pastille soleil aux initiales, note dessinée), blocs d'infos remplis |
+| `LiveTrackingLayout` | `tracking/` | carte plein écran + feuille blanche (32, poignée, ombre), pastilles blanches, « Recentrer » ; panneau à droite sur ordinateur. Options : `fadeBottom` (fondu blanc au bas du contenu, au-dessus du pied ou de la barre d'onglets : `true` = 24 px ou une hauteur ; testID `sheet-fade`), `recenterControl="always"` (disque « Recentrer » toujours visible en haut à droite, sous `topRight`, testID `recenter-button`), barre du haut : sans `topCenter`, `topLeft` est **large** (pastille alignée à gauche jusqu'au bouton de droite) ; `TOP_SIDE_WIDTH` (52) exporté. Le cadrage garde les épingles sous la barre du haut (hauteur mesurée + 56 px) |
+| `ArrivalHeadline`, `StepsProgress`, `DeliveryCodeChip`, `AmountBox`, `DriverCard`, `InfoBlock` / `InfoRow`, `StateDisc` | `tracking/TrackingParts.tsx` | heure d'arrivée en très grand (800 tabulaire) + pastille « dans 12 min » (`size="hero"` : 64 px, 48 sur écran court, pastille 16/800, état 16/800 ; la phrase du livreur cède sa place sur écran court ; `widthGuess`), pilules segmentées (faite cobalt, en cours à moitié, à venir grise), code en tuile cobalt (le héros de la page publique), montant en tuile soleil (`AmountBox` : `icon` pastille à gauche, `compact` d'une ligne, 60 px, par défaut sur écran court ; montant `FitAmount`), livreur (pastille soleil aux initiales, note dessinée), blocs d'infos remplis |
+| `LiveMap` (`zoomRef`) | `map/LiveMap(.web).tsx` | `const zoom = useRef<LiveMapHandle>(null)` ; `<LiveMap zoomRef={zoom} …/>` ; `zoom.current?.zoomBy(1)` / `(-1)` : zoom en douceur (web MapLibre, Google Maps, Apple Plans), compté comme un geste (la caméra cesse de suivre) |
 | `Button`, `Card`, `Field`, `Chip`, `Badge`, `Banner`, `Stat`, `KeyValue`, `ProgressBar`, `Screen`… | `components/ui.tsx` | base : bouton pilule 56 px (cobalt plein, secondaire blanc à filet, tertiaire texte), carte blanche 24, champ rempli 56 px à anneau cobalt de 2 px au focus, bandeaux teintés à pictogramme (info cobalt, avertissement soleil, erreur corail, réussite mint) |
 | `DarkField`, `DarkBanner`, `SectionLabel`, `ChoiceRow` | `business/DarkForm.tsx` | mêmes règles pour le parcours « Nouvelle livraison » (noms d'origine gardés) |
 | `CourierIllustration`, `GalleryIcon` | `design/` | illustrations recolorées (cobalt, soleil, encre, blanc) |
 
-## 5. À faire / à ne pas faire
+## 5. Anneau de focus du clavier (web)
+
+`public/index.html` dessine UN anneau pour toute l'application : `:where(:focus-visible)` → **2 px cobalt détachés de
+2 px**, qui suivent les coins de l'élément (contraste 6,1:1 sur blanc, 5,4:1 sur canvas). `:where()` ne compte pas : un
+composant qui dessine son propre anneau l'emporte (`Field` : bordure cobalt de 2 px et `outlineStyle: 'none'` ; le
+contour « auto » noir de Chrome ne passe plus).
+
+Marqueurs (`theme.ts`, attributs `data-*` du web, rien en natif) :
+- `FOCUS_RING_INNER` sur l'élément focalisable dont la forme visible est un enfant, `FOCUS_SHAPE` sur cette forme :
+  l'anneau entoure le disque d'un bouton rond (et non la colonne disque + libellé, qui rognait le libellé) ou la
+  pastille d'un `Pressable` élargi. Déjà posés par `RoundButton`, `Pill` (bouton), `MapIconButton`,
+  `TrackingRoundButton`.
+- `ON_COBALT_SURFACE` sur un conteneur cobalt plein (tuile héros) : l'anneau de ses éléments devient **blanc à halo
+  cobalt** (6,1:1 sur cobalt, visible aussi là où il déborde sur du blanc). `RoundButton surface="cobalt"` le pose
+  lui-même (`FOCUS_RING_INNER_ON_COBALT`).
+
+## 6. Ordinateur : espace entreprise (≥ 1024 px)
+
+- **Coquille** : la mise en page racine donne toute la fenêtre aux adresses `/business…` dès 1024 px
+  (`isWideAppPath(pathname, largeur)` de `lib/webShell.ts`, `WIDE_APP_MIN_WIDTH`) ; en dessous, colonne « téléphone » de
+  440 px. La page publique a sa propre règle (`isFullWidthPath`, qui décide aussi de sa politique de polices).
+- **Barre latérale** blanche de 240 px : mot-symbole « Yaar » 800 + point cobalt, liens en pilule (actif cobaltTint /
+  cobaltText avec pictogramme ; « Vue d'ensemble » avec le nombre de livraisons en cours), carte de l'entreprise en bas
+  (changement d'établissement s'il y en a plusieurs, sinon le profil).
+- **Tableau de bord** : titre 30/800 + ligne de date en direct ; recherche en pilule (numéro ou destinataire, sans
+  accents ; ⌘K / Ctrl K, Échap ; la console utilise « / ») ; « Nouvelle livraison » en pilule cobalt en haut à droite ;
+  grille de tuiles espacées de 16 : carte pleine hauteur (pastille « 3 en cours | 1 en recherche », zoom « + » / « − »
+  par `zoomRef`, « Recentrer »), tuiles KPI (la tuile des espèces en soleil avec la ligne des frais), LA tuile héros
+  cobalt (heure géante, code, livreur et contacts, montant en soleil), listes « En cours » et « Dernières livraisons ».
+- **Détail, assistant, historique, profil** : en-tête de page + tuile carte + colonne de tuiles ; tableau pour
+  l'historique ; page « Établissements » pour le profil.
+- Mesures : `components/business/desktop/layout.ts` (`DESKTOP_MIN_WIDTH` = 1024, `SIDEBAR_WIDTH` 240, `PAGE_PADDING`
+  32, `TILE_GAP` 16).
+
+## 7. À faire / à ne pas faire
 
 **À faire**
 
@@ -197,6 +249,8 @@ la graisse. Une police d'une autre source doit garder ce motif de nom (ou adapte
 - Le soleil pour les espèces, en fond avec du texte encre.
 - Des libellés d'accessibilité sur tout bouton icône ; des boutons qui sont de vrais boutons (`accessibilityRole`).
 - Vérifier chaque nouveau couple texte / fond (4,5:1).
+- Les montants en grand avec `FitAmount` (jamais `numberOfLines={1}` sur un montant : « 12 360 F… »).
+- Les transparences avec `alpha()` ; le fondu au-dessus d'un pied avec `fadeBottom`.
 
 **À ne pas faire**
 
@@ -204,4 +258,5 @@ la graisse. Une police d'une autre source doit garder ce motif de nom (ou adapte
 - Du texte jaune ; du texte blanc sur le corail vif ; du gris clair pour un texte.
 - Des dégradés, des liserés colorés sur le côté, des émojis, des titres en capitales.
 - Un `fontFamily` ou un nom de police ailleurs que dans `src/fonts.ts` ; un `Text` importé de 'react-native'.
-- Une carte sombre ou une feuille sombre (les props `sheetTheme`, `theme`, `tone="dark"` sont obsolètes).
+- Une carte sombre ou une feuille sombre.
+- Un `rgba(…)` ou une couleur `#…` écrits dans un écran ; un `loadAsync` de police dans un écran.

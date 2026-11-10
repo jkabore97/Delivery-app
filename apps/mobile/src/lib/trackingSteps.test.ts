@@ -5,8 +5,9 @@ const states = (status: Parameters<typeof trackingSteps>[0]) => trackingSteps(st
 describe('étapes du suivi', () => {
   it('libellés courts (une ligne) du destinataire et de l’entreprise', () => {
     expect(trackingSteps('ASSIGNED').map((s) => s.label)).toEqual(['Confirmée', 'Retrait', 'En route', 'Livrée']);
-    expect(trackingSteps('ASSIGNED', 'business').map((s) => s.label)).toEqual(['Demandée', 'Retrait', 'En route', 'Livrée']);
-    for (const s of trackingSteps('PICKED_UP')) expect(s.label.length).toBeLessThanOrEqual(10);
+    // Entreprise : les libellés de la spec Cobalt.
+    expect(trackingSteps('ASSIGNED', 'business').map((s) => s.label)).toEqual(['Demandée', 'Récupérée', 'En route', 'Livrée']);
+    for (const p of ['recipient', 'business'] as const) for (const s of trackingSteps('PICKED_UP', p)) expect(s.label.length).toBeLessThanOrEqual(10);
   });
 
   it('avancement selon le statut : pendant la recherche, seule la première étape est en cours', () => {
@@ -25,7 +26,7 @@ describe('étapes du suivi', () => {
     });
     expect(trackingHeadline('PICKED_UP', 'recipient', { driver: 'Issouf' }).title).toBe('Votre colis est en route');
     expect(trackingHeadline('PICKED_UP', 'business', { recipient: 'Awa' }).title).toBe('En route vers Awa');
-    expect(trackingHeadline('DELIVERED', 'recipient').title).toBe('Colis livré : merci !');
+    expect(trackingHeadline('DELIVERED', 'recipient').title).toBe('Colis livré\u202f: merci\u202f!');
     expect(trackingHeadline('CANCELLED', 'recipient', { sender: 'Pharmacie du Centre' }).subtitle).toMatch(/Contactez Pharmacie du Centre/);
   });
 });

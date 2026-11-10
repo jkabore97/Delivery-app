@@ -23,7 +23,7 @@ export function storeApprovalNotice(
         title: 'Entreprise en attente de validation',
         message:
           'Yaar vérifie votre entreprise (généralement sous 24 h). Vous pourrez demander des livraisons dès sa validation.' +
-          (note ? ` Remarque de Yaar : ${note}` : ''),
+          (note ? ` Remarque de Yaar : ${note}` : ''),
       };
     case 'SUSPENDED':
       return {
@@ -31,7 +31,7 @@ export function storeApprovalNotice(
         title: 'Entreprise suspendue par Yaar',
         message:
           'Vous ne pouvez plus demander de nouvelles livraisons. Les livraisons déjà en cours continuent.' +
-          (note ? ` Motif : ${note}.` : '') +
+          (note ? ` Motif : ${note}.` : '') +
           ' Contactez le support Yaar pour la réactiver.',
       };
     default:

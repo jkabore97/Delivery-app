@@ -31,7 +31,7 @@ const TOP_SIDE_WIDTH = 52;
  */
 function emptyText(store: StoreDto): string {
   return isBusinessApproved(store)
-    ? 'Demandez un livreur : il récupère le colis chez vous et votre client le suit en direct sur la carte.'
+    ? 'Demandez un livreur : il récupère le colis chez vous et votre client le suit en direct sur la carte.'
     : 'Vos livraisons s’afficheront ici, avec leur livreur en direct sur la carte.';
 }
 

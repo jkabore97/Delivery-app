@@ -76,7 +76,7 @@ export default function BusinessHistoryScreen() {
   const note = (
     <Text style={styles.note}>
       {desktop ? 'Cliquez sur une livraison' : 'Touchez une livraison'} pour revoir son détail. Les adresses et numéros des destinataires sont effacés{' '}
-      {LOCATION_RETENTION_MONTHS} mois après la livraison (protection des données) ; les montants restent dans l’historique.
+      {LOCATION_RETENTION_MONTHS} mois après la livraison (protection des données) ; les montants restent dans l’historique.
     </Text>
   );
   const empty =
@@ -144,7 +144,7 @@ function DesktopHistory({
   const { stores, store } = useBusiness();
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent} testID="history-desktop">
-      <PageHeader title="Historique" subtitle={summary ?? 'Livraisons terminées : livrées et annulées'} actions={<NewDeliveryButton stores={stores} store={store} variant="desktop" />} />
+      <PageHeader title="Historique" subtitle={summary ?? 'Livraisons terminées : livrées et annulées'} actions={<NewDeliveryButton stores={stores} store={store} variant="desktop" />} />
       <View style={styles.deskBody}>
         {banner}
         <View style={[styles.table, shadows.tile]}>

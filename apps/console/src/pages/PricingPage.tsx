@@ -158,7 +158,7 @@ function RuleEditor({ rule, onSaved }: { rule: PricingRuleDto; onSaved: (r: Pric
                 const p = computeDeliveryPrice({ vehicleType: rule.vehicleType, ...parsed.value }, km);
                 return (
                   <li key={km} title={previewLine(rule.vehicleType, parsed.value, km)}>
-                    <span className="tnum">{km}\u00a0km</span>
+                    <span className="tnum">{km}{'\u00a0'}km</span>
                     <span>
                       <b>{formatFcfa(p.deliveryFee)}</b>
                       <span className="tnum"> · livreur {formatFcfa(p.driverEarning)}</span>

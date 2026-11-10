@@ -6,10 +6,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LiveTrackingLayout } from './LiveTrackingLayout';
 
 // Carte simulée : un « geste » de l'utilisateur dès l'affichage (le bouton « Recentrer » apparaît alors).
+// Les props reçues par la carte sont gardées (cadrage).
+const mockMapProps: Array<{ padding?: { top: number }; recenterKey?: number }> = [];
 jest.mock('../map/LiveMap', () => {
   const { useEffect } = jest.requireActual<typeof import('react')>('react');
   return {
-    LiveMap: (p: { onUserGesture?: () => void }) => {
+    LiveMap: (p: { onUserGesture?: () => void; padding?: { top: number }; recenterKey?: number }) => {
+      mockMapProps.push(p);
       useEffect(() => p.onUserGesture?.(), []); // eslint-disable-line react-hooks/exhaustive-deps
       return null;
     },
@@ -57,5 +60,49 @@ describe('LiveTrackingLayout', () => {
     await alone.unmount();
     const withBack = await render(wrap(layout({ topCenter: chip, topLeft: <Text>Retour</Text> })));
     expect(side(withBack)).toMatchObject({ width: 52 });
+  });
+
+  it('fadeBottom : fondu blanc au-dessus du pied (ou du bas de la feuille), place du fondu ajoutée sous le contenu', async () => {
+    const plain = await render(wrap(layout()));
+    expect(plain.queryByTestId('sheet-fade')).toBeNull();
+    await plain.unmount();
+    const withFooter = await render(wrap(layout({ fadeBottom: 28, footer: <Text testID="foot">Pied</Text> })));
+    const fade = withFooter.getByTestId('sheet-fade');
+    expect(StyleSheet.flatten(fade.props.style)).toMatchObject({ position: 'absolute', top: -28, height: 28 });
+    expect(fade.props.pointerEvents).toBe('none');
+    // Dans le pied, juste avant son contenu.
+    expect(fade.parent?.parent).toBe(withFooter.getByTestId('foot').parent?.parent);
+    await withFooter.unmount();
+    // Sans pied (accueil du livreur au-dessus de la barre d'onglets) : 24 px par défaut.
+    const alone = await render(wrap(layout({ fadeBottom: true })));
+    expect(StyleSheet.flatten(alone.getByTestId('sheet-fade').props.style)).toMatchObject({ top: -24, height: 24 });
+  });
+
+  it('sans pastille du milieu, `topLeft` est large (pastille alignée à gauche, jusqu’au bouton de droite)', async () => {
+    const r = await render(wrap(layout({ topLeft: <Text testID="pill">3 en cours | 1 en recherche</Text>, topRight: <Text>◉</Text> })));
+    const slot = StyleSheet.flatten(r.getByTestId('pill').parent!.props.style);
+    expect(slot).toMatchObject({ flex: 1, alignItems: 'flex-start' });
+    expect(slot.width).toBeUndefined();
+  });
+
+  it('recenterControl="always" : disque « Recentrer » toujours visible en haut à droite (pas de pastille en plus)', async () => {
+    mockMapProps.length = 0;
+    const r = await render(wrap(layout({ recenterControl: 'always' })));
+    await act(async () => undefined);
+    const buttons = r.getAllByTestId('recenter-button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveProp('accessibilityLabel', 'Recentrer la carte');
+    const before = mockMapProps.at(-1)!.recenterKey ?? 0;
+    await act(async () => fireEvent.press(buttons[0]!));
+    expect(mockMapProps.at(-1)!.recenterKey).toBe(before + 1);
+  });
+
+  it('cadrage : le haut garde la barre du haut et la hauteur d’une épingle', async () => {
+    mockMapProps.length = 0;
+    const r = await render(wrap(layout({ topCenter: <Text testID="chip">Course</Text> })));
+    const bar = r.getByTestId('chip').parent!.parent!;
+    await act(async () => fireEvent(bar, 'layout', { nativeEvent: { layout: { x: 0, y: 8, width: 366, height: 80 } } }));
+    // 8 (marge) + 80 (barre) + 56 (épingle) = 144 > 104 (marge par défaut).
+    expect(mockMapProps.at(-1)!.padding!.top).toBe(144);
   });
 });

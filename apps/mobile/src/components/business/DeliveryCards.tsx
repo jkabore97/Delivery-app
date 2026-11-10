@@ -69,7 +69,7 @@ export function HistoryDeliveryCard({ order: o, onPress }: { order: OrderDto; on
       footer={
         o.status === 'CANCELLED' && o.cancelReason ? (
           <Text style={styles.reason} numberOfLines={2}>
-            Motif : {o.cancelReason}
+            Motif : {o.cancelReason}
           </Text>
         ) : null
       }

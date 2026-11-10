@@ -73,7 +73,7 @@ export default function DriverDocuments() {
           </Text>
         </View>
       </WhiteCard>
-      {locked ? <Banner message="Compte livreur suspendu : contactez Yaar." /> : null}
+      {locked ? <Banner message="Compte livreur suspendu : contactez Yaar." /> : null}
       {items.map((item) => (
         <DocumentCard key={item.type} item={item} disabled={locked || profile.isOnline} />
       ))}

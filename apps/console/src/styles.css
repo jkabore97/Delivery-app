@@ -575,8 +575,8 @@ h2 {
 /* ---------------------------------------------------------------- Alertes SOS (toasts) */
 .toasts {
   position: fixed;
-  /* Sous la barre du haut (28 + 60 px) : l'alerte ne couvre ni la recherche ni le badge « Démo ». */
-  top: 96px;
+  /* En bas à droite : l'alerte ne couvre ni la recherche, ni le badge « Démo », ni les actions d'une fiche. */
+  bottom: 24px;
   right: 24px;
   z-index: 1500;
   display: flex;
@@ -1235,10 +1235,12 @@ h2 {
 /* Choix exclusif (filtres) : piste « raised », choix actif en capsule blanche */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: 2px;
   padding: 4px;
-  border-radius: var(--r-pill);
+  border-radius: 22px;
   background: var(--raised);
 }
 .segmented button {
@@ -1533,6 +1535,9 @@ input[type='checkbox'] {
 
 /* ---------------------------------------------------------------- Tableaux */
 .table-wrap {
+  /* Bloc conteneur des textes masqués (.sr-only, en position absolue) des cellules : sinon, dans un tableau qui défile,
+     ils s'échappent du défilement et élargissent la page entière. */
+  position: relative;
   margin: 0 -8px;
 }
 /* Tableau plus large que sa carte (TableWrap) : il défile dans la carte, jamais la page. */
@@ -1630,6 +1635,17 @@ input[type='checkbox'] {
 }
 .cell-wide {
   min-width: 190px;
+}
+/* Détail d'un montant (« frais 1 950 · marchandise 8 200 ») : une ligne sur grand écran (lignes basses) ; il passe à la
+   ligne sous 1367 px, où le tableau tient ainsi dans sa carte sans défiler. */
+.table td.num .amount-detail {
+  white-space: nowrap;
+}
+@media (max-width: 1366px) {
+  .table td.num .amount-detail {
+    white-space: normal;
+    max-width: 150px;
+  }
 }
 .datetime {
   display: flex;
@@ -3866,9 +3882,9 @@ a.person-name:hover {
   .login-shell {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* La barre du haut passe sur deux lignes : l'alerte SOS revient en haut de l'écran. */
   .toasts {
-    top: 16px;
+    right: 16px;
+    bottom: 16px;
   }
   .login-hero {
     display: none;
@@ -3947,6 +3963,17 @@ a.person-name:hover {
   .kpis,
   .kpis-3 {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* Long libellé (« Exporter le journal de caisse (CSV) ») : sur deux lignes plutôt que plus large que l'écran. */
+  .filters .btn {
+    max-width: 100%;
+    height: auto;
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    white-space: normal;
+    line-height: 1.25;
+    text-align: center;
   }
   .live-state {
     display: none;

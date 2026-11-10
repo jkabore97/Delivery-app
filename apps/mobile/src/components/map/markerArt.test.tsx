@@ -228,6 +228,9 @@ describe('marqueurs web Cobalt', () => {
     expect(sun.innerHTML).toContain('fill="#E0A400"');
     expect(sun.innerHTML).toContain('#0C1222');
     expect(MARKER_Z).toEqual({ pickup: 2, dropoff: 3, driver: 4 });
+    // Livreur ordinaire au-dessus de tout ; livreur Sun (vers l'entreprise) sous le carré de l'entreprise.
+    expect(el.style.zIndex).toBe('4');
+    expect(Number(sun.style.zIndex)).toBeLessThan(MARKER_Z.pickup);
   });
 });
 

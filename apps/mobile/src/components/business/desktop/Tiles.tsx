@@ -86,7 +86,7 @@ export function CashTile({ summary, style }: { summary: BusinessSummaryDto | nul
     <View
       style={[styles.tile, styles.kpi, styles.cash, shadows.sun, style]}
       accessible
-      accessibilityLabel={summary ? `À reverser : ${goods} FCFA, encaissés pour vous aujourd’hui${fees ? `, ${fees}` : ''}` : 'À reverser : chargement'}
+      accessibilityLabel={summary ? `À reverser : ${goods} FCFA, encaissés pour vous aujourd’hui${fees ? `, ${fees}` : ''}` : 'À reverser : chargement'}
       testID="kpi-cash"
     >
       <View style={styles.cashTop}>
@@ -255,7 +255,7 @@ export function HeroTile({
           ) : null}
           {landmark ? (
             <Text style={styles.cardMeta} numberOfLines={1}>
-              Repère « {landmark} »
+              Repère « {landmark} »
             </Text>
           ) : null}
         </View>
@@ -339,7 +339,7 @@ export function EmptyHeroTile({ stores, store, style }: { stores: readonly Store
         <Text style={styles.emptyTitle}>Aucune livraison en cours</Text>
         <Text style={styles.emptyBody}>
           {canRequest
-            ? 'Demandez un livreur : il récupère le colis chez vous, votre client le suit en direct et reçoit le code à lui donner.'
+            ? 'Demandez un livreur : il récupère le colis chez vous, votre client le suit en direct et reçoit le code à lui donner.'
             : 'Vos livraisons s’afficheront ici, avec leur livreur en direct sur la carte.'}
         </Text>
         {canRequest || !store ? <NewDeliveryButton stores={stores} store={store} variant="desktop" style={styles.emptyCta} /> : null}
@@ -428,7 +428,7 @@ export function LiveListTile({
       <TileHead title="En cours" count={total} />
       {list.length === 0 ? (
         <Text style={styles.listEmpty}>
-          {query.trim() ? `Aucune livraison en cours ne correspond à « ${query.trim()} ».` : 'Aucune livraison en cours pour le moment.'}
+          {query.trim() ? `Aucune livraison en cours ne correspond à « ${query.trim()} ».` : 'Aucune livraison en cours pour le moment.'}
         </Text>
       ) : (
         <RowsViewport pitch={68} gap={4} contentStyle={styles.rowsContent}>
@@ -511,7 +511,7 @@ export function RecentTile({
       {list === null ? (
         <Text style={styles.listEmpty}>{error ?? (loading ? 'Chargement…' : '')}</Text>
       ) : list.length === 0 ? (
-        <Text style={styles.listEmpty}>{query.trim() ? `Aucune livraison du jour ne correspond à « ${query.trim()} ».` : 'Pas encore de livraison livrée aujourd’hui.'}</Text>
+        <Text style={styles.listEmpty}>{query.trim() ? `Aucune livraison du jour ne correspond à « ${query.trim()} ».` : 'Pas encore de livraison livrée aujourd’hui.'}</Text>
       ) : (
         <RowsViewport pitch={64} gap={0} contentStyle={styles.doneContent}>
           {list.map((o, i) => {

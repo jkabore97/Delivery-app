@@ -100,7 +100,7 @@ export function ShareTrackingCard({
 
   const copy = async () => {
     const ok = await copyText(url);
-    setNotice(ok ? { text: shareFeedback('copied')!, ok: true } : { text: 'Copie impossible : sélectionnez le lien ci-dessous.', ok: false });
+    setNotice(ok ? { text: shareFeedback('copied')!, ok: true } : { text: 'Copie impossible : sélectionnez le lien ci-dessous.', ok: false });
   };
 
   return (

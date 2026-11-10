@@ -239,7 +239,7 @@ describe('DriverProvider', () => {
       await act(async () => {
         err = (await ctx?.withdrawTrackingConsent()) ?? null;
       });
-      expect(err).toBe('Vous avez une course en cours : terminez-la d’abord.');
+      expect(err).toBe('Vous avez une course en cours\u202f: terminez-la d’abord.');
     });
   });
 

@@ -143,8 +143,8 @@ export function historyFeeText(o: Pick<OrderDto, 'status' | 'deliveryFee' | 'fee
  */
 export function goodsAmountText(status: OrderStatus): { label: string; detail: string } {
   return status === 'DELIVERED'
-    ? { label: 'À reverser à votre entreprise', detail: 'Valeur de la marchandise, encaissée par le livreur à la livraison : Yaar vous la reverse.' }
-    : { label: 'Pour votre entreprise', detail: 'Valeur de la marchandise : le livreur l’encaisse à la livraison, puis Yaar vous la reverse.' };
+    ? { label: 'À reverser à votre entreprise', detail: 'Valeur de la marchandise, encaissée par le livreur à la livraison : Yaar vous la reverse.' }
+    : { label: 'Pour votre entreprise', detail: 'Valeur de la marchandise : le livreur l’encaisse à la livraison, puis Yaar vous la reverse.' };
 }
 
 export interface CollectAmounts {
@@ -316,17 +316,17 @@ export function validateDestination(form: DeliveryForm, pickup: LatLng | null): 
   const d = form.dropoff;
   if (!d || isPinAtDefault(d)) e.dropoff = 'Déplacez la carte pour placer l’épingle sur le lieu de livraison.';
   else if (pickup && distanceM(pickup, d) < MIN_DELIVERY_DISTANCE_M)
-    e.dropoff = 'L’épingle est sur votre entreprise : placez-la sur le lieu de livraison.';
+    e.dropoff = 'L’épingle est sur votre entreprise : placez-la sur le lieu de livraison.';
   if (!d || !d.address.trim()) e.address = 'Indiquez l’adresse (quartier, rue).';
   if (!form.recipientName.trim()) e.recipientName = 'Nom du destinataire requis.';
-  if (!normalizePhone(form.recipientPhone)) e.recipientPhone = 'Numéro invalide : 8 chiffres (ex. 70 12 34 56).';
+  if (!normalizePhone(form.recipientPhone)) e.recipientPhone = 'Numéro invalide : 8 chiffres (ex. 70 12 34 56).';
   return e;
 }
 
 /** Étape 2 : colis, véhicule, paiement. */
 export function validatePackage(form: DeliveryForm, quote: QuoteResponse | null): FormErrors {
   const e: FormErrors = {};
-  if (!form.packageDescription.trim()) e.packageDescription = 'Décrivez le colis (ex. « 2 cartons », « documents »).';
+  if (!form.packageDescription.trim()) e.packageDescription = 'Décrivez le colis (ex. « 2 cartons », « documents »).';
   const option = quote?.options.find((o) => o.vehicleType === form.vehicleType);
   if (!form.vehicleType || !option?.available) e.vehicleType = 'Choisissez un véhicule disponible.';
   if (parseAmount(form.cashToCollect) === null)

@@ -52,7 +52,7 @@ export function CallRoundButton({
       slot={slot}
       disabled={!phone}
       onPress={() => phone && open(telUrl(phone))}
-      accessibilityLabel={phone ? `${who} (${phone})` : `${who} : numéro indisponible`}
+      accessibilityLabel={phone ? `${who} (${phone})` : `${who} : numéro indisponible`}
       testID={testID}
     />
   );
@@ -88,7 +88,7 @@ export function WhatsAppRoundButton({
       accessibilityLabel={
         phone
           ? `Écrire${name ? ` à ${name}` : ''} sur WhatsApp (${phone})`
-          : `${name ? `Écrire à ${name} sur WhatsApp` : 'WhatsApp'} : numéro indisponible`
+          : `${name ? `Écrire à ${name} sur WhatsApp` : 'WhatsApp'} : numéro indisponible`
       }
       testID={testID}
     />

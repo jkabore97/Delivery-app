@@ -126,7 +126,7 @@ describe('createApiClient', () => {
     const { api } = setup([{ ok: false, status: 413, text: async () => 'Request Entity Too Large' } as Response]);
     const err = await api.me().catch((e: unknown) => e);
     expect((err as ApiError).code).toBe('PAYLOAD_TOO_LARGE');
-    expect(errorMessage(err)).toBe('Fichier trop lourd (3 Mo maximum) : reprenez la photo en plus petit.');
+    expect(errorMessage(err)).toBe('Fichier trop lourd (3 Mo maximum)\u202f: reprenez la photo en plus petit.');
   });
 
   it('construit les listes de commandes avec filtre de statut', async () => {

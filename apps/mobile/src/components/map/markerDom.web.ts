@@ -73,8 +73,13 @@ export function ensureMarkerCss(): void {
   document.head.appendChild(style);
 }
 
-/** Empilement : entreprise sous l'épingle du destinataire, livreur au-dessus de tout. */
+/**
+ * Empilement : entreprise sous l'épingle du destinataire, livreur au-dessus de tout, SAUF un livreur Sun (en route vers
+ * l'entreprise, vue d'ensemble de l'entreprise) : il passe sous le carré de l'entreprise, qui reste lisible quand
+ * plusieurs livreurs convergent vers elle (un livreur arrivé est décalé, `nudge`, et reste visible à côté).
+ */
 export const MARKER_Z = { pickup: 2, dropoff: 3, driver: 4 } as const;
+export const SUN_DRIVER_Z = 1;
 
 function wrap(className: string, kind: keyof typeof MARKER_Z, title?: string): HTMLDivElement {
   const el = document.createElement('div');
@@ -161,6 +166,7 @@ export function driverElement(vehicle: VehicleType, title?: string, tone?: 'sun'
   const sun = tone === 'sun';
   const el = wrap(`yaar-driver no-heading${sun ? ' is-sun' : ''}`, 'driver', title);
   el.dataset.vehicle = vehicle;
+  if (sun) el.style.zIndex = String(SUN_DRIVER_Z);
   const notch = sun ? MAP_COLORS.driverSunNotch : MAP_COLORS.driverGlyph;
   const glyph = sun ? MAP_COLORS.driverSunInk : MAP_COLORS.driverGlyph;
   el.innerHTML =

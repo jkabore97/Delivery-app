@@ -103,7 +103,7 @@ export function BusinessDashboard() {
         tint="mint"
         value={summary ? String(summary.today.delivered) : '…'}
         label="Livrées aujourd’hui"
-        accessibilityLabel={summary ? `${summary.today.delivered} livraisons livrées aujourd’hui` : 'Livrées aujourd’hui : chargement'}
+        accessibilityLabel={summary ? `${summary.today.delivered} livraisons livrées aujourd’hui` : 'Livrées aujourd’hui : chargement'}
         style={styles.kpiSmall}
         testID="kpi-delivered"
       />
@@ -116,9 +116,9 @@ export function BusinessDashboard() {
         accessibilityLabel={
           summary
             ? summary.today.avgDeliveryMinutes === null
-              ? 'Délai moyen : pas encore de livraison aujourd’hui'
-              : `Délai moyen de livraison : ${summary.today.avgDeliveryMinutes} minutes`
-            : 'Délai moyen : chargement'
+              ? 'Délai moyen : pas encore de livraison aujourd’hui'
+              : `Délai moyen de livraison : ${summary.today.avgDeliveryMinutes} minutes`
+            : 'Délai moyen : chargement'
         }
         style={styles.kpiSmall}
         testID="kpi-delay"

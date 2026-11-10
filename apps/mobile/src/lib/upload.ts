@@ -24,7 +24,7 @@ export const MAX_PHOTO_BASE64_LENGTH = base64Length(MAX_PHOTO_BYTES);
 
 export class UploadTooLargeError extends Error {
   constructor() {
-    super('Photo trop volumineuse (3 Mo maximum) : reprenez-la avec moins de détails ou choisissez une image plus légère.');
+    super('Photo trop volumineuse (3 Mo maximum) : reprenez-la avec moins de détails ou choisissez une image plus légère.');
     this.name = 'UploadTooLargeError';
   }
 }

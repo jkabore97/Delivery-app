@@ -21,7 +21,7 @@ function TrackingConsentCard() {
 
   const withdraw = () => {
     void confirmAsync({
-      title: 'Retirer votre consentement ?',
+      title: 'Retirer votre consentement ?',
       message:
         'Vous passerez immédiatement hors ligne, votre dernière position sera effacée et vous ne recevrez plus de courses tant que vous n’aurez pas de nouveau accepté le suivi.',
       confirmText: 'Retirer',
@@ -30,7 +30,7 @@ function TrackingConsentCard() {
       if (!ok) return;
       setMessage(null);
       const err = await withdrawTrackingConsent();
-      setMessage(err ? { text: err, ok: false } : { text: 'Consentement retiré : vous êtes hors ligne.', ok: true });
+      setMessage(err ? { text: err, ok: false } : { text: 'Consentement retiré : vous êtes hors ligne.', ok: true });
     });
   };
 
@@ -43,7 +43,7 @@ function TrackingConsentCard() {
             Suivi GPS
           </Text>
           <View style={styles.consentRow}>
-            <Text style={styles.consentLabel}>Consentement : </Text>
+            <Text style={styles.consentLabel}>Consentement : </Text>
             <Text style={[styles.consentValue, consented && { color: palette.mintText }]}>{trackingConsentStatus(profile)}</Text>
           </View>
         </View>
@@ -87,7 +87,7 @@ export default function DriverProfile() {
     if (currentOrder) return 'Terminez la course en cours avant de vous déconnecter.';
     if (profile?.isOnline) {
       const err = await setOnline(false);
-      if (err) return `Impossible de passer hors ligne : ${err}`;
+      if (err) return `Impossible de passer hors ligne : ${err}`;
     }
     return null;
   };

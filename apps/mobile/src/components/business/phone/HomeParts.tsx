@@ -48,7 +48,7 @@ export function KpiChips({ active, summary, dense = false }: { active: number; s
         <Text style={styles.kpiValue}>{active}</Text>
         <Text style={styles.kpiLabel}>en cours</Text>
       </View>
-      <View style={[styles.kpi, dense && styles.kpiDense]} accessible accessibilityLabel={summary ? `${summary.today.delivered} livrée${summary.today.delivered > 1 ? 's' : ''} aujourd’hui` : 'Livrées aujourd’hui : chargement'}>
+      <View style={[styles.kpi, dense && styles.kpiDense]} accessible accessibilityLabel={summary ? `${summary.today.delivered} livrée${summary.today.delivered > 1 ? 's' : ''} aujourd’hui` : 'Livrées aujourd’hui : chargement'}>
         <Text style={styles.kpiValue}>{summary ? summary.today.delivered : '…'}</Text>
         <Text style={styles.kpiLabel} numberOfLines={1}>
           {summary && summary.today.delivered === 1 ? 'livrée' : 'livrées'}
@@ -57,7 +57,7 @@ export function KpiChips({ active, summary, dense = false }: { active: number; s
       <View
         style={[styles.kpi, styles.kpiSun, dense && styles.kpiDense]}
         accessible
-        accessibilityLabel={goods ? `${goods} FCFA à reverser, encaissés pour vous aujourd’hui` : 'À reverser : chargement'}
+        accessibilityLabel={goods ? `${goods} FCFA à reverser, encaissés pour vous aujourd’hui` : 'À reverser : chargement'}
         testID="kpi-goods"
       >
         <Text style={[styles.kpiValue, big && styles.kpiValueSmall]} numberOfLines={1}>
@@ -163,7 +163,7 @@ function open(url: string) {
 function ContactDisc({ kind, phone, name, text }: { kind: 'whatsapp' | 'call'; phone: string | null; name: string; text?: string | null }) {
   const touch = touchTarget(36, 48);
   const label = !phone
-    ? `${kind === 'call' ? `Appeler ${name}` : `Écrire à ${name} sur WhatsApp`} : numéro indisponible`
+    ? `${kind === 'call' ? `Appeler ${name}` : `Écrire à ${name} sur WhatsApp`} : numéro indisponible`
     : kind === 'call'
       ? `Appeler ${name} (${phone})`
       : `Écrire à ${name} sur WhatsApp (${phone})`;

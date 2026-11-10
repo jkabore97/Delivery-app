@@ -86,7 +86,7 @@ export default function DriverReadyScreen() {
         <CourierIllustration width={art} />
       </View>
       <Text style={[styles.title, short && styles.titleShort]} accessibilityRole="header">
-        Vous êtes prêt !
+        Vous êtes prêt !
       </Text>
       <Text style={styles.body}>Votre dossier est validé. Passez en ligne pour recevoir des courses.</Text>
       {message ? <Banner message={message} tone="red" /> : null}

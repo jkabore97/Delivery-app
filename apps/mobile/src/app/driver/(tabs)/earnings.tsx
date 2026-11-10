@@ -43,7 +43,7 @@ export default function DriverEarnings() {
               </View>
             </View>
             <Money amount={e.today.earnings} size={48} color={palette.white} />
-            <Text style={styles.heroSub}>{`Encaissé aujourd’hui : ${formatFcfa(e.today.cashCollected)}`}</Text>
+            <Text style={styles.heroSub}>{`Encaissé aujourd’hui : ${formatFcfa(e.today.cashCollected)}`}</Text>
           </View>
 
           <View style={styles.tiles}>
@@ -69,11 +69,11 @@ export default function DriverEarnings() {
             <Meter value={cashRatio(e.cashHeld, e.cashLimit)} color={palette.ink} track="rgba(12, 18, 34, 0.12)" label="Espèces détenues par rapport au plafond" />
             <Text style={styles.cashNote}>
               {e.cashBlocked
-                ? 'Plafond atteint : déposez les espèces auprès de Yaar pour reprendre les courses.'
+                ? 'Plafond atteint : déposez les espèces auprès de Yaar pour reprendre les courses.'
                 : `Encore ${formatFcfa(left)} avant blocage. Déposez les espèces auprès de Yaar.`}
             </Text>
           </View>
-          {e.cashBlocked ? <Banner message="Plafond d’espèces atteint : vous ne recevez plus de courses avant le dépôt." /> : null}
+          {e.cashBlocked ? <Banner message="Plafond d’espèces atteint : vous ne recevez plus de courses avant le dépôt." /> : null}
 
           <SectionHeading>Mouvements de caisse</SectionHeading>
           <WhiteCard style={styles.list}>

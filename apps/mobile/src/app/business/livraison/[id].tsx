@@ -148,13 +148,13 @@ export default function BusinessDeliveryScreen() {
 
   const cancel = () => {
     void confirmAsync({
-      title: 'Annuler la livraison ?',
+      title: 'Annuler la livraison ?',
       message: 'Le livreur et le destinataire seront prévenus.',
       cancelText: 'Non, la garder',
       confirmText: 'Oui, annuler',
       destructive: true,
       // Navigateur : boutons « OK » / « Annuler » imposés, où « Annuler » garderait la livraison : on le dit.
-      webHint: '« OK » annule la livraison ; « Annuler » la garde.',
+      webHint: '« OK » annule la livraison ; « Annuler » la garde.',
     }).then(async (ok) => {
       if (!ok) return;
       setCancelling(true);

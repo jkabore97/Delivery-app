@@ -70,7 +70,7 @@ function AmountCell({ o }: { o: OrderDto }) {
   return (
     <span>
       <span className="money">{formatFcfa(o.total)}</span>
-      <div className="muted small nowrap">
+      <div className="muted small amount-detail">
         frais {bare(o.deliveryFee)}
         {goods > 0 ? ` · marchandise ${bare(goods)}` : ''}
       </div>

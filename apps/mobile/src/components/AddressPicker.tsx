@@ -60,7 +60,7 @@ export function AddressPicker({
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (!perm.granted) {
-        setLocError('Localisation refusée : déplacez la carte pour placer l’épingle.');
+        setLocError('Localisation refusée : déplacez la carte pour placer l’épingle.');
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -69,7 +69,7 @@ export function AddressPicker({
       mapRef.current?.centerOn(next.lat, next.lng, 16);
       onChange(next);
     } catch {
-      setLocError('Position indisponible : déplacez la carte pour placer l’épingle.');
+      setLocError('Position indisponible : déplacez la carte pour placer l’épingle.');
     } finally {
       setLocating(false);
     }

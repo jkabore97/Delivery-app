@@ -72,7 +72,7 @@ export function GoOnlineButton({ onError, blocked = false }: { onError: (msg: st
         accessibilityLabel="Passer en ligne"
         accessibilityHint={
           blocked
-            ? 'Indisponible : plafond d’espèces atteint, déposez l’argent auprès de Yaar.'
+            ? 'Indisponible : plafond d’espèces atteint, déposez l’argent auprès de Yaar.'
             : 'Votre position sera suivie tant que vous êtes en ligne.'
         }
         testID="online-switch"
@@ -128,7 +128,7 @@ export function SosButton({ size = 64 }: { size?: number }) {
         }
       }
       if (!coords) {
-        notify('SOS', 'Position indisponible : appelez directement le support.');
+        notify('SOS', 'Position indisponible : appelez directement le support.');
         return;
       }
       await api.sos({ ...coords, message: 'SOS livreur', ...(currentOrder ? { orderId: currentOrder.id } : {}) });
@@ -150,7 +150,7 @@ export function SosButton({ size = 64 }: { size?: number }) {
       style={({ pressed }) => [styles.sos, shadows.float, { width: size, height: size, borderRadius: size / 2 }, busy && { opacity: 0.6 }, pressed && { opacity: 0.88 }]}
       onPress={() =>
         void confirmAsync({
-          title: 'Envoyer un SOS ?',
+          title: 'Envoyer un SOS ?',
           message: 'Votre position sera transmise immédiatement aux contrôleurs Yaar.',
           confirmText: 'Envoyer le SOS',
           destructive: true,

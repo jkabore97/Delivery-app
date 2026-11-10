@@ -11,7 +11,7 @@ describe('storeApprovalNotice', () => {
   it('SUSPENDED : bandeau rouge avec le motif', () => {
     const n = storeApprovalNotice({ approvalStatus: 'SUSPENDED', approvalNote: 'Hygiène' });
     expect(n?.tone).toBe('red');
-    expect(n?.message).toMatch(/Motif : Hygiène\./);
+    expect(n?.message).toMatch(/Motif\u202f: Hygiène\./);
   });
 
   it('APPROVED ou statut absent : aucun bandeau', () => {

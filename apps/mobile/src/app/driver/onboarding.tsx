@@ -50,7 +50,7 @@ export default function DriverOnboarding() {
       footer={<Button title="Continuer" icon={(c) => <Icon name="chevronRight" size={20} color={c} strokeWidth={2.6} />} onPress={save} loading={busy} disabled={!vehicle || !plateOk} testID="onboarding-continue" />}
     >
       {profile ? null : (
-        <View style={styles.steps} accessibilityLabel="Étape 1 sur 3 : véhicule">
+        <View style={styles.steps} accessibilityLabel="Étape 1 sur 3 : véhicule">
           {STEPS.map((s, i) => (
             <View key={s} style={styles.step}>
               <View style={[styles.stepBar, i === 0 && styles.stepBarNow]} />
@@ -60,10 +60,10 @@ export default function DriverOnboarding() {
         </View>
       )}
       <ScreenTitle
-        title={profile ? 'Changer de véhicule' : 'Bienvenue chez Yaar !'}
+        title={profile ? 'Changer de véhicule' : 'Bienvenue chez Yaar !'}
         subtitle={
           profile
-            ? 'Attention : changer de véhicule ou d’immatriculation renvoie votre dossier en vérification.'
+            ? 'Attention : changer de véhicule ou d’immatriculation renvoie votre dossier en vérification.'
             : 'Indiquez votre véhicule. Vous ajouterez ensuite vos pièces (CNIB, permis, carte grise, assurance, selfie).'
         }
       />
@@ -83,7 +83,7 @@ export default function DriverOnboarding() {
         ) : vehicle === 'BIKE' ? (
           <View style={styles.bike}>
             <Icon name="info" size={18} color={palette.cobaltText} strokeWidth={2.4} />
-            <Text style={styles.bikeText}>Vélo : pas d’immatriculation ni de permis. Pièces demandées : CNIB et selfie.</Text>
+            <Text style={styles.bikeText}>Vélo : pas d’immatriculation ni de permis. Pièces demandées : CNIB et selfie.</Text>
           </View>
         ) : null}
       </WhiteCard>

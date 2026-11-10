@@ -18,10 +18,14 @@ export const SEARCHING_LABEL = 'Recherche d’un livreur';
 /** Point de vue : destinataire (page publique) ou entreprise expéditrice. */
 export type Perspective = 'recipient' | 'business';
 
-/** Libellés courts, sur une ligne même sur un petit téléphone (le détail est dans le titre de la feuille). */
+/**
+ * Libellés courts, sur une ligne même sur un petit téléphone (le détail est dans le titre de la feuille). Entreprise :
+ * ceux de la spec Cobalt, « Demandée · Récupérée · En route · Livrée » ; destinataire : sa commande est « Confirmée »,
+ * puis le livreur passe au « Retrait ».
+ */
 const LABELS: Record<Perspective, [string, string, string, string]> = {
   recipient: ['Confirmée', 'Retrait', 'En route', 'Livrée'],
-  business: ['Demandée', 'Retrait', 'En route', 'Livrée'],
+  business: ['Demandée', 'Récupérée', 'En route', 'Livrée'],
 };
 
 const KEYS: TrackingStep['key'][] = ['confirmed', 'toPickup', 'toDropoff', 'delivered'];
@@ -87,7 +91,7 @@ export function trackingHeadline(
         : { title: `En route vers ${recipient}`, subtitle: 'Colis récupéré.' };
     case 'delivered':
       return perspective === 'recipient'
-        ? { title: 'Colis livré : merci !', subtitle: `Merci d’avoir reçu votre colis de ${sender} avec Yaar Livraison.` }
+        ? { title: 'Colis livré : merci !', subtitle: `Merci d’avoir reçu votre colis de ${sender} avec Yaar Livraison.` }
         : { title: `Livrée à ${recipient}`, subtitle: null };
     case 'cancelled':
       return {

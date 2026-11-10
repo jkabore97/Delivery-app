@@ -187,7 +187,7 @@ function ChevronMarker({ region, heading, nudge, tone }: { region: AnimatedRegio
       flat
       rotation={android ? heading : 0}
       tracksViewChanges={tracks}
-      zIndex={4}
+      zIndex={tone === 'sun' ? 1 : 4}
     >
       <View style={android ? undefined : { transform: [{ rotate: `${heading}deg` }] }}>
         <HeadingChevronView tone={tone} />
@@ -262,7 +262,8 @@ function DriverMarker({ marker, fallbackMs, store }: { marker: SceneMarker; fall
         centerOffset={marker.nudge ? NUDGE_OFFSET : NO_OFFSET}
         tracksViewChanges={tracks}
         title={marker.title}
-        zIndex={5}
+        // Livreur Sun (vers l'entreprise, vue de l'entreprise) sous le carré de l'entreprise (zIndex 2), comme sur le web.
+        zIndex={marker.tone === 'sun' ? 1 : 5}
       >
         <DriverMarkerView vehicleType={marker.vehicleType ?? 'MOTO'} tone={marker.tone} />
       </AnimatedMarker>

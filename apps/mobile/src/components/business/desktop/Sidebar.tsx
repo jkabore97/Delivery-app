@@ -99,7 +99,7 @@ function BusinessCard() {
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={several ? `Établissement : ${name}. Changer d’établissement` : `${name}, ${person}. Ouvrir le profil de l’entreprise`}
+        accessibilityLabel={several ? `Établissement : ${name}. Changer d’établissement` : `${name}, ${person}. Ouvrir le profil de l’entreprise`}
         onPress={() => (several ? setOpen(true) : router.navigate('/business/profile'))}
         style={(s: WebState) => [styles.biz, POINTER, (s.hovered || s.pressed) && styles.bizHover]}
         testID="sidebar-business"

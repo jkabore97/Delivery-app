@@ -34,7 +34,7 @@ export function RecipientBlock({ order: o, terminal, onCard = false }: { order: 
           <CallRoundButton phone={o.recipientPhone} label={`Appeler ${recipient}`} size="small" showLabel={false} testID="call-recipient" />
         ) : null}
       </View>
-      {o.dropoff ? <InfoRow icon="pin" title={o.dropoff.address} subtitle={o.dropoff.landmark ? `Repère : ${o.dropoff.landmark}` : null} /> : null}
+      {o.dropoff ? <InfoRow icon="pin" title={o.dropoff.address} subtitle={o.dropoff.landmark ? `Repère : ${o.dropoff.landmark}` : null} /> : null}
       {o.parcelDescription ? <InfoRow icon="package" title={o.parcelDescription} /> : null}
       {o.notes ? <Text style={styles.notes}>« {o.notes} »</Text> : null}
     </View>
@@ -104,7 +104,7 @@ export function CancelReason({ order: o }: { order: OrderDto }) {
   return (
     <View style={styles.cancelled}>
       <Icon name="close" size={16} color={palette.coralText} strokeWidth={2.6} />
-      <Text style={styles.cancelledText}>Motif : {o.cancelReason}</Text>
+      <Text style={styles.cancelledText}>Motif : {o.cancelReason}</Text>
     </View>
   );
 }

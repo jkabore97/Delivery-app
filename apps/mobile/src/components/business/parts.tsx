@@ -205,7 +205,7 @@ export function NewDeliveryButton({
       desktop={desktop}
       off={off}
       onPress={() => (off ? notify(access.notice.title, access.notice.message) : router.push('/business/nouvelle'))}
-      accessibilityLabel={off ? `Nouvelle livraison, indisponible : ${access.notice.title.toLowerCase()}` : 'Nouvelle livraison'}
+      accessibilityLabel={off ? `Nouvelle livraison, indisponible : ${access.notice.title.toLowerCase()}` : 'Nouvelle livraison'}
       style={style}
       testID={off ? 'new-delivery-unavailable' : 'new-delivery'}
     />

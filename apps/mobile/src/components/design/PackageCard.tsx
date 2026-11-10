@@ -158,7 +158,7 @@ export function PackageCard({
       {landmark ? (
         // Repère : essentiel à Ouagadougou, jusqu'à deux lignes.
         <Text style={styles.line} numberOfLines={2}>
-          Repère : {landmark}
+          Repère : {landmark}
         </Text>
       ) : null}
       {amountRow}
@@ -181,7 +181,7 @@ export function PackageCard({
           ) : null}
           {landmark ? (
             <Text style={styles.line} numberOfLines={2}>
-              Repère : {landmark}
+              Repère : {landmark}
             </Text>
           ) : null}
         </View>

@@ -91,7 +91,7 @@ export default function VerifyScreen() {
         </View>
         {demo ? (
           <Banner
-            message={`Mode démo : le code ${DEMO_OTP_CODE} est accepté (déjà saisi). C’est le code de démonstration : aucun SMS n’est envoyé.`}
+            message={`Mode démo : le code ${DEMO_OTP_CODE} est accepté (déjà saisi). C’est le code de démonstration : aucun SMS n’est envoyé.`}
             tone="blue"
           />
         ) : null}
@@ -112,7 +112,7 @@ export default function VerifyScreen() {
             accessibilityLabel="Code à 6 chiffres"
             testID="otp-input"
           />
-          {__DEV__ ? <Text style={styles.devNote}>Développement : le code 123456 est accepté si l’API a OTP_DEV_BYPASS=true.</Text> : null}
+          {__DEV__ ? <Text style={styles.devNote}>Développement : le code 123456 est accepté si l’API a OTP_DEV_BYPASS=true.</Text> : null}
         </View>
         {error ? <Banner message={error} /> : null}
         {info ? <Banner message={info} tone="green" /> : null}
@@ -123,7 +123,7 @@ export default function VerifyScreen() {
               <Icon name={roleInfo.icon} size={20} color={palette.cobaltText} strokeWidth={2.2} />
             </View>
             <Text style={styles.signupText}>
-              Première connexion ? Un compte <Text style={styles.signupStrong}>{roleInfo.label}</Text> sera créé pour ce numéro (ignoré si vous avez
+              Première connexion ? Un compte <Text style={styles.signupStrong}>{roleInfo.label}</Text> sera créé pour ce numéro (ignoré si vous avez
               déjà un compte).
             </Text>
           </View>

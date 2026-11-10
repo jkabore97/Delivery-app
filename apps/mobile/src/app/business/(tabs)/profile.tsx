@@ -138,7 +138,7 @@ function BusinessProfileCard({ wide = false }: { wide?: boolean }) {
         const created = await api.createStore({ ...base, ...(form.phone.trim() ? { phone: form.phone.trim() } : {}) });
         upsertStore(created);
         setCreating(false);
-        setMessage({ text: 'Entreprise créée : Yaar la valide (généralement sous 24 h), puis vous pourrez demander des livraisons.', ok: true });
+        setMessage({ text: 'Entreprise créée : Yaar la valide (généralement sous 24 h), puis vous pourrez demander des livraisons.', ok: true });
       }
     } catch (e) {
       setMessage({ text: errorMessage(e), ok: false });

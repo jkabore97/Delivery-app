@@ -8,7 +8,7 @@ import { AuthProvider } from '../state/auth';
 import { AppConfigProvider } from '../state/config';
 import { SocketProvider } from '../state/socket';
 import { hideWebSplash, isFullWidthPath, isSlowConnection, isWideAppPath } from '../lib/webShell';
-import { MAX_APP_WIDTH, palette } from '../theme';
+import { alpha, MAX_APP_WIDTH, palette } from '../theme';
 
 /**
  * Web : l'application tient dans une colonne « téléphone » centrée, sauf la page publique de suivi (carte à gauche et
@@ -62,14 +62,14 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   boot: { flex: 1, backgroundColor: palette.canvas },
-  webBackdrop: { flex: 1, alignItems: 'center', backgroundColor: '#DCE1E9' },
+  webBackdrop: { flex: 1, alignItems: 'center', backgroundColor: palette.backdrop },
   webPhone: {
     flex: 1,
     width: '100%',
     maxWidth: MAX_APP_WIDTH,
     backgroundColor: palette.canvas,
     overflow: 'hidden',
-    boxShadow: '0 0 0 1px rgba(12, 18, 34, 0.04), 0 24px 64px rgba(12, 18, 34, 0.14)',
+    boxShadow: `0 0 0 1px ${alpha(palette.ink, 0.04)}, 0 24px 64px ${alpha(palette.ink, 0.14)}`,
   },
   webFull: { maxWidth: '100%', boxShadow: 'none' },
 });

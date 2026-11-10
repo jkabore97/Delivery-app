@@ -3,7 +3,7 @@ import { OUAGADOUGOU_CENTER, type AddressDto, type LatLng } from '@yaar/shared';
 /** Tolérance (~10 m) pour reconnaître l'épingle laissée sur le centre par défaut de la carte. */
 const DEFAULT_PIN_TOLERANCE = 1e-4;
 
-export const PIN_NOT_PLACED_MESSAGE = 'Placez l’épingle sur le lieu exact (déplacez la carte ou « Ma position »).';
+export const PIN_NOT_PLACED_MESSAGE = 'Placez l’épingle sur le lieu exact (déplacez la carte ou « Ma position »).';
 
 /**
  * Vrai si l'épingle n'a pas quitté le centre par défaut (Ouagadougou centre) : l'utilisateur a saisi
@@ -39,5 +39,5 @@ export function toAddressInput(a: AddressDto): AddressDto {
 }
 
 export function addressLine(a: Pick<AddressDto, 'address' | 'landmark'>): string {
-  return a.landmark.trim() ? `${a.address} · Repère : ${a.landmark}` : a.address;
+  return a.landmark.trim() ? `${a.address} · Repère : ${a.landmark}` : a.address;
 }

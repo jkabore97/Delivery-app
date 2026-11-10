@@ -95,7 +95,7 @@ function TodayBlock({ profile, earnings, compact }: { profile: DriverProfileDto;
         held={profile.cashHeld}
         limit={profile.cashLimit}
         blocked={profile.cashBlocked}
-        caption={profile.cashBlocked ? 'atteint : dépôt nécessaire' : 'à déposer auprès de Yaar'}
+        caption={profile.cashBlocked ? 'atteint : dépôt nécessaire' : 'à déposer auprès de Yaar'}
       />
     </View>
   );
@@ -113,7 +113,7 @@ function DossierScreen({ profile, refreshing, refresh }: { profile: DriverProfil
   const items = documentChecklist(profile.vehicleType, profile.documents);
   const { done, total } = kycProgress(items);
   const look = DOSSIER[profile.status as Exclude<DriverStatus, 'APPROVED'>] ?? DOSSIER.PENDING;
-  const reason = profile.rejectionReason ? `Motif du refus : ${profile.rejectionReason}` : profile.suspensionReason ? `Motif de la suspension : ${profile.suspensionReason}` : null;
+  const reason = profile.rejectionReason ? `Motif du refus : ${profile.rejectionReason}` : profile.suspensionReason ? `Motif de la suspension : ${profile.suspensionReason}` : null;
   return (
     <Screen refreshing={refreshing} onRefresh={() => void refresh()}>
       <ScreenTitle title="Mon dossier livreur" subtitle={`${LABELS.vehicleType[profile.vehicleType]}${profile.plate ? ` · ${profile.plate}` : ''}`} />
@@ -132,7 +132,7 @@ function DossierScreen({ profile, refreshing, refresh }: { profile: DriverProfil
           </Text>
         ) : null}
         {reason ? <Banner message={reason} tone="red" /> : null}
-        {profile.status === 'REJECTED' ? <Text style={styles.body}>Corrigez vos pièces : le dossier repassera en vérification.</Text> : null}
+        {profile.status === 'REJECTED' ? <Text style={styles.body}>Corrigez vos pièces : le dossier repassera en vérification.</Text> : null}
       </WhiteCard>
       <WhiteCard>
         <View style={styles.piecesRow}>
@@ -150,7 +150,7 @@ function DossierScreen({ profile, refreshing, refresh }: { profile: DriverProfil
       <Button title="Actualiser" variant="outline" icon={(c) => <Icon name="refresh" size={18} color={c} />} onPress={() => void refresh()} loading={refreshing} />
       <View style={styles.sosInline}>
         <SosButton />
-        <Text style={styles.sosHint}>En cas de danger : alerte immédiate des contrôleurs Yaar.</Text>
+        <Text style={styles.sosHint}>En cas de danger : alerte immédiate des contrôleurs Yaar.</Text>
       </View>
     </Screen>
   );
@@ -299,7 +299,7 @@ function HomeMap({
             <Text style={styles.blockedText}>
               {online
                 ? 'Déposez l’argent auprès de Yaar pour recevoir des courses.'
-                : 'Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré.'}
+                : 'Déposez l’argent auprès de Yaar : vous pourrez repasser en ligne dès que le dépôt sera enregistré.'}
             </Text>
           </View>
         </View>

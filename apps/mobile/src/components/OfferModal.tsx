@@ -36,7 +36,7 @@ const COMPACT_MAX_HEIGHT = 720;
 const DETAILS_MAX_HEIGHT = { regular: 0.42, compact: 0.5 } as const;
 
 /** Rappel de confidentialité sous la zone de livraison (« Zone approximative » seulement sur un petit écran). */
-const DROPOFF_PRIVACY_NOTE = 'Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.';
+const DROPOFF_PRIVACY_NOTE = 'Zone approximative : l’adresse exacte du destinataire s’affiche une fois la course acceptée.';
 
 /**
  * Nouvelle course, en plein écran (comme les applications de coursiers), au dessin Cobalt : carte Cobalt claire avec
@@ -308,7 +308,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
               </View>
               <View style={styles.flex}>
                 <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>
-                  {offer.pickup.name ? `Récupérer chez ${places.pickupTitle}` : `Récupérer : ${places.pickupTitle}`}
+                  {offer.pickup.name ? `Récupérer chez ${places.pickupTitle}` : `Récupérer : ${places.pickupTitle}`}
                 </Text>
                 {pickupLine ? <Text style={styles.stopLine}>{pickupLine}</Text> : null}
               </View>
@@ -319,7 +319,7 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
                 <Icon name="pin" size={18} color={palette.cobalt} />
               </View>
               <View style={styles.flex}>
-                <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>Livrer : {places.dropoffZone}</Text>
+                <Text style={[styles.stopTitle, compact && styles.stopTitleCompact]}>Livrer : {places.dropoffZone}</Text>
                 <Text style={styles.stopLine}>{compact ? 'Zone approximative' : DROPOFF_PRIVACY_NOTE}</Text>
               </View>
             </View>
