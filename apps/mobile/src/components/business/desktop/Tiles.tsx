@@ -230,7 +230,7 @@ export function HeroTile({
           accessibilityLabel={request ? `Recherche d’un livreur, demandée à ${eta.clock}` : eta.clock ? `${eta.label} ${eta.clock}${eta.inText ? `, ${eta.inText}` : ''}` : eta.label}
         >
           {request ? (
-            <Text style={styles.etaWord} numberOfLines={1} testID="hero-tile-state">
+            <Text style={[styles.etaWord, styles.etaWordSearch]} numberOfLines={2} testID="hero-tile-state">
               Recherche d’un livreur…
             </Text>
           ) : eta.clock ? (
@@ -702,6 +702,7 @@ const styles = StyleSheet.create({
   eta: { marginLeft: -3, fontWeight: '800', color: palette.onCobalt, ...tabular },
   etaIn: { fontSize: 18, lineHeight: 22, fontWeight: '800', letterSpacing: -0.2, color: palette.onCobalt, ...tabular },
   etaWord: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -0.9, color: palette.onCobalt },
+  etaWordSearch: { fontSize: 30, lineHeight: 34, marginTop: 4 },
   notes: { marginTop: 16, gap: 8 },
   note: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   noteText: { flexShrink: 1, fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.onCobalt },

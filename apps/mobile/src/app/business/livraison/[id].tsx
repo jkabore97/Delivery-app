@@ -408,7 +408,7 @@ function DesktopDelivery({
                 // lirait comme une arrivée).
                 <>
                   <Text style={styles.etaKicker}>{`Demandée à ${eta.clock}${eta.inText ? ` · ${eta.inText}` : ''}`}</Text>
-                  <Text style={[styles.etaClock, styles.etaWord]} testID="tracking-state">
+                  <Text style={[styles.etaClock, styles.etaWord, styles.etaWordSearch]} numberOfLines={2} testID="tracking-state">
                     {headline}
                   </Text>
                 </>
@@ -503,6 +503,7 @@ const styles = StyleSheet.create({
   etaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   etaClock: { fontSize: 64, lineHeight: 64, fontWeight: '800', letterSpacing: -2.6, color: palette.onCobalt, marginLeft: -2, ...tabular },
   etaWord: { fontSize: 32, lineHeight: 38, letterSpacing: -0.8, marginLeft: 0 },
+  etaWordSearch: { fontSize: 28, lineHeight: 34, letterSpacing: -0.6 },
   etaIn: { fontSize: 18, lineHeight: 22, fontWeight: '800', color: palette.onCobalt, ...tabular },
   etaHeadline: { marginTop: 6, fontSize: 15, lineHeight: 20, fontWeight: '700', color: palette.onCobalt },
   etaSub: { fontSize: 13, lineHeight: 18, fontWeight: '500', color: palette.onCobalt2, ...tabular },

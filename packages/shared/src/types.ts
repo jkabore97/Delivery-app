@@ -760,7 +760,7 @@ export interface BusinessSummaryDto {
     cancelled: number;
     /** Délai moyen demande → livraison (`deliveredAt − createdAt`) des livraisons livrées aujourd'hui, en minutes arrondies ; null sans livraison. */
     avgDeliveryMinutes: number | null;
-    /** Marchandise encaissée pour l'entreprise sur les livraisons livrées aujourd'hui (« À reverser »). */
+    /** Marchandise encaissée pour l'entreprise sur les livraisons livrées aujourd'hui (« Encaissé pour vous aujourd’hui » : chiffre du jour, le reversement n’est pas encore suivi). */
     goodsCollected: number;
     /** Frais de livraison des livraisons livrées aujourd'hui (quel que soit le payeur). */
     deliveryFees: number;

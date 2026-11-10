@@ -96,7 +96,8 @@ export function BusinessDashboard() {
   // au moins ; la mosaïque remplit la fenêtre sous l'en-tête (1 366 × 768 tient sans défiler).
   const tall = height >= 860;
   const kpiHeight = tall ? 132 : 124;
-  const heroHeight = tall ? 320 : 272;
+  // Mise en page empilée (la page défile) : la tuile héros garde sa hauteur de planche.
+  const heroHeight = tall || stacked ? 320 : 272;
   const listMin = tall ? 220 : 196;
   const bentoHeight = Math.max(kpiHeight + heroHeight + listMin + TILE_GAP * 2, height - PAGE_PADDING * 2 - 56 - 16);
   const searching = list.filter(isSearching).length;

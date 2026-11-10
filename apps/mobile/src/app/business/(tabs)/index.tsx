@@ -112,7 +112,7 @@ function PhoneHome() {
       animationMs={Math.max(pollIntervalMs, POLL_MS.businessDeliveries)}
       // La carte garde le haut de l'écran (~40 %) ; sans livraison, la feuille reste courte (sauf petit téléphone :
       // l'explication tient en entier).
-      sheetMaxRatio={list.length > 0 || short ? (short ? 0.66 : 0.62) : 0.56}
+      sheetMaxRatio={short ? (list.length > 0 ? 0.66 : 0.74) : list.length > 0 ? 0.62 : 0.56}
       // Cadrage : les épingles tiennent au-dessus de la mention des données (la carte est courte ici).
       fitBottomMargin={44}
       insetBottom={false}
