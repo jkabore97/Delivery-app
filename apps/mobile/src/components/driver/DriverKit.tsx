@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
-import { StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { Icon, type IconName } from '../design/Icon';
-import { formatFcfa, NNBSP } from '../../lib/format';
+import { formatFcfa } from '../../lib/format';
 import { cashRatio } from '../../lib/driverStatus';
 import { palette, radii, shadows, spacing } from '../../theme';
 
 /*
- * Briques Cobalt de l'espace livreur (docs/DESIGN.md) : pastille ronde à pictogramme, montant en grands chiffres
- * (« FCFA » plus petit), jauge des espèces détenues (soleil), étiquette d'état à pictogramme, tuile chiffrée, liste en
+ * Briques Cobalt de l'espace livreur (docs/DESIGN.md) : pastille ronde à pictogramme (les montants en grands chiffres
+ * sont des `FitAmount`, components/design/FitAmount.tsx : jamais coupés), jauge des espèces détenues (soleil), étiquette d'état à pictogramme, tuile chiffrée, liste en
  * carte blanche à filets. Le livreur travaille dehors, en plein soleil : grands chiffres tabulaires, texte encre,
  * contrastes de 4,5:1 au moins (mesurés dans le système de design).
  */
@@ -41,45 +41,9 @@ export function IconDisc({ icon, tone = 'cobalt', size = 40, style }: { icon: Ic
 }
 
 /**
- * Montant en grands chiffres tabulaires avec « FCFA » plus petit (comme les tuiles de la planche Cobalt) : un seul
- * texte (lu « 7 400 FCFA », mêmes espaces fines insécables que `formatFcfa`). `sign` : « + » devant un gain.
+ * Barre de progression épaisse (10 px) : dossier (cobalt sur gris), espèces (ambre foncé sur piste soleil pâle, 5,35:1,
+ * lisible en plein soleil), plafond atteint (rouge).
  */
-export function Money({
-  amount,
-  size = 32,
-  color = palette.ink,
-  unitScale = 0.5,
-  sign,
-  style,
-  testID,
-}: {
-  amount: number;
-  size?: number;
-  color?: string;
-  /** Taille de « FCFA » (part de `size`). */
-  unitScale?: number;
-  sign?: '+' | '−';
-  style?: StyleProp<TextStyle>;
-  testID?: string;
-}) {
-  const full = formatFcfa(amount);
-  const cut = full.lastIndexOf(NNBSP);
-  const figure = cut > 0 ? full.slice(0, cut) : full;
-  const unit = cut > 0 ? full.slice(cut) : '';
-  return (
-    <Text
-      style={[styles.money, { fontSize: size, lineHeight: Math.round(size * 1.12), letterSpacing: -Math.round(size * 0.03 * 10) / 10, color }, style]}
-      numberOfLines={1}
-      testID={testID}
-    >
-      {sign ?? ''}
-      {figure}
-      {unit ? <Text style={{ fontSize: Math.round(size * unitScale), letterSpacing: 0 }}>{unit}</Text> : null}
-    </Text>
-  );
-}
-
-/** Barre de progression épaisse (10 px) : espèces (soleil), dossier (cobalt), plafond atteint (rouge). */
 export function Meter({ value, color = palette.sun, track = palette.raisedHigh, height = 10, label }: { value: number; color?: string; track?: string; height?: number; label?: string }) {
   const pct = Math.round(Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)) * 100);
   return (
@@ -99,7 +63,7 @@ export function Meter({ value, color = palette.sun, track = palette.raisedHigh, 
 
 /**
  * Espèces détenues / plafond : libellé et montant détenu sur une ligne (le montant passe entier à la ligne suivante sur
- * un écran étroit ou une grande police, jamais coupé), jauge soleil (rouge plein quand le plafond est atteint), puis le
+ * un écran étroit ou une grande police, jamais coupé), jauge ambre sur piste soleil pâle (rouge plein quand le plafond est atteint), puis le
  * plafond et la légende. `cash-held` : testID du montant détenu ; `<testID>-limit` : la ligne du plafond.
  */
 export function CashMeter({
@@ -128,7 +92,7 @@ export function CashMeter({
           {formatFcfa(held)}
         </Text>
       </View>
-      <Meter value={ratio} color={over ? palette.coralFill : palette.sun} label={`${label} : ${Math.round(ratio * 100)} % du plafond`} />
+      <Meter value={ratio} color={over ? palette.coralFill : palette.amberText} track={over ? palette.coralTint : palette.sunTint} label={`${label} : ${Math.round(ratio * 100)} % du plafond`} />
       <Text style={[styles.caption, over && styles.captionAlert]} testID={`${testID}-limit`}>
         <Text style={styles.captionStrong}>{`Plafond ${formatFcfa(limit)}`}</Text>
         {caption ? ` · ${caption}` : ''}
@@ -233,7 +197,6 @@ export function SectionHeading({ children, right }: { children: string; right?: 
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  money: { fontWeight: '800', fontVariant: ['tabular-nums'] },
   meterTrack: { overflow: 'hidden', alignSelf: 'stretch' },
   meterFill: { height: '100%' },
   cash: { gap: 10 },

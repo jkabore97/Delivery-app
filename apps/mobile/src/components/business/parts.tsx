@@ -7,7 +7,7 @@ import { avatarInitials } from '../map/markerArt';
 import { notify } from '../../lib/dialog';
 import { newDeliveryAccess } from '../../lib/storeApproval';
 import { touchTarget } from '../../lib/touchTarget';
-import { MIN_TOUCH, palette, shadows, tabular } from '../../theme';
+import { alpha, MIN_TOUCH, palette, shadows, tabular } from '../../theme';
 import type { TimelineStep } from './dashboardData';
 import { POINTER } from './desktop/layout';
 
@@ -80,11 +80,16 @@ const MINI: Record<MiniTone, { bg: string; fg: string }> = {
   coral: { bg: palette.coralTint, fg: palette.coralText },
 };
 
-/** Petite puce d'état d'une ligne de liste (20 px, 11,5/700) : en livraison cobalt, retrait soleil, recherche gris. */
-export function MiniChip({ label, tone, dot }: { label: string; tone: MiniTone; dot?: boolean }) {
+/**
+ * Petite puce d'état d'une ligne de liste (20 px, 11,5/700) : en livraison cobalt, retrait soleil, recherche gris. Elle
+ * se raccourcit (« … ») au lieu de déborder sur ses voisines. `surface="canvas"` : posée sur une carte canvas, la puce
+ * grise devient blanche (sinon canvas sur canvas, invisible).
+ */
+export function MiniChip({ label, tone, dot, surface = 'card' }: { label: string; tone: MiniTone; dot?: boolean; surface?: 'card' | 'canvas' }) {
   const t = MINI[tone];
+  const bg = tone === 'grey' && surface === 'canvas' ? palette.white : t.bg;
   return (
-    <View style={[styles.mini, { backgroundColor: t.bg }]}>
+    <View style={[styles.mini, { backgroundColor: bg }]}>
       {dot ? <View style={styles.miniDot} /> : null}
       <Text style={[styles.miniText, { color: t.fg }]} numberOfLines={1}>
         {label}
@@ -124,7 +129,7 @@ export function SegmentedProgress({
   style?: StyleProp<ViewStyle>;
 }) {
   const fill = onCobalt ? palette.white : palette.cobalt;
-  const track = onCobalt ? 'rgba(255, 255, 255, 0.24)' : palette.raisedHigh;
+  const track = onCobalt ? alpha(palette.white, 0.24) : palette.raisedHigh;
   const index = steps.findIndex((s) => s.state === 'current');
   const done = steps.filter((s) => s.state === 'done').length;
   const current = index >= 0 ? steps[index] : null;
@@ -272,9 +277,9 @@ const styles = StyleSheet.create({
   sunSm: { height: 26, borderRadius: 13, paddingHorizontal: 10 },
   sunText: { fontSize: 15, lineHeight: 19, fontWeight: '800', letterSpacing: -0.15, color: palette.ink, ...tabular },
   sunTextSm: { fontSize: 13, lineHeight: 17 },
-  mini: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 20, borderRadius: 10, paddingHorizontal: 8, flexShrink: 1, minWidth: 0 },
-  miniDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.cobalt },
-  miniText: { fontSize: 11.5, lineHeight: 15, fontWeight: '700', ...tabular },
+  mini: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 20, borderRadius: 10, paddingHorizontal: 8, flexShrink: 1, minWidth: 0, maxWidth: '100%' },
+  miniDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: palette.cobalt, flexShrink: 0 },
+  miniText: { flexShrink: 1, fontSize: 11.5, lineHeight: 15, fontWeight: '700', ...tabular },
   steps: { flexDirection: 'row' },
   step: { flex: 1, minWidth: 0 },
   seg: { overflow: 'hidden' },

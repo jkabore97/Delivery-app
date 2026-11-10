@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, useWindowDimensions, Vibration, View } from 'react-native';
+import { FitAmount } from './design/FitAmount';
 import { Text } from './Text';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +18,6 @@ import { Icon } from './design/Icon';
 import { Pill } from './design/Pill';
 import { RoundButton } from './design/RoundButton';
 import { SheetSurface } from './design/Surfaces';
-import { Money } from './driver/DriverKit';
 import { LiveMap } from './map/LiveMap';
 import { avatarInitials, vehicleSideGlyph } from './map/markerArt';
 import { ArtView } from './map/MarkerViews';
@@ -44,7 +44,7 @@ const DROPOFF_PRIVACY_NOTE = 'Zone approximative : l’adresse exacte du desti
  * l'adresse du destinataire avant acceptation), pastilles blanches « Nouvelle course » et « ≈ N min · X km » jusqu'au
  * retrait, grand bouton rond cobalt « Accepter » dans l'anneau du compte à rebours de 30 s (rouge les 10 dernières
  * secondes), « Refuser » en pilule rouge pleine, puis la feuille blanche : gain (tuile cobalt douce), espèces (tuile
- * SOLEIL, texte encre ; retrait / livraison), entreprise, zone, distance. Sur un grand écran web, la colonne garde la
+ * SOLEIL, texte encre ; retrait / livraison ; « Rien à encaisser » en vert doux si la course est payée), entreprise, zone, distance. Sur un grand écran web, la colonne garde la
  * largeur de l'application. La barre d'état reste celle de l'application (texte foncé sur fond clair).
  */
 export function OfferModal() {
@@ -280,18 +280,31 @@ function OfferTakeover({ offer }: { offer: OfferDto }) {
               {/* Gain : tuile cobalt douce (le cobalt plein est réservé au bouton « Accepter »). */}
               <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.earning]} testID="offer-earning">
                 <Text style={[styles.moneyLabel, { color: palette.cobaltText }]}>Votre gain</Text>
-                <Money amount={offer.driverEarning} size={compact ? 26 : 34} color={palette.cobaltText} style={styles.moneyFigure} />
+                <FitAmount amount={offer.driverEarning} size={compact ? 26 : 34} color={palette.cobaltText} style={styles.moneyFigure} />
               </View>
-              {/* Espèces : tuile SOLEIL pleine, texte encre (12,2:1), détail en encre brune (7,1:1). */}
-              <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.cash, shadows.sun]} testID="offer-cash">
-                <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
-                <Money amount={cash.total} size={compact ? 22 : 24} style={styles.moneyFigure} testID="offer-cash-total" />
-                {split && !compact ? (
-                  <Text style={styles.cashSplit} testID="offer-cash-split">
-                    {split}
+              {/* Espèces : tuile SOLEIL pleine, texte encre (12,2:1), détail en encre brune (7,1:1) ; rien à encaisser
+                  (course prépayée) : tuile verte douce à coche, jamais « 0 FCFA » en soleil. */}
+              {cash.total > 0 ? (
+                <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.cash, shadows.sun]} testID="offer-cash">
+                  <Text style={styles.moneyLabel}>Espèces à encaisser</Text>
+                  <FitAmount amount={cash.total} size={compact ? 22 : 24} style={styles.moneyFigure} testID="offer-cash-total" />
+                  {split && !compact ? (
+                    <Text style={styles.cashSplit} testID="offer-cash-split">
+                      {split}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={[styles.moneyBox, compact && styles.moneyBoxCompact, styles.noCash]} testID="offer-cash" accessible accessibilityLabel="Rien à encaisser : course déjà payée">
+                  <View style={styles.noCashDisc}>
+                    <Icon name="check" size={16} color={palette.white} strokeWidth={3} />
+                  </View>
+                  <Text style={styles.noCashTitle} testID="offer-no-cash">
+                    Rien à encaisser
                   </Text>
-                ) : null}
-              </View>
+                  <Text style={styles.noCashSub}>Course déjà payée</Text>
+                </View>
+              )}
             </View>
             {/* Petit écran : le détail retrait / livraison sur toute la largeur (une ligne) plutôt que sur trois lignes
                 dans la case des espèces. */}
@@ -367,6 +380,11 @@ const styles = StyleSheet.create({
   moneyBoxCompact: { paddingVertical: 10 },
   earning: { backgroundColor: palette.cobaltTint },
   cash: { backgroundColor: palette.sun },
+  // Course prépayée : tuile verte douce (texte vert foncé 4,9:1 sur mintTint), coche dans un disque vert.
+  noCash: { backgroundColor: palette.mintTint, justifyContent: 'center' },
+  noCashDisc: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.mintText },
+  noCashTitle: { color: palette.mintText, fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.2, marginTop: 2 },
+  noCashSub: { color: palette.mintText, fontSize: 13, lineHeight: 17, fontWeight: '600' },
   moneyLabel: { color: palette.ink, fontSize: 13, lineHeight: 17, fontWeight: '700' },
   moneyFigure: { marginTop: 2 },
   cashSplit: { color: palette.onSun2, fontSize: 12, lineHeight: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },

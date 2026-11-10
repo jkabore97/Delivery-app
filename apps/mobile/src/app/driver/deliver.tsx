@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { FitAmount } from '../../components/design/FitAmount';
 import { Text } from '../../components/Text';
 import { router } from 'expo-router';
 import type { FileUploadInput, OrderDto } from '@yaar/shared';
@@ -7,7 +8,7 @@ import { Icon, type IconName } from '../../components/design/Icon';
 import { Pill } from '../../components/design/Pill';
 import { AmountRow, ScreenHeader, SurfaceScreen } from '../../components/design/Surfaces';
 import { CodeInput } from '../../components/driver/CodeInput';
-import { CashMeter, IconDisc, Money, WhiteCard } from '../../components/driver/DriverKit';
+import { CashMeter, IconDisc, WhiteCard } from '../../components/driver/DriverKit';
 import { RatingCard } from '../../components/Rating';
 import { Banner } from '../../components/ui';
 import { errorMessage, isApiError } from '../../lib/api';
@@ -96,13 +97,13 @@ export default function DeliverScreen() {
           // La tuile héros cobalt de l'écran : le gain de la course, en très grand.
           <View style={[styles.gainHero, shadows.hero]} testID="delivery-gain">
             <Text style={styles.gainLabel}>Votre gain</Text>
-            <Money amount={delivered.driverEarning} sign="+" size={48} color={palette.white} />
+            <FitAmount amount={delivered.driverEarning} sign="+" size={48} color={palette.white} />
             {today && todayLabel ? (
               <>
                 <View style={styles.gainRule} />
                 <View style={styles.gainDay}>
                   <Text style={styles.gainDayLabel}>{todayLabel}</Text>
-                  <Money amount={today.earnings} size={18} color={palette.white} />
+                  <FitAmount amount={today.earnings} size={18} color={palette.white} />
                 </View>
               </>
             ) : null}
@@ -113,13 +114,13 @@ export default function DeliverScreen() {
             {delivered.cashCollected !== null ? (
               <SumRow label="Espèces encaissées">
                 <View style={styles.sunPill}>
-                  <Money amount={delivered.cashCollected} size={16} />
+                  <FitAmount amount={delivered.cashCollected} size={16} />
                 </View>
               </SumRow>
             ) : null}
             {todayLabel && today && delivered.driverEarning === null ? (
               <SumRow label={todayLabel}>
-                <Money amount={today.earnings} size={17} color={palette.cobalt} />
+                <FitAmount amount={today.earnings} size={17} color={palette.cobalt} />
               </SumRow>
             ) : null}
           </WhiteCard>
@@ -281,12 +282,12 @@ export default function DeliverScreen() {
         ) : null}
         {o.driverEarning !== null ? (
           <SumRow label="Votre gain sur cette course">
-            <Money amount={o.driverEarning} size={18} color={palette.cobalt} />
+            <FitAmount amount={o.driverEarning} size={18} color={palette.cobalt} />
           </SumRow>
         ) : null}
         {today && todayLabel ? (
           <SumRow label={todayLabel}>
-            <Money amount={today.earnings} size={18} />
+            <FitAmount amount={today.earnings} size={18} />
           </SumRow>
         ) : null}
       </WhiteCard>

@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import { FitAmount } from '../../../components/design/FitAmount';
 import { Text } from '../../../components/Text';
-import { IconDisc, ListRow, Meter, Money, ScreenTitle, SectionHeading, shortDateTime, WhiteCard } from '../../../components/driver/DriverKit';
+import { IconDisc, ListRow, Meter, ScreenTitle, SectionHeading, shortDateTime, WhiteCard } from '../../../components/driver/DriverKit';
 import { Banner, Loading, Screen } from '../../../components/ui';
 import { useAsync } from '../../../hooks/useAsync';
 import { cashRatio } from '../../../lib/driverStatus';
@@ -42,14 +43,14 @@ export default function DriverEarnings() {
                 <Text style={styles.heroChipText}>{courses(e.today.deliveries)}</Text>
               </View>
             </View>
-            <Money amount={e.today.earnings} size={48} color={palette.white} />
+            <FitAmount amount={e.today.earnings} size={48} color={palette.white} />
             <Text style={styles.heroSub}>{`Encaissé aujourd’hui : ${formatFcfa(e.today.cashCollected)}`}</Text>
           </View>
 
           <View style={styles.tiles}>
             <WhiteCard style={styles.tile} testID="earnings-total">
               <IconDisc icon="chart" tone="cobalt" size={32} />
-              <Money amount={e.allTime.earnings} size={24} />
+              <FitAmount amount={e.allTime.earnings} size={24} />
               <Text style={styles.tileLabel}>Gains totaux</Text>
             </WhiteCard>
             <WhiteCard style={styles.tile}>
@@ -65,7 +66,7 @@ export default function DriverEarnings() {
               <Text style={styles.cashLabel}>Espèces détenues</Text>
               <Text style={styles.cashLimit}>{`Plafond ${formatFcfa(e.cashLimit)}`}</Text>
             </View>
-            <Money amount={e.cashHeld} size={36} />
+            <FitAmount amount={e.cashHeld} size={36} />
             <Meter value={cashRatio(e.cashHeld, e.cashLimit)} color={palette.ink} track="rgba(12, 18, 34, 0.12)" label="Espèces détenues par rapport au plafond" />
             <Text style={styles.cashNote}>
               {e.cashBlocked
@@ -87,7 +88,7 @@ export default function DriverEarnings() {
                   leading={<IconDisc icon={collection ? 'cash' : 'check'} tone={collection ? 'sun' : 'mint'} size={40} />}
                   title={collection ? (l.orderNumber ? `Course #${l.orderNumber}` : 'Encaissement') : 'Dépôt chez Yaar'}
                   subtitle={`${shortDateTime(l.createdAt)}${!collection && l.note ? ` · ${l.note}` : ''}\nSolde ${formatFcfa(l.balanceAfter)}`}
-                  right={<Money amount={Math.abs(l.amount)} sign={l.amount > 0 ? '+' : '−'} size={17} color={l.amount > 0 ? palette.amberText : palette.mintText} />}
+                  right={<FitAmount amount={Math.abs(l.amount)} sign={l.amount > 0 ? '+' : '−'} size={17} color={l.amount > 0 ? palette.amberText : palette.mintText} />}
                 />
               );
             })}

@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FitAmount } from '../../../components/design/FitAmount';
 import { Text } from '../../../components/Text';
 import { Redirect, router, useFocusEffect, useIsFocused } from 'expo-router';
 import { LABELS, type DriverProfileDto, type DriverStatus, type OrderDto } from '@yaar/shared';
 import { Icon, type IconName } from '../../../components/design/Icon';
 import { Pill, StatusChip, type ChipTone } from '../../../components/design/Pill';
-import { CashMeter, IconDisc, Meter, Money, ScreenTitle, WhiteCard, type KitTone } from '../../../components/driver/DriverKit';
+import { CashMeter, IconDisc, Meter, ScreenTitle, WhiteCard, type KitTone } from '../../../components/driver/DriverKit';
 import { GoOfflinePill, GoOnlineButton, OnlineStatusPill, SosButton } from '../../../components/DriverWidgets';
 import { avatarInitials } from '../../../components/map/markerArt';
 import type { MapPoint, SceneLine, SceneMarker } from '../../../components/map/types';
@@ -57,7 +58,7 @@ function CurrentOrderCard({ order: o }: { order: OrderDto }) {
       {collect > 0 ? (
         <View style={styles.collect}>
           <Text style={styles.collectLabel}>{pickupStage && amounts.atPickup > 0 ? 'À encaisser au retrait' : 'À encaisser à la livraison'}</Text>
-          <Money amount={collect} size={20} />
+          <FitAmount amount={collect} size={20} />
         </View>
       ) : null}
       <Pill label="Ouvrir la course" icon="chevronRight" tone="cobalt" size="lg" onPress={() => router.push('/driver/order')} style={styles.stretch} testID="open-order" />
@@ -76,7 +77,7 @@ function TodayBlock({ profile, earnings, compact }: { profile: DriverProfileDto;
         <View style={styles.todayText}>
           <Text style={styles.todayLabel}>Gains du jour</Text>
           {earnings ? (
-            <Money amount={earnings.earnings} size={compact ? 26 : 32} color={palette.cobalt} testID="today-earnings" />
+            <FitAmount amount={earnings.earnings} size={compact ? 26 : 32} color={palette.cobalt} testID="today-earnings" />
           ) : (
             <Text style={[styles.todayPlaceholder, compact && { fontSize: 26, lineHeight: 30 }]} testID="today-earnings">
               —

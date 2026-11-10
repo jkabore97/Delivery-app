@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Linking, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FitAmount } from '../../components/design/FitAmount';
 import { Text } from '../../components/Text';
 import { router } from 'expo-router';
 import { formatDistanceFr, formatDurationFr, type AddressDto } from '@yaar/shared';
@@ -9,7 +10,6 @@ import { MapIconButton, Pill } from '../../components/design/Pill';
 import { RoundButton } from '../../components/design/RoundButton';
 import { AmountRow, SurfaceScreen } from '../../components/design/Surfaces';
 import { DisputeBox } from '../../components/DisputeBox';
-import { Money } from '../../components/driver/DriverKit';
 import { SosButton } from '../../components/DriverWidgets';
 import { avatarInitials } from '../../components/map/markerArt';
 import { FloatingChip, LiveTrackingLayout } from '../../components/tracking/LiveTrackingLayout';
@@ -309,7 +309,7 @@ export default function DriverOrderScreen() {
       {o.driverEarning !== null ? (
         <View style={styles.earning}>
           <Text style={styles.earningLabel}>Votre gain sur cette course</Text>
-          <Money amount={o.driverEarning} size={20} color={palette.cobalt} />
+          <FitAmount amount={o.driverEarning} size={20} color={palette.cobalt} />
         </View>
       ) : null}
       <DisputeBox orderId={o.id} placeholder="Décrivez le problème (destinataire absent, retrait impossible…)" />
